@@ -7,7 +7,9 @@ import pandas as pd
 import numpy as np
 from scipy.signal import argrelextrema
 
-# --- 1. PAGE CONFIGURATION ---
+# --- 1. CONFIGURATION & VIP WATCHLIST ---
+VIP_TICKERS = ["NVDA", "AAPL", "AMZN", "GOOGL", "TSLA", "MSFT", "META", "AMD", "NFLX", "SPY", "QQQ", "IWM"]
+
 st.set_page_config(
     page_title="Quantum Maestro Terminal",
     layout="wide",
@@ -18,54 +20,53 @@ st.set_page_config(
 # --- 2. CSS STYLING ---
 st.markdown("""
 <style>
-    .stButton>button {
-        width: 100%;
-        border-radius: 4px;
-        height: 3em;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-    }
-    div[data-testid="stMetric"] {
-        background-color: #f0f2f6;
-        border: 1px solid #d6d6d6;
-        border-radius: 6px;
-        padding: 10px 15px;
-    }
+    .stButton>button { width: 100%; border-radius: 4px; height: 3em; font-weight: 600; letter-spacing: 0.5px; }
+    div[data-testid="stMetric"] { background-color: #f0f2f6; border: 1px solid #d6d6d6; border-radius: 6px; padding: 10px 15px; }
     @media (prefers-color-scheme: dark) {
-        div[data-testid="stMetric"] {
-            background-color: #1e2127;
-            border: 1px solid #30333d;
-        }
+        div[data-testid="stMetric"] { background-color: #1e2127; border: 1px solid #30333d; }
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏛️ Quantum Maestro: Mentor Edition")
+# --- 3. TITLE & DESCRIPTION (New Onboarding Section) ---
+st.title("🏛️ Quantum Maestro: Mentor Edition (V10.1)")
+st.markdown("""
+**What is this?** This is an **Algorithmic Trading Bot & Assistant**. It helps you scan stocks, calculates your Risk/Reward automatically, and generates a strict "Red Light / Green Light" verdict based on the **Trade & Travel 7-Step System**.
+""")
+st.divider()
 
-# --- 3. SESSION STATE ---
+# --- 4. SESSION STATE ---
 if 'data' not in st.session_state: st.session_state.data = None
 if 'metrics' not in st.session_state: st.session_state.metrics = {}
 if 'macro' not in st.session_state: st.session_state.macro = None
 
-# --- 4. SIDEBAR ---
+# --- 5. SIDEBAR ---
 with st.sidebar:
-    st.header("1. Configuration")
+    st.header("1. VIP Selection")
+    input_mode = st.radio("Input Mode", ["VIP Watchlist", "Manual Search"])
+    
+    if input_mode == "VIP Watchlist":
+        ticker = st.selectbox("Select Ticker", VIP_TICKERS)
+    else:
+        ticker = st.text_input("Enter Ticker", value="NVDA").upper()
+        
     c1, c2 = st.columns(2)
     with c1:
-        ticker = st.text_input("Ticker", value="NVDA").upper()
+        capital = st.number_input("Total Capital ($)", value=10000)
     with c2:
         risk_per_trade = st.number_input("Risk $", value=100)
-    capital = st.number_input("Total Capital ($)", value=10000)
+
+    daily_goal = capital * 0.01
+    st.caption(f"🎯 Daily Goal (1%): **${daily_goal:.2f}**")
 
     st.divider()
     st.header("2. Strategy Board")
     strategy = st.selectbox("Execution Mode", ['Long (Buy Stock)', 'Short (Sell Stock)', 'Sell Puts (Income)', 'Sell Calls (Income)'])
     
-    # --- NEW: REALITY TOGGLE ---
     entry_mode = st.radio(
         "Entry Method", 
         ["Auto-Limit (Wait for Zone)", "Current Price (Market)"],
-        help="Auto-Limit: Assumes you wait for price to hit the perfect zone (Teri's Way). Current Price: Calculates math if you entered RIGHT NOW."
+        help="Auto-Limit: Best case scenario (Wait for dip). Current Price: Entering right now."
     )
     
     stop_mode = st.selectbox("Stop Type", [1.0, 0.2], format_func=lambda x: "Safe Swing (1.0 ATR)" if x == 1.0 else "IWT Tight (0.2 ATR)")
@@ -85,7 +86,7 @@ with st.sidebar:
         time_zone = st.selectbox("Time in Zone", [2, 1, 0], format_func=lambda x: {2:'2-Short', 1:'1-Med', 0:'0-Long'}[x])
         pattern = st.selectbox("Pattern", ['Consolidation', 'Bull Flag', 'Double Bottom', 'Parabolic', 'Gap Fill'])
 
-# --- 5. LOGIC ENGINE ---
+# --- 6. LOGIC ENGINE ---
 class Analyst:
     def fetch_data(self, t):
         try:
@@ -101,8 +102,13 @@ class Analyst:
             data['RVOL'] = data['Volume'] / vol_sma
             data['Min'] = data.iloc[argrelextrema(data.Close.values, np.less_equal, order=5)[0]]['Close']
             data['Max'] = data.iloc[argrelextrema(data.Close.values, np.greater_equal, order=5)[0]]['Close']
-            return data
-        except: return None
+            
+            prev_close = data['Close'].iloc[-2]
+            curr_open = data['Open'].iloc[-1]
+            gap_pct = ((curr_open - prev_close) / prev_close) * 100
+            
+            return data, gap_pct
+        except: return None, 0.0
 
     def get_macro(self):
         tickers = {"S&P 500": "ES=F", "VIX": "^VIX", "Gold": "GC=F"}
@@ -117,16 +123,16 @@ class Analyst:
 
 engine = Analyst()
 
-# --- 6. CONTROL PANEL ---
+# --- 7. CONTROL PANEL ---
 c_macro, c_scan = st.columns([1, 1])
 with c_macro:
     if st.button("🌍 1. CHECK MACRO", type="secondary"):
         with st.spinner("Scanning Global Sensors..."):
             st.session_state.macro = engine.get_macro()
 with c_scan:
-    if st.button("🔎 2. SCAN TICKER", type="primary"):
+    if st.button(f"🔎 2. SCAN {ticker}", type="primary"):
         with st.spinner(f"Parsing {ticker}..."):
-            df = engine.fetch_data(ticker)
+            df, gap = engine.fetch_data(ticker)
             if df is not None:
                 st.session_state.data = df
                 price = df['Close'].iloc[-1]
@@ -135,12 +141,12 @@ with c_scan:
                 st.session_state.metrics = {
                     "price": price, "atr": df['ATRr_14'].iloc[-1],
                     "phase": "🚀 UPTREND" if price > df['SMA_20'].iloc[-1] else "📉 DOWNTREND",
-                    "supp": supp, "res": res, "rvol": df['RVOL'].iloc[-1]
+                    "supp": supp, "res": res, "rvol": df['RVOL'].iloc[-1], "gap": gap
                 }
             else:
                 st.error("Ticker not found.")
 
-# --- 7. DASHBOARD ---
+# --- 8. DASHBOARD ---
 if st.session_state.macro:
     m = st.session_state.macro
     with st.expander("🌍 Global Context", expanded=True):
@@ -159,12 +165,11 @@ if st.session_state.data is not None:
     st.divider()
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Price", f"${m['price']:.2f}")
-    c2.metric("Trend", m['phase'])
+    c2.metric("Gap %", f"{m['gap']:.2f}%", delta="GAP UP" if m['gap']>0 else "GAP DOWN")
     c3.metric("Volume", f"{m['rvol']:.1f}x")
     
-    # Strategy Calculation with REALITY TOGGLE
+    # Strategy Calculation
     if "Short" in strategy:
-        # Use Current Price if Market Order selected, else wait for Resistance
         entry = m['price'] if entry_mode == "Current Price (Market)" else m['res']
         target = m['supp']
         stop = entry + (m['atr'] * stop_mode)
@@ -173,15 +178,12 @@ if st.session_state.data is not None:
         entry = m['supp'] if "Puts" in strategy else m['res']
         stop = entry; risk = entry * 0.1; reward = premium
     else: # Long
-        # Use Current Price if Market Order selected, else wait for Support
         entry = m['price'] if entry_mode == "Current Price (Market)" else m['supp']
         target = m['res']
         stop = entry - (m['atr'] * stop_mode)
         risk, reward = entry - stop, target - entry
     
     rr = reward / risk if risk > 0 else 0
-    
-    # Visual Delta for R/R
     delta_msg = "Excellent (>3.0)" if rr >= 3 else "Good (>2.0)" if rr >= 2 else "Weak (<2.0)"
     delta_col = "normal" if rr >= 2 else "inverse"
     c4.metric("R/R Ratio", f"{rr:.2f}", delta=delta_msg, delta_color=delta_col)
@@ -196,7 +198,7 @@ if st.session_state.data is not None:
     )
     st.pyplot(fig)
 
-    # --- THE AUDIT SYSTEM ---
+    # --- VERDICT ---
     st.markdown("### 📝 The Quantum Verdict")
     score_rr = 2 if rr >= 3 or ("Income" in strategy and rr > 0.1) else 1 if rr >= 2 else 0
     total_score = fresh + time_zone + speed + score_rr
@@ -204,29 +206,17 @@ if st.session_state.data is not None:
     col_verdict, col_audit = st.columns([1, 1])
     
     with col_verdict:
-        if total_score >= 7:
-            st.success(f"## 🟢 GREEN LIGHT\n**Score: {total_score}/8**")
-            st.caption("Perfect Setup. Meets 3:1 criteria.")
-        elif total_score >= 5:
-            st.warning(f"## 🟡 YELLOW LIGHT\n**Score: {total_score}/8**")
-            st.caption("Decent Setup. Check R/R.")
-        else:
-            st.error(f"## 🔴 RED LIGHT\n**Score: {total_score}/8**")
-            st.caption("Low probability or Bad Risk/Reward.")
+        if total_score >= 7: st.success(f"## 🟢 GREEN LIGHT\n**Score: {total_score}/8**")
+        elif total_score >= 5: st.warning(f"## 🟡 YELLOW LIGHT\n**Score: {total_score}/8**")
+        else: st.error(f"## 🔴 RED LIGHT\n**Score: {total_score}/8**")
 
     with col_audit:
         st.markdown("**📋 Setup Audit:**")
         if fresh == 2: st.markdown("✅ **Freshness:** Perfect (2/2)")
-        elif fresh == 1: st.markdown("⚠️ **Freshness:** Used level (1/2)")
-        else: st.markdown("❌ **Freshness:** Stale/Dirty (0/2)")
-        
-        if time_zone == 2: st.markdown("✅ **Time:** Fast Rejection (2/2)")
-        elif time_zone == 1: st.markdown("⚠️ **Time:** Lingered (1/2)")
-        else: st.markdown("❌ **Time:** Stuck in zone (0/2)")
-        
-        if score_rr == 2: st.markdown(f"✅ **Reward/Risk:** Excellent ({rr:.2f} > 3.0)")
-        elif score_rr == 1: st.markdown(f"⚠️ **Reward/Risk:** Acceptable ({rr:.2f} > 2.0)")
-        else: st.markdown(f"❌ **Reward/Risk:** Poor ({rr:.2f} < 2.0)")
+        else: st.markdown("❌ **Freshness:** Issue Found")
+        if score_rr == 2: st.markdown(f"✅ **R/R:** Excellent ({rr:.2f})")
+        else: st.markdown(f"❌ **R/R:** Poor ({rr:.2f})")
+        if abs(m['gap']) > 2.0: st.markdown(f"🚀 **Gap:** Large ({m['gap']:.2f}%)")
 
     # --- BROKER SLIP ---
     st.markdown("---")
@@ -234,27 +224,34 @@ if st.session_state.data is not None:
     
     if "Income" in strategy:
         contracts = int((capital / entry) // 100) if entry > 0 else 0
+        potential_profit = contracts * 100 * premium
         roi = (premium/entry)*100 if entry>0 else 0
-        st.success(f"**INCOME PLAN:** Selling {contracts} Contracts | **Income:** ${contracts*100*premium:.2f} | **ROI:** {roi:.2f}%")
+        
+        goal_status = "✅ GOAL MET" if potential_profit >= daily_goal else f"❌ MISS (${potential_profit - daily_goal:.2f})"
+        st.info(f"**DAILY GOAL CHECK:** {goal_status} (Target: ${daily_goal:.2f})")
+        
         st.code(f"SELL TO OPEN: {ticker} {entry:.2f} Strike | Expiration: 30 Days Out")
     else:
         shares = int(risk_per_trade / risk) if risk > 0 else 0
+        potential_profit = shares * (target-entry) if 'Long' in strategy else shares * (entry-target)
         order_type = "BUY" if "Long" in strategy else "SELL SHORT"
-        order_mode = "MARKET" if entry_mode == "Current Price (Market)" else "LIMIT"
+        
+        goal_status = "✅ GOAL MET" if potential_profit >= daily_goal else f"❌ MISS (${potential_profit - daily_goal:.2f})"
         
         col_slip_1, col_slip_2 = st.columns([2, 1])
         with col_slip_1:
             st.code(f"""
             ACTION:      {order_type}
             SHARES:      {shares}
-            ORDER TYPE:  {order_mode}
-            PRICE:       ${entry:.2f}
+            PRICE:       ${entry:.2f} ({entry_mode})
             ---------------------------
             STOP LOSS:   ${stop:.2f}
             TAKE PROFIT: ${target:.2f}
             """, language="yaml")
         with col_slip_2:
-            st.info(f"**RISK:** ${risk_per_trade:.2f}\n\n**REWARD:** ${(shares*(target-entry) if 'Long' in strategy else shares*(entry-target)):.2f}")
+            st.success(f"**GOAL:** {goal_status}")
+            st.write(f"**Reward:** ${potential_profit:.2f}")
+            st.write(f"**Risk:** ${risk_per_trade:.2f}")
 
 else:
     st.info("👈 Please enter a Ticker on the left and click '2. SCAN TICKER'")
