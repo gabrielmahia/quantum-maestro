@@ -60,6 +60,14 @@ with st.sidebar:
     st.divider()
     st.header("2. Strategy Board")
     strategy = st.selectbox("Execution Mode", ['Long (Buy Stock)', 'Short (Sell Stock)', 'Sell Puts (Income)', 'Sell Calls (Income)'])
+    
+    # --- NEW: REALITY TOGGLE ---
+    entry_mode = st.radio(
+        "Entry Method", 
+        ["Auto-Limit (Wait for Zone)", "Current Price (Market)"],
+        help="Auto-Limit: Assumes you wait for price to hit the perfect zone (Teri's Way). Current Price: Calculates math if you entered RIGHT NOW."
+    )
+    
     stop_mode = st.selectbox("Stop Type", [1.0, 0.2], format_func=lambda x: "Safe Swing (1.0 ATR)" if x == 1.0 else "IWT Tight (0.2 ATR)")
 
     premium = 0.0
@@ -109,7 +117,7 @@ class Analyst:
 
 engine = Analyst()
 
-# --- 6. CONTROL PANEL (Fixed Variable Mismatch) ---
+# --- 6. CONTROL PANEL ---
 c_macro, c_scan = st.columns([1, 1])
 with c_macro:
     if st.button("🌍 1. CHECK MACRO", type="secondary"):
@@ -154,21 +162,26 @@ if st.session_state.data is not None:
     c2.metric("Trend", m['phase'])
     c3.metric("Volume", f"{m['rvol']:.1f}x")
     
-    # Strategy Calculation
+    # Strategy Calculation with REALITY TOGGLE
     if "Short" in strategy:
-        entry, target = m['res'], m['supp']
+        # Use Current Price if Market Order selected, else wait for Resistance
+        entry = m['price'] if entry_mode == "Current Price (Market)" else m['res']
+        target = m['supp']
         stop = entry + (m['atr'] * stop_mode)
         risk, reward = stop - entry, entry - target
     elif "Income" in strategy:
         entry = m['supp'] if "Puts" in strategy else m['res']
         stop = entry; risk = entry * 0.1; reward = premium
     else: # Long
-        entry, target = m['supp'], m['res']
+        # Use Current Price if Market Order selected, else wait for Support
+        entry = m['price'] if entry_mode == "Current Price (Market)" else m['supp']
+        target = m['res']
         stop = entry - (m['atr'] * stop_mode)
         risk, reward = entry - stop, target - entry
     
     rr = reward / risk if risk > 0 else 0
-    # STRICT 3:1 Check
+    
+    # Visual Delta for R/R
     delta_msg = "Excellent (>3.0)" if rr >= 3 else "Good (>2.0)" if rr >= 2 else "Weak (<2.0)"
     delta_col = "normal" if rr >= 2 else "inverse"
     c4.metric("R/R Ratio", f"{rr:.2f}", delta=delta_msg, delta_color=delta_col)
@@ -183,10 +196,8 @@ if st.session_state.data is not None:
     )
     st.pyplot(fig)
 
-    # --- THE AUDIT SYSTEM (Strict 3:1 Rule) ---
+    # --- THE AUDIT SYSTEM ---
     st.markdown("### 📝 The Quantum Verdict")
-    
-    # 2 points for >3.0, 1 point for >2.0, 0 points for <2.0
     score_rr = 2 if rr >= 3 or ("Income" in strategy and rr > 0.1) else 1 if rr >= 2 else 0
     total_score = fresh + time_zone + speed + score_rr
     
@@ -205,18 +216,14 @@ if st.session_state.data is not None:
 
     with col_audit:
         st.markdown("**📋 Setup Audit:**")
-        
-        # Freshness Check
         if fresh == 2: st.markdown("✅ **Freshness:** Perfect (2/2)")
         elif fresh == 1: st.markdown("⚠️ **Freshness:** Used level (1/2)")
         else: st.markdown("❌ **Freshness:** Stale/Dirty (0/2)")
         
-        # Time Check
         if time_zone == 2: st.markdown("✅ **Time:** Fast Rejection (2/2)")
         elif time_zone == 1: st.markdown("⚠️ **Time:** Lingered (1/2)")
         else: st.markdown("❌ **Time:** Stuck in zone (0/2)")
         
-        # R/R Check (Strict 3:1)
         if score_rr == 2: st.markdown(f"✅ **Reward/Risk:** Excellent ({rr:.2f} > 3.0)")
         elif score_rr == 1: st.markdown(f"⚠️ **Reward/Risk:** Acceptable ({rr:.2f} > 2.0)")
         else: st.markdown(f"❌ **Reward/Risk:** Poor ({rr:.2f} < 2.0)")
@@ -230,17 +237,18 @@ if st.session_state.data is not None:
         roi = (premium/entry)*100 if entry>0 else 0
         st.success(f"**INCOME PLAN:** Selling {contracts} Contracts | **Income:** ${contracts*100*premium:.2f} | **ROI:** {roi:.2f}%")
         st.code(f"SELL TO OPEN: {ticker} {entry:.2f} Strike | Expiration: 30 Days Out")
-        
     else:
         shares = int(risk_per_trade / risk) if risk > 0 else 0
         order_type = "BUY" if "Long" in strategy else "SELL SHORT"
+        order_mode = "MARKET" if entry_mode == "Current Price (Market)" else "LIMIT"
         
         col_slip_1, col_slip_2 = st.columns([2, 1])
         with col_slip_1:
             st.code(f"""
             ACTION:      {order_type}
             SHARES:      {shares}
-            LIMIT PRICE: ${entry:.2f}
+            ORDER TYPE:  {order_mode}
+            PRICE:       ${entry:.2f}
             ---------------------------
             STOP LOSS:   ${stop:.2f}
             TAKE PROFIT: ${target:.2f}
