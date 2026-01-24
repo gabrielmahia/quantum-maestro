@@ -30,7 +30,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 3. TITLE & ONBOARDING ---
-st.title("🏛️ Quantum Maestro: Mentor Edition (V10.8)")
+st.title("🏛️ Quantum Maestro: Mentor Edition")
 st.markdown("""
 **What is this?** An Algorithmic Assistant that automates the math for the **7-Step Trade System**. 
 It calculates Risk/Reward, identifies Demand Zones, and audits your trade setups.
