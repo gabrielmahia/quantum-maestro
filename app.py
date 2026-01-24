@@ -37,9 +37,6 @@ st.markdown("""
             border: 1px solid #30333d;
         }
     }
-    .audit-pass { color: #00e676; font-weight: bold; }
-    .audit-fail { color: #ff1744; font-weight: bold; }
-    .audit-warn { color: #ff9100; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -114,7 +111,7 @@ engine = Analyst()
 
 # --- 6. CONTROL PANEL ---
 c_macro, c_scan = st.columns([1, 1])
-with c_macro:
+with col_macro:
     if st.button("🌍 1. CHECK MACRO", type="secondary"):
         with st.spinner("Scanning Global Sensors..."):
             st.session_state.macro = engine.get_macro()
@@ -171,7 +168,10 @@ if st.session_state.data is not None:
         risk, reward = entry - stop, target - entry
     
     rr = reward / risk if risk > 0 else 0
-    c4.metric("R/R Ratio", f"{rr:.2f}", delta="Target > 2.0" if rr >=2 else "Low", delta_color="normal" if rr>=2 else "inverse")
+    # STRICT 3:1 Check
+    delta_msg = "Excellent (>3.0)" if rr >= 3 else "Good (>2.0)" if rr >= 2 else "Weak (<2.0)"
+    delta_col = "normal" if rr >= 2 else "inverse"
+    c4.metric("R/R Ratio", f"{rr:.2f}", delta=delta_msg, delta_color=delta_col)
 
     # Chart
     chart_slice = df.iloc[-60:]
@@ -183,27 +183,27 @@ if st.session_state.data is not None:
     )
     st.pyplot(fig)
 
-    # --- THE AUDIT SYSTEM (New Feature) ---
+    # --- THE AUDIT SYSTEM (Strict 3:1 Rule) ---
     st.markdown("### 📝 The Quantum Verdict")
+    
+    # 2 points for >3.0, 1 point for >2.0, 0 points for <2.0
     score_rr = 2 if rr >= 3 or ("Income" in strategy and rr > 0.1) else 1 if rr >= 2 else 0
     total_score = fresh + time_zone + speed + score_rr
     
     col_verdict, col_audit = st.columns([1, 1])
     
     with col_verdict:
-        # 1. The Big Verdict
         if total_score >= 7:
             st.success(f"## 🟢 GREEN LIGHT\n**Score: {total_score}/8**")
-            st.caption("Perfect setup. High probability.")
+            st.caption("Perfect Setup. Meets 3:1 criteria.")
         elif total_score >= 5:
             st.warning(f"## 🟡 YELLOW LIGHT\n**Score: {total_score}/8**")
-            st.caption("Decent setup, but flawed. Reduce size.")
+            st.caption("Decent Setup. Check R/R.")
         else:
             st.error(f"## 🔴 RED LIGHT\n**Score: {total_score}/8**")
-            st.caption("Low probability. Stay away.")
+            st.caption("Low probability or Bad Risk/Reward.")
 
     with col_audit:
-        # 2. The Detailed Checklist
         st.markdown("**📋 Setup Audit:**")
         
         # Freshness Check
@@ -216,10 +216,10 @@ if st.session_state.data is not None:
         elif time_zone == 1: st.markdown("⚠️ **Time:** Lingered (1/2)")
         else: st.markdown("❌ **Time:** Stuck in zone (0/2)")
         
-        # R/R Check
-        if score_rr == 2: st.markdown(f"✅ **Reward/Risk:** Excellent ({rr:.2f})")
-        elif score_rr == 1: st.markdown(f"⚠️ **Reward/Risk:** Acceptable ({rr:.2f})")
-        else: st.markdown(f"❌ **Reward/Risk:** Poor (<2.0)")
+        # R/R Check (Strict 3:1)
+        if score_rr == 2: st.markdown(f"✅ **Reward/Risk:** Excellent ({rr:.2f} > 3.0)")
+        elif score_rr == 1: st.markdown(f"⚠️ **Reward/Risk:** Acceptable ({rr:.2f} > 2.0)")
+        else: st.markdown(f"❌ **Reward/Risk:** Poor ({rr:.2f} < 2.0)")
 
     # --- BROKER SLIP ---
     st.markdown("---")
