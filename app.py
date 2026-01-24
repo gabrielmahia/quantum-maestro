@@ -6,6 +6,7 @@ import mplfinance as mpf
 import pandas as pd
 import numpy as np
 from scipy.signal import argrelextrema
+from datetime import datetime
 
 # --- 1. CONFIGURATION & VIP WATCHLIST ---
 VIP_TICKERS = ["NVDA", "AAPL", "AMZN", "GOOGL", "TSLA", "MSFT", "META", "AMD", "NFLX", "SPY", "QQQ", "IWM"]
@@ -29,7 +30,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 3. TITLE & ONBOARDING ---
-st.title("🏛️ Quantum Maestro: Mentor Edition")
+st.title("🏛️ Quantum Maestro: Mentor Edition (V10.5)")
 st.markdown("""
 **What is this?** An Algorithmic Assistant that automates the math for the **7-Step Trade System**. 
 It calculates Risk/Reward, identifies Demand Zones, and audits your trade setups.
@@ -52,12 +53,13 @@ if not agree:
 
 st.divider()
 
-# --- 5. SESSION STATE ---
+# --- 5. SESSION STATE (With Journal) ---
 if 'data' not in st.session_state: st.session_state.data = None
 if 'metrics' not in st.session_state: st.session_state.metrics = {}
 if 'macro' not in st.session_state: st.session_state.macro = None
+if 'journal' not in st.session_state: st.session_state.journal = []
 
-# --- 6. SIDEBAR (With Tooltips) ---
+# --- 6. SIDEBAR ---
 with st.sidebar:
     st.header("1. VIP Selection")
     input_mode = st.radio("Input Mode", ["VIP Watchlist", "Manual Search"])
@@ -208,6 +210,10 @@ if st.session_state.data is not None:
     m = st.session_state.metrics
     
     st.divider()
+    
+    # EXTERNAL INTELLIGENCE (NEW)
+    st.markdown(f"📰 **Intelligence:** [Read {ticker} News on Yahoo Finance](https://finance.yahoo.com/quote/{ticker}/news) | [Check SEC Filings](https://www.sec.gov/edgar/searchedgar/companysearch.html)")
+    
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Price", f"${m['price']:.2f}")
     c2.metric("Gap %", f"{m['gap']:.2f}%", delta="GAP UP" if m['gap']>0 else "GAP DOWN", help="Pre-market move. >2% is ideal for Gap & Go.")
@@ -271,9 +277,11 @@ if st.session_state.data is not None:
         else: st.markdown(f"❌ **R/R:** Poor ({rr:.2f})")
         if abs(m['gap']) > 2.0: st.markdown(f"🚀 **Gap:** Large ({m['gap']:.2f}%)")
 
-    # --- BROKER SLIP ---
+    # --- BROKER SLIP & JOURNAL ---
     st.markdown("---")
     st.subheader("🧾 Trade Execution")
+    
+    trade_record = {}
     
     if "Income" in strategy:
         contracts = int((capital / entry) // 100) if entry > 0 else 0
@@ -284,6 +292,8 @@ if st.session_state.data is not None:
         st.success(f"**DAILY GOAL:** {goal_status}")
         
         st.code(f"SELL TO OPEN: {ticker} {entry:.2f} Strike | Expiration: 30 Days Out")
+        trade_record = {"Ticker": ticker, "Type": "INCOME", "Entry": entry, "Profit": potential_profit, "Verdict": f"{total_score}/8"}
+        
     else:
         shares = int(risk_per_trade / risk) if risk > 0 else 0
         potential_profit = shares * (target-entry) if 'Long' in strategy else shares * (entry-target)
@@ -305,6 +315,23 @@ if st.session_state.data is not None:
             st.success(f"**GOAL:** {goal_status}")
             st.write(f"**Potential Reward:** ${potential_profit:.2f}")
             st.write(f"**Max Risk:** ${risk_per_trade:.2f}")
+            
+        trade_record = {"Ticker": ticker, "Type": order_type, "Entry": entry, "Profit": potential_profit, "Verdict": f"{total_score}/8"}
+
+    # --- SAVE TO JOURNAL FEATURE ---
+    if st.button("💾 Log Trade to Journal"):
+        trade_record["Date"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        st.session_state.journal.append(trade_record)
+        st.success("Trade Logged!")
+
+    if st.session_state.journal:
+        st.divider()
+        st.subheader("📓 Session Journal")
+        journal_df = pd.DataFrame(st.session_state.journal)
+        st.dataframe(journal_df)
+        
+        csv = journal_df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Journal (CSV)", data=csv, file_name="trade_journal.csv", mime="text/csv")
 
 else:
     st.info("👈 Please enter a Ticker on the left and click '2. SCAN TICKER'")
