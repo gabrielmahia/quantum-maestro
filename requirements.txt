@@ -1,0 +1,7 @@
+streamlit
+yfinance
+pandas_ta
+mplfinance
+scipy
+pandas
+numpy
