@@ -9,7 +9,7 @@ from scipy.signal import argrelextrema
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="Quantum Maestro Terminal",
+    page_title="Quantum Maestro Trading Bot Terminal",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -33,7 +33,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏛️ Quantum Maestro V8.1: Global Macro Terminal")
+st.title("🏛️ Quantum Maestro Trading Bot: Global Macro Terminal")
 
 # --- 3. SESSION STATE (The Brain Upgrade) ---
 # This keeps data alive between clicks
