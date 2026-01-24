@@ -25,22 +25,40 @@ st.markdown("""
     @media (prefers-color-scheme: dark) {
         div[data-testid="stMetric"] { background-color: #1e2127; border: 1px solid #30333d; }
     }
+    .disclaimer-box { font-size: 0.8em; color: #666; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. TITLE & DESCRIPTION (New Onboarding Section) ---
-st.title("🏛️ Quantum Maestro: Mentor Edition (V10.1)")
+# --- 3. TITLE & ONBOARDING ---
+st.title("🏛️ Quantum Maestro: Mentor Edition (V10.2)")
 st.markdown("""
-**What is this?** This is an **Algorithmic Trading Bot & Assistant**. It helps you scan stocks, calculates your Risk/Reward automatically, and generates a strict "Red Light / Green Light" verdict based on the **Trade & Travel 7-Step System**.
+**What is this?** An Algorithmic Assistant that automates the math for the **7-Step Trade System**. 
+It calculates Risk/Reward, identifies Demand Zones, and audits your trade setups.
 """)
+
+# --- 4. LEGAL DISCLAIMER & GATE (CRITICAL UPDATE) ---
+with st.expander("⚠️ READ FIRST: Legal Disclaimer & Risk Warning", expanded=True):
+    st.markdown("""
+    **1. No Affiliation:** This application is an independent educational tool developed by a former student. It is **not** affiliated with, endorsed by, or sponsored by Teri Ijeoma, Trade and Travel, or any associated entities.
+    
+    **2. Educational Use Only:** This tool provides technical analysis based on mathematical formulas. It is **not** financial advice. You are solely responsible for your own trading decisions.
+    
+    **3. Risk Warning:** Trading stocks and options involves significant risk and can result in the loss of your invested capital. 
+    """)
+    agree = st.checkbox("I understand this is not financial advice and I am using this tool for educational purposes.")
+
+if not agree:
+    st.warning("🛑 Please accept the disclaimer above to access the terminal.")
+    st.stop() # Stops the app here until checked
+
 st.divider()
 
-# --- 4. SESSION STATE ---
+# --- 5. SESSION STATE ---
 if 'data' not in st.session_state: st.session_state.data = None
 if 'metrics' not in st.session_state: st.session_state.metrics = {}
 if 'macro' not in st.session_state: st.session_state.macro = None
 
-# --- 5. SIDEBAR ---
+# --- 6. SIDEBAR ---
 with st.sidebar:
     st.header("1. VIP Selection")
     input_mode = st.radio("Input Mode", ["VIP Watchlist", "Manual Search"])
@@ -85,8 +103,12 @@ with st.sidebar:
     with c4:
         time_zone = st.selectbox("Time in Zone", [2, 1, 0], format_func=lambda x: {2:'2-Short', 1:'1-Med', 0:'0-Long'}[x])
         pattern = st.selectbox("Pattern", ['Consolidation', 'Bull Flag', 'Double Bottom', 'Parabolic', 'Gap Fill'])
+        
+    # PERMANENT SIDEBAR DISCLAIMER
+    st.divider()
+    st.caption("ℹ️ **Legal:** This tool is an independent project and is not affiliated with Trade and Travel. All trademarks belong to their respective owners.")
 
-# --- 6. LOGIC ENGINE ---
+# --- 7. LOGIC ENGINE ---
 class Analyst:
     def fetch_data(self, t):
         try:
@@ -123,7 +145,7 @@ class Analyst:
 
 engine = Analyst()
 
-# --- 7. CONTROL PANEL ---
+# --- 8. CONTROL PANEL ---
 c_macro, c_scan = st.columns([1, 1])
 with c_macro:
     if st.button("🌍 1. CHECK MACRO", type="secondary"):
@@ -146,7 +168,7 @@ with c_scan:
             else:
                 st.error("Ticker not found.")
 
-# --- 8. DASHBOARD ---
+# --- 9. DASHBOARD ---
 if st.session_state.macro:
     m = st.session_state.macro
     with st.expander("🌍 Global Context", expanded=True):
