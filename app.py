@@ -109,9 +109,9 @@ class Analyst:
 
 engine = Analyst()
 
-# --- 6. CONTROL PANEL ---
+# --- 6. CONTROL PANEL (Fixed Variable Mismatch) ---
 c_macro, c_scan = st.columns([1, 1])
-with col_macro:
+with c_macro:
     if st.button("🌍 1. CHECK MACRO", type="secondary"):
         with st.spinner("Scanning Global Sensors..."):
             st.session_state.macro = engine.get_macro()
