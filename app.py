@@ -9,34 +9,62 @@ from scipy.signal import argrelextrema
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="Quantum Maestro Trading Bot Terminal",
+    page_title="Quantum Maestro Terminal",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    page_icon="🏛️"
 )
 
-# --- 2. CSS STYLING (Make it look Professional) ---
+# --- 2. THE "BEAUTIFIER" (Custom CSS) ---
+# This block forces the app to look like a Pro Terminal
 st.markdown("""
 <style>
-    .metric-card {
+    /* Main Background & Text */
+    .stApp {
         background-color: #0e1117;
-        border: 1px solid #262730;
-        border-radius: 5px;
-        padding: 15px;
-        text-align: center;
+        color: #fafafa;
     }
+    /* Metric Cards */
+    div[data-testid="stMetric"] {
+        background-color: #1e2127;
+        border: 1px solid #30333d;
+        border-radius: 8px;
+        padding: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    div[data-testid="stMetricLabel"] {
+        font-size: 0.9em;
+        color: #a0a0a0;
+    }
+    /* Custom Buttons */
     .stButton>button {
         width: 100%;
-        border-radius: 5px;
+        border-radius: 6px;
         height: 3em;
-        font-weight: bold;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    /* Dividers */
+    hr {
+        margin-top: 0.5em;
+        margin-bottom: 0.5em;
+        border: 0;
+        border-top: 1px solid #30333d;
+    }
+    /* Verdict Cards */
+    .verdict-box {
+        padding: 20px;
+        border-radius: 10px;
+        margin-top: 10px;
+        border: 1px solid #ffffff20;
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏛️ Quantum Maestro Trading Bot: Global Macro Terminal")
+st.title("🏛️ Quantum Maestro: Pro Terminal")
 
-# --- 3. SESSION STATE (The Brain Upgrade) ---
-# This keeps data alive between clicks
+# --- 3. SESSION STATE ---
 if 'data' not in st.session_state:
     st.session_state.data = None
 if 'metrics' not in st.session_state:
@@ -46,29 +74,37 @@ if 'macro' not in st.session_state:
 
 # --- 4. SIDEBAR INPUTS ---
 with st.sidebar:
-    st.header("1. Configuration")
-    ticker = st.text_input("Ticker Symbol", value="NVDA").upper()
-    capital = st.number_input("Capital ($)", value=10000)
-    risk_per_trade = st.number_input("Risk Amount ($)", value=100)
+    st.header("1. CONFIGURATION")
+    c1, c2 = st.columns(2)
+    with c1:
+        ticker = st.text_input("Ticker", value="NVDA").upper()
+    with c2:
+        risk_per_trade = st.number_input("Risk $", value=100)
+    capital = st.number_input("Total Capital ($)", value=10000)
 
-    st.header("2. Strategy")
+    st.divider()
+    st.header("2. STRATEGY BOARD")
     strategy = st.selectbox(
-        "Select Strategy",
+        "Execution Mode",
         ['Long (Buy Stock)', 'Short (Sell Stock)', 'Sell Puts (Income)', 'Sell Calls (Income)']
     )
-    stop_mode = st.selectbox("Stop Loss Mode", [1.0, 0.2], format_func=lambda x: "Swing (1.0 ATR)" if x == 1.0 else "IWT Tight (0.2 ATR)")
+    stop_mode = st.selectbox("Stop Type", [1.0, 0.2], format_func=lambda x: "Safe Swing (1.0 ATR)" if x == 1.0 else "IWT Tight (0.2 ATR)")
 
-    # Premium Input (Conditional)
     premium = 0.0
     if "Income" in strategy:
-        st.info("💰 Income Mode Active")
+        st.success("💰 Income Mode Active")
         premium = st.number_input("Option Premium ($)", value=0.0, step=0.05)
 
-    st.header("3. IWT Scorecard")
-    fresh = st.selectbox("Freshness", [2, 1, 0], format_func=lambda x: f"{x} - {'Perfect' if x==2 else 'Okay' if x==1 else 'Bad'}")
-    time_zone = st.selectbox("Time in Zone", [2, 1, 0], format_func=lambda x: f"{x} - {'Fast' if x==2 else 'Medium' if x==1 else 'Slow'}")
-    speed = st.selectbox("Speed Out", [2, 1, 0], format_func=lambda x: f"{x} - {'Gap/Fast' if x==2 else 'Candle' if x==1 else 'Grind'}")
-    pattern = st.selectbox("Pattern", ['Consolidation', 'Bull Flag', 'Double Bottom', 'Parabolic', 'Gap Fill'])
+    st.divider()
+    st.header("3. IWT SCORECARD")
+    # Using columns for tighter layout
+    c3, c4 = st.columns(2)
+    with c3:
+        fresh = st.selectbox("Freshness", [2, 1, 0], format_func=lambda x: {2:'2-Fresh', 1:'1-Used', 0:'0-Stale'}[x])
+        speed = st.selectbox("Speed Out", [2, 1, 0], format_func=lambda x: {2:'2-Fast', 1:'1-Avg', 0:'0-Slow'}[x])
+    with c4:
+        time_zone = st.selectbox("Time in Zone", [2, 1, 0], format_func=lambda x: {2:'2-Short', 1:'1-Med', 0:'0-Long'}[x])
+        pattern = st.selectbox("Pattern", ['Consolidation', 'Bull Flag', 'Double Bottom', 'Parabolic', 'Gap Fill'])
 
 # --- 5. LOGIC ENGINE ---
 class Analyst:
@@ -77,7 +113,7 @@ class Analyst:
             data = yf.Ticker(t).history(period="1y")
             if data.empty: return None
             
-            # Indicators
+            # Math
             data.ta.atr(length=14, append=True)
             data.ta.sma(length=20, append=True)
             data.ta.sma(length=50, append=True)
@@ -85,11 +121,11 @@ class Analyst:
             data['ST_VAL'] = st_data[st_data.columns[0]]
             data['ST_DIR'] = st_data[st_data.columns[1]]
             
-            # Volatility
+            # RVOL
             vol_sma = data['Volume'].rolling(20).mean()
             data['RVOL'] = data['Volume'] / vol_sma
             
-            # Structure (SciPy)
+            # SciPy Structure
             data['Min'] = data.iloc[argrelextrema(data.Close.values, np.less_equal, order=5)[0]]['Close']
             data['Max'] = data.iloc[argrelextrema(data.Close.values, np.greater_equal, order=5)[0]]['Close']
             
@@ -109,29 +145,25 @@ class Analyst:
 
 engine = Analyst()
 
-# --- 6. ACTION BUTTONS (The Control Panel) ---
-col_macro, col_scan = st.columns([1, 1])
-
-with col_macro:
-    if st.button("🌍 1. Check Macro"):
+# --- 6. ACTION PANEL ---
+c_macro, c_scan = st.columns([1, 1])
+with c_macro:
+    if st.button("🌍 1. CHECK MACRO", type="secondary"):
         with st.spinner("Scanning Global Sensors..."):
             st.session_state.macro = engine.get_macro()
-
-with col_scan:
-    if st.button("🔎 2. Scan Ticker"):
-        with st.spinner(f"Analyzing {ticker}..."):
+with c_scan:
+    if st.button("🔎 2. SCAN TICKER", type="primary"):
+        with st.spinner(f"Parsing {ticker}..."):
             df = engine.fetch_data(ticker)
             if df is not None:
                 st.session_state.data = df
-                # Calculate metrics once and save them
                 price = df['Close'].iloc[-1]
-                atr = df['ATRr_14'].iloc[-1]
                 supp = df['Min'][df['Min'] < price * 0.99].iloc[-1] if not df['Min'][df['Min'] < price * 0.99].empty else price * 0.9
                 res = df['Max'][df['Max'] > price * 1.01].iloc[-1] if not df['Max'][df['Max'] > price * 1.01].empty else price * 1.1
                 
                 st.session_state.metrics = {
                     "price": price,
-                    "atr": atr,
+                    "atr": df['ATRr_14'].iloc[-1],
                     "phase": "🚀 UPTREND" if price > df['SMA_20'].iloc[-1] else "📉 DOWNTREND",
                     "supp": supp,
                     "res": res,
@@ -140,40 +172,42 @@ with col_scan:
             else:
                 st.error("Ticker not found.")
 
-# --- 7. DISPLAY LOGIC (Only runs if data exists in memory) ---
+# --- 7. DISPLAY LAYER ---
 
-# A. MACRO SECTION
+# A. MACRO HEADER
 if st.session_state.macro:
     m = st.session_state.macro
-    with st.expander("🌍 Global Macro Context", expanded=True):
-        c1, c2, c3 = st.columns(3)
-        c1.metric("S&P 500 Futures", f"{m['sp_change']:.2f}%")
-        c2.metric("VIX (Fear Gauge)", f"{m['vix']:.2f}")
-        c3.metric("Gold (Chaos)", f"{m['gold_change']:.2f}%")
+    with st.container():
+        st.markdown("#### 🌍 Global Atmosphere")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("S&P Futures", f"{m['sp_change']:.2f}%", delta_color="normal")
+        c2.metric("VIX (Fear)", f"{m['vix']:.2f}", delta_color="inverse")
+        c3.metric("Gold", f"{m['gold_change']:.2f}%")
         
+        # Macro Logic
         if m['sp_change'] < -0.5 and m['vix'] > 20:
-            st.error("🐻 BIAS: BEARISH. Cash is King.")
+            c4.error("🐻 BEAR BIAS")
+            st.caption("Advice: Selling pressure is high. Favor Shorts or Cash.")
         elif m['sp_change'] > 0.5 and m['vix'] < 20:
-            st.success("🐂 BIAS: BULLISH. Buying Dips Allowed.")
+            c4.success("🐂 BULL BIAS")
+            st.caption("Advice: Trend is healthy. Buy Dips.")
         else:
-            st.warning("🦀 BIAS: CHOPPY. Be selective.")
+            c4.warning("🦀 CHOPPY")
+            st.caption("Advice: Market is sideways. Be selective.")
+    st.divider()
 
-# B. TICKER SECTION
+# B. TICKER DATA
 if st.session_state.data is not None:
     df = st.session_state.data
     m = st.session_state.metrics
     
-    st.divider()
-    
-    # 1. Dashboard Metrics
+    # 1. Ticker Metrics
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Ticker", ticker)
-    c2.metric("Price", f"${m['price']:.2f}")
-    c3.metric("Trend", m['phase'])
-    c4.metric("Volume", f"{m['rvol']:.1f}x Avg")
-
-    # 2. Strategy Engine (Live Calculation)
-    # This runs every time you change a sidebar input because it uses stored data
+    c1.metric("Current Price", f"${m['price']:.2f}")
+    c2.metric("Trend Phase", m['phase'])
+    c3.metric("Volume (RVOL)", f"{m['rvol']:.1f}x")
+    
+    # Strategy Calculation
     if "Short" in strategy:
         entry, target = m['res'], m['supp']
         stop = entry + (m['atr'] * stop_mode)
@@ -191,69 +225,71 @@ if st.session_state.data is not None:
         reward = target - entry
     
     rr = reward / risk if risk > 0 else 0
-    
-    # 3. Charting (The Visuals)
-    st.subheader(f"📊 Technical Structure: {ticker}")
-    
-    # Slice for speed and readability
+    c4.metric("Risk/Reward", f"{rr:.2f}")
+
+    # 2. Chart
     chart_slice = df.iloc[-60:]
-    
-    # Create the chart with Zones
     fig, ax = mpf.plot(
-        chart_slice, 
-        type='candle', 
-        style='yahoo', 
-        volume=True,
+        chart_slice, type='candle', style='nightclouds', volume=True,
         addplot=[
-            mpf.make_addplot(chart_slice['SMA_20'], color='blue', width=1.5),
-            mpf.make_addplot(chart_slice['ST_VAL'], color='orange', linestyle='--')
+            mpf.make_addplot(chart_slice['SMA_20'], color='#2962ff'),
+            mpf.make_addplot(chart_slice['ST_VAL'], color='#ff6d00')
         ],
-        hlines=dict(hlines=[entry, target if "Income" not in strategy else entry], colors=['green','red'], linestyle='-.', linewidths=1.5),
-        returnfig=True,
-        figsize=(12, 6) # Bigger layout for Web
+        hlines=dict(hlines=[entry, target if "Income" not in strategy else entry], colors=['#00e676','#ff1744'], linestyle='-.'),
+        returnfig=True, figsize=(12, 5), fontscale=0.8
     )
     st.pyplot(fig)
 
-    # 4. The Verdict Console
-    st.divider()
-    st.subheader("📝 The Quantum Verdict")
+    # 3. THE EXPLAINER ENGINE (Verdict Logic)
+    st.markdown("### 📝 The Quantum Verdict")
     
+    # Calculate Score
     score_rr = 2 if rr >= 3 or ("Income" in strategy and rr > 0.1) else 1 if rr >= 2 else 0
     total_score = fresh + time_zone + speed + score_rr
     
-    col_verdict, col_plan = st.columns([1, 2])
+    # Generate "Why" Description
+    reasons = []
+    if fresh < 2: reasons.append("Level is not fresh")
+    if time_zone < 2: reasons.append("Spent too long in zone")
+    if speed < 2: reasons.append("Slow momentum leaving zone")
+    if score_rr == 0: reasons.append(f"R/R ({rr:.2f}) is below 2.0")
     
-    with col_verdict:
-        if total_score >= 7:
-            st.success(f"## 🟢 GREEN LIGHT\n**Score: {total_score}/8**")
-        elif total_score >= 5:
-            st.warning(f"## 🟡 YELLOW LIGHT\n**Score: {total_score}/8**")
-        else:
-            st.error(f"## 🔴 NO TRADE\n**Score: {total_score}/8**")
-            
-    with col_plan:
-        st.markdown(f"#### 🏹 Execution Plan: {strategy}")
+    reason_text = " • ".join(reasons) if reasons else "All Odd Enhancers aligned."
+
+    # Render Verdict
+    if total_score >= 7:
+        st.success(f"### 🟢 GREEN LIGHT (Score: {total_score}/8)")
+        st.write(f"**Confidence:** High. {reason_text}")
+    elif total_score >= 5:
+        st.warning(f"### 🟡 YELLOW LIGHT (Score: {total_score}/8)")
+        st.write(f"**Wait for Confirmation.** Why? {reason_text}")
+        st.write("*Tip: Wait for a reversal candlestick pattern before entering.*")
+    else:
+        st.error(f"### 🔴 RED LIGHT (Score: {total_score}/8)")
+        st.write(f"**No Trade.** Why? {reason_text}")
+
+    # 4. Execution Plan (Card Style)
+    with st.expander("🏹 View Execution Plan", expanded=True):
         if "Income" in strategy:
-            shares = int(capital / entry) if entry > 0 else 0
-            contracts = shares // 100
+            contracts = int((capital / entry) // 100) if entry > 0 else 0
             collateral = contracts * 100 * entry
             income = contracts * 100 * premium
             roi = (premium/entry)*100 if entry>0 else 0
             
             st.info(f"""
-            - **Strike (Entry):** ${entry:.2f}
-            - **Sell Contracts:** {contracts}
+            **INCOME SETUP:**
+            - **Sell:** {contracts} Contracts of the ${entry:.2f} Strike
+            - **Collect:** ${income:.2f} Premium
             - **Collateral:** ${collateral:,.2f}
-            - **Instant Income:** ${income:.2f} (ROI: {roi:.2f}%)
+            - **ROI:** {roi:.2f}% Cash-on-Cash
             """)
         else:
             shares = int(risk_per_trade / risk) if risk > 0 else 0
             st.info(f"""
-            - **Entry:** ${entry:.2f}
-            - **Stop Loss:** ${stop:.2f}
+            **SWING SETUP:**
+            - **Order:** {strategy} {shares} shares @ ${entry:.2f}
+            - **Stop:** ${stop:.2f} (Risking ${risk_per_trade})
             - **Target:** ${target:.2f}
-            - **Size:** {shares} shares (Risking ${risk_per_trade})
-            - **R/R Ratio:** {rr:.2f}
             """)
 
 else:
