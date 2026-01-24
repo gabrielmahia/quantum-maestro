@@ -30,13 +30,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 3. TITLE & ONBOARDING ---
-st.title("🏛️ Quantum Maestro: Mentor Edition")
+st.title("🏛️ Quantum Maestro: Mentor Edition (V10.3)")
 st.markdown("""
 **What is this?** An Algorithmic Assistant that automates the math for the **7-Step Trade System**. 
 It calculates Risk/Reward, identifies Demand Zones, and audits your trade setups.
 """)
 
-# --- 4. LEGAL DISCLAIMER & GATE (CRITICAL UPDATE) ---
+# --- 4. LEGAL DISCLAIMER & GATE ---
 with st.expander("⚠️ READ FIRST: Legal Disclaimer & Risk Warning", expanded=True):
     st.markdown("""
     **1. No Affiliation:** This application is an independent educational tool developed by a former student. It is **not** affiliated with, endorsed by, or sponsored by Teri Ijeoma, Trade and Travel, or any associated entities.
@@ -49,7 +49,7 @@ with st.expander("⚠️ READ FIRST: Legal Disclaimer & Risk Warning", expanded=
 
 if not agree:
     st.warning("🛑 Please accept the disclaimer above to access the terminal.")
-    st.stop() # Stops the app here until checked
+    st.stop() 
 
 st.divider()
 
@@ -58,28 +58,32 @@ if 'data' not in st.session_state: st.session_state.data = None
 if 'metrics' not in st.session_state: st.session_state.metrics = {}
 if 'macro' not in st.session_state: st.session_state.macro = None
 
-# --- 6. SIDEBAR ---
+# --- 6. SIDEBAR (With Tooltips Restored) ---
 with st.sidebar:
     st.header("1. VIP Selection")
     input_mode = st.radio("Input Mode", ["VIP Watchlist", "Manual Search"])
     
     if input_mode == "VIP Watchlist":
-        ticker = st.selectbox("Select Ticker", VIP_TICKERS)
+        ticker = st.selectbox("Select Ticker", VIP_TICKERS, help="Choose from Teri's High-Volume Favorites.")
     else:
-        ticker = st.text_input("Enter Ticker", value="NVDA").upper()
+        ticker = st.text_input("Enter Ticker", value="NVDA", help="Enter the stock symbol (e.g., TSLA, AMD).").upper()
         
     c1, c2 = st.columns(2)
     with c1:
-        capital = st.number_input("Total Capital ($)", value=10000)
+        capital = st.number_input("Total Capital ($)", value=10000, help="Your total account balance/buying power.")
     with c2:
-        risk_per_trade = st.number_input("Risk $", value=100)
+        risk_per_trade = st.number_input("Risk $", value=100, help="The maximum amount you are willing to lose per trade.")
 
     daily_goal = capital * 0.01
     st.caption(f"🎯 Daily Goal (1%): **${daily_goal:.2f}**")
 
     st.divider()
     st.header("2. Strategy Board")
-    strategy = st.selectbox("Execution Mode", ['Long (Buy Stock)', 'Short (Sell Stock)', 'Sell Puts (Income)', 'Sell Calls (Income)'])
+    strategy = st.selectbox(
+        "Execution Mode", 
+        ['Long (Buy Stock)', 'Short (Sell Stock)', 'Sell Puts (Income)', 'Sell Calls (Income)'],
+        help="Long: Profit if price goes UP. Short: Profit if price goes DOWN. Income: Get paid to wait (Options)."
+    )
     
     entry_mode = st.radio(
         "Entry Method", 
@@ -87,26 +91,46 @@ with st.sidebar:
         help="Auto-Limit: Best case scenario (Wait for dip). Current Price: Entering right now."
     )
     
-    stop_mode = st.selectbox("Stop Type", [1.0, 0.2], format_func=lambda x: "Safe Swing (1.0 ATR)" if x == 1.0 else "IWT Tight (0.2 ATR)")
+    stop_mode = st.selectbox(
+        "Stop Type", 
+        [1.0, 0.2], 
+        format_func=lambda x: "Safe Swing (1.0 ATR)" if x == 1.0 else "IWT Tight (0.2 ATR)",
+        help="Swing (1.0): Gives the stock room to breathe. Tight (0.2): Very close stop, high risk of stopping out early."
+    )
 
     premium = 0.0
     if "Income" in strategy:
         st.success("💰 Income Mode")
-        premium = st.number_input("Option Premium ($)", value=0.0, step=0.05)
+        premium = st.number_input("Option Premium ($)", value=0.0, step=0.05, help="The price per share the market will pay you for the contract.")
 
     st.divider()
     st.header("3. IWT Scorecard")
+    st.caption("Hover over the '?' for definitions.")
     c3, c4 = st.columns(2)
     with c3:
-        fresh = st.selectbox("Freshness", [2, 1, 0], format_func=lambda x: {2:'2-Fresh', 1:'1-Used', 0:'0-Stale'}[x])
-        speed = st.selectbox("Speed Out", [2, 1, 0], format_func=lambda x: {2:'2-Fast', 1:'1-Avg', 0:'0-Slow'}[x])
+        fresh = st.selectbox(
+            "Freshness", [2, 1, 0], 
+            format_func=lambda x: {2:'2-Fresh', 1:'1-Used', 0:'0-Stale'}[x],
+            help="Fresh: Price has NOT touched this level recently. Stale: Price has bounced here many times."
+        )
+        speed = st.selectbox(
+            "Speed Out", [2, 1, 0], 
+            format_func=lambda x: {2:'2-Fast', 1:'1-Avg', 0:'0-Slow'}[x],
+            help="How fast did price leave this zone last time? Fast/Gap = Strong Buying."
+        )
     with c4:
-        time_zone = st.selectbox("Time in Zone", [2, 1, 0], format_func=lambda x: {2:'2-Short', 1:'1-Med', 0:'0-Long'}[x])
-        pattern = st.selectbox("Pattern", ['Consolidation', 'Bull Flag', 'Double Bottom', 'Parabolic', 'Gap Fill'])
+        time_zone = st.selectbox(
+            "Time in Zone", [2, 1, 0], 
+            format_func=lambda x: {2:'2-Short', 1:'1-Med', 0:'0-Long'}[x],
+            help="Did price hang around? Short time = Strong rejection. Long time = Weak rejection."
+        )
+        pattern = st.selectbox(
+            "Pattern", ['Consolidation', 'Bull Flag', 'Double Bottom', 'Parabolic', 'Gap Fill'],
+            help="Select the specific chart formation you see."
+        )
         
-    # PERMANENT SIDEBAR DISCLAIMER
     st.divider()
-    st.caption("ℹ️ **Legal:** This tool is an independent project and is not affiliated with Trade and Travel. All trademarks belong to their respective owners.")
+    st.caption("ℹ️ **Legal:** This tool is an independent project and is not affiliated with Trade and Travel.")
 
 # --- 7. LOGIC ENGINE ---
 class Analyst:
@@ -173,8 +197,8 @@ if st.session_state.macro:
     m = st.session_state.macro
     with st.expander("🌍 Global Context", expanded=True):
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Futures", f"{m['sp_change']:.2f}%")
-        c2.metric("VIX", f"{m['vix']:.2f}")
+        c1.metric("Futures", f"{m['sp_change']:.2f}%", help="Pre-market direction of S&P 500.")
+        c2.metric("VIX", f"{m['vix']:.2f}", help="Fear Gauge. >20 = High Volatility.")
         c3.metric("Gold", f"{m['gold_change']:.2f}%")
         if m['sp_change'] < -0.5 and m['vix'] > 20: c4.error("🐻 BEAR")
         elif m['sp_change'] > 0.5 and m['vix'] < 20: c4.success("🐂 BULL")
@@ -187,8 +211,8 @@ if st.session_state.data is not None:
     st.divider()
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Price", f"${m['price']:.2f}")
-    c2.metric("Gap %", f"{m['gap']:.2f}%", delta="GAP UP" if m['gap']>0 else "GAP DOWN")
-    c3.metric("Volume", f"{m['rvol']:.1f}x")
+    c2.metric("Gap %", f"{m['gap']:.2f}%", delta="GAP UP" if m['gap']>0 else "GAP DOWN", help="Pre-market move. >2% is ideal for Gap & Go.")
+    c3.metric("Volume", f"{m['rvol']:.1f}x", help="Relative Volume. >1.0 means High Interest.")
     
     # Strategy Calculation
     if "Short" in strategy:
@@ -208,7 +232,7 @@ if st.session_state.data is not None:
     rr = reward / risk if risk > 0 else 0
     delta_msg = "Excellent (>3.0)" if rr >= 3 else "Good (>2.0)" if rr >= 2 else "Weak (<2.0)"
     delta_col = "normal" if rr >= 2 else "inverse"
-    c4.metric("R/R Ratio", f"{rr:.2f}", delta=delta_msg, delta_color=delta_col)
+    c4.metric("R/R Ratio", f"{rr:.2f}", delta=delta_msg, delta_color=delta_col, help="Must be > 3.0 for Green Light.")
 
     # Chart
     chart_slice = df.iloc[-60:]
