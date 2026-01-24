@@ -15,10 +15,9 @@ st.set_page_config(
     page_icon="🏛️"
 )
 
-# --- 2. STANDARDIZED UI (Best Practices) ---
+# --- 2. CSS STYLING ---
 st.markdown("""
 <style>
-    /* Standardize Button Height & Weight */
     .stButton>button {
         width: 100%;
         border-radius: 4px;
@@ -26,29 +25,21 @@ st.markdown("""
         font-weight: 600;
         letter-spacing: 0.5px;
     }
-    
-    /* Clean Metric Cards - consistent padding */
     div[data-testid="stMetric"] {
         background-color: #f0f2f6;
         border: 1px solid #d6d6d6;
         border-radius: 6px;
         padding: 10px 15px;
     }
-    
-    /* Dark Mode Adaptation */
     @media (prefers-color-scheme: dark) {
         div[data-testid="stMetric"] {
             background-color: #1e2127;
             border: 1px solid #30333d;
         }
     }
-    
-    /* Broker Slip Container */
-    .broker-container {
-        border-left: 4px solid #4CAF50;
-        padding-left: 15px;
-        margin-top: 20px;
-    }
+    .audit-pass { color: #00e676; font-weight: bold; }
+    .audit-fail { color: #ff1744; font-weight: bold; }
+    .audit-warn { color: #ff9100; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -64,9 +55,9 @@ with st.sidebar:
     st.header("1. Configuration")
     c1, c2 = st.columns(2)
     with c1:
-        ticker = st.text_input("Ticker", value="NVDA", help="Symbol to trade").upper()
+        ticker = st.text_input("Ticker", value="NVDA").upper()
     with c2:
-        risk_per_trade = st.number_input("Risk $", value=100, help="Max loss per trade")
+        risk_per_trade = st.number_input("Risk $", value=100)
     capital = st.number_input("Total Capital ($)", value=10000)
 
     st.divider()
@@ -122,12 +113,12 @@ class Analyst:
 engine = Analyst()
 
 # --- 6. CONTROL PANEL ---
-col_macro, col_scan = st.columns([1, 1])
-with col_macro:
+c_macro, c_scan = st.columns([1, 1])
+with c_macro:
     if st.button("🌍 1. CHECK MACRO", type="secondary"):
         with st.spinner("Scanning Global Sensors..."):
             st.session_state.macro = engine.get_macro()
-with col_scan:
+with c_scan:
     if st.button("🔎 2. SCAN TICKER", type="primary"):
         with st.spinner(f"Parsing {ticker}..."):
             df = engine.fetch_data(ticker)
@@ -166,6 +157,7 @@ if st.session_state.data is not None:
     c2.metric("Trend", m['phase'])
     c3.metric("Volume", f"{m['rvol']:.1f}x")
     
+    # Strategy Calculation
     if "Short" in strategy:
         entry, target = m['res'], m['supp']
         stop = entry + (m['atr'] * stop_mode)
@@ -179,7 +171,7 @@ if st.session_state.data is not None:
         risk, reward = entry - stop, target - entry
     
     rr = reward / risk if risk > 0 else 0
-    c4.metric("R/R Ratio", f"{rr:.2f}", delta="Good" if rr >=2 else "Low", delta_color="normal" if rr>=2 else "inverse")
+    c4.metric("R/R Ratio", f"{rr:.2f}", delta="Target > 2.0" if rr >=2 else "Low", delta_color="normal" if rr>=2 else "inverse")
 
     # Chart
     chart_slice = df.iloc[-60:]
@@ -191,55 +183,70 @@ if st.session_state.data is not None:
     )
     st.pyplot(fig)
 
-    # Verdict
-    st.subheader("📝 The Quantum Verdict")
+    # --- THE AUDIT SYSTEM (New Feature) ---
+    st.markdown("### 📝 The Quantum Verdict")
     score_rr = 2 if rr >= 3 or ("Income" in strategy and rr > 0.1) else 1 if rr >= 2 else 0
     total_score = fresh + time_zone + speed + score_rr
     
-    reasons = []
-    if fresh < 2: reasons.append("Level not fresh")
-    if time_zone < 2: reasons.append("Price lingered")
-    if speed < 2: reasons.append("Weak momentum")
-    if score_rr == 0: reasons.append(f"Low R/R ({rr:.2f})")
+    col_verdict, col_audit = st.columns([1, 1])
     
-    col_score, col_detail = st.columns([1,3])
-    with col_score:
-        if total_score >= 7: st.success(f"## 🟢 {total_score}/8")
-        elif total_score >= 5: st.warning(f"## 🟡 {total_score}/8")
-        else: st.error(f"## 🔴 {total_score}/8")
-    with col_detail:
-        st.progress(total_score / 8)
-        if reasons: st.write(f"⚠️ **Issues:** {', '.join(reasons)}")
-        else: st.write("✅ **Clean Setup:** All Odd Enhancers aligned.")
+    with col_verdict:
+        # 1. The Big Verdict
+        if total_score >= 7:
+            st.success(f"## 🟢 GREEN LIGHT\n**Score: {total_score}/8**")
+            st.caption("Perfect setup. High probability.")
+        elif total_score >= 5:
+            st.warning(f"## 🟡 YELLOW LIGHT\n**Score: {total_score}/8**")
+            st.caption("Decent setup, but flawed. Reduce size.")
+        else:
+            st.error(f"## 🔴 RED LIGHT\n**Score: {total_score}/8**")
+            st.caption("Low probability. Stay away.")
 
-    # --- THE NEW STANDARDIZED BROKER SLIP ---
+    with col_audit:
+        # 2. The Detailed Checklist
+        st.markdown("**📋 Setup Audit:**")
+        
+        # Freshness Check
+        if fresh == 2: st.markdown("✅ **Freshness:** Perfect (2/2)")
+        elif fresh == 1: st.markdown("⚠️ **Freshness:** Used level (1/2)")
+        else: st.markdown("❌ **Freshness:** Stale/Dirty (0/2)")
+        
+        # Time Check
+        if time_zone == 2: st.markdown("✅ **Time:** Fast Rejection (2/2)")
+        elif time_zone == 1: st.markdown("⚠️ **Time:** Lingered (1/2)")
+        else: st.markdown("❌ **Time:** Stuck in zone (0/2)")
+        
+        # R/R Check
+        if score_rr == 2: st.markdown(f"✅ **Reward/Risk:** Excellent ({rr:.2f})")
+        elif score_rr == 1: st.markdown(f"⚠️ **Reward/Risk:** Acceptable ({rr:.2f})")
+        else: st.markdown(f"❌ **Reward/Risk:** Poor (<2.0)")
+
+    # --- BROKER SLIP ---
     st.markdown("---")
     st.subheader("🧾 Trade Execution")
     
     if "Income" in strategy:
         contracts = int((capital / entry) // 100) if entry > 0 else 0
         roi = (premium/entry)*100 if entry>0 else 0
-        # Income Slip
-        st.info(f"**💰 INCOME TRADE:** Selling {contracts} Contracts | **ROI:** {roi:.2f}%")
-        st.code(f"SELL TO OPEN: {ticker} {entry} Strike | Expiration: 30 Days Out")
+        st.success(f"**INCOME PLAN:** Selling {contracts} Contracts | **Income:** ${contracts*100*premium:.2f} | **ROI:** {roi:.2f}%")
+        st.code(f"SELL TO OPEN: {ticker} {entry:.2f} Strike | Expiration: 30 Days Out")
         
     else:
         shares = int(risk_per_trade / risk) if risk > 0 else 0
-        potential_profit = shares * (target-entry) if 'Long' in strategy else shares * (entry-target)
         order_type = "BUY" if "Long" in strategy else "SELL SHORT"
         
-        # 1. The Summary (Big Text)
-        st.success(f"**RISK ASSESSMENT:** Risking **${risk_per_trade:.2f}** to make **${potential_profit:.2f}**")
-        
-        # 2. The Instruction (Code Block)
-        st.code(f"""
-        ACTION:      {order_type}
-        SHARES:      {shares}
-        LIMIT PRICE: ${entry:.2f}
-        ---------------------------
-        STOP LOSS:   ${stop:.2f}
-        TAKE PROFIT: ${target:.2f}
-        """, language="yaml")
+        col_slip_1, col_slip_2 = st.columns([2, 1])
+        with col_slip_1:
+            st.code(f"""
+            ACTION:      {order_type}
+            SHARES:      {shares}
+            LIMIT PRICE: ${entry:.2f}
+            ---------------------------
+            STOP LOSS:   ${stop:.2f}
+            TAKE PROFIT: ${target:.2f}
+            """, language="yaml")
+        with col_slip_2:
+            st.info(f"**RISK:** ${risk_per_trade:.2f}\n\n**REWARD:** ${(shares*(target-entry) if 'Long' in strategy else shares*(entry-target)):.2f}")
 
 else:
     st.info("👈 Please enter a Ticker on the left and click '2. SCAN TICKER'")
