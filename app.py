@@ -25,12 +25,11 @@ st.markdown("""
     @media (prefers-color-scheme: dark) {
         div[data-testid="stMetric"] { background-color: #1e2127; border: 1px solid #30333d; }
     }
-    .disclaimer-box { font-size: 0.8em; color: #666; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- 3. TITLE & ONBOARDING ---
-st.title("🏛️ Quantum Maestro: Mentor Edition (V10.3)")
+st.title("🏛️ Quantum Maestro: Mentor Edition (V10.4)")
 st.markdown("""
 **What is this?** An Algorithmic Assistant that automates the math for the **7-Step Trade System**. 
 It calculates Risk/Reward, identifies Demand Zones, and audits your trade setups.
@@ -58,7 +57,7 @@ if 'data' not in st.session_state: st.session_state.data = None
 if 'metrics' not in st.session_state: st.session_state.metrics = {}
 if 'macro' not in st.session_state: st.session_state.macro = None
 
-# --- 6. SIDEBAR (With Tooltips Restored) ---
+# --- 6. SIDEBAR (With Tooltips) ---
 with st.sidebar:
     st.header("1. VIP Selection")
     input_mode = st.radio("Input Mode", ["VIP Watchlist", "Manual Search"])
@@ -252,14 +251,22 @@ if st.session_state.data is not None:
     col_verdict, col_audit = st.columns([1, 1])
     
     with col_verdict:
-        if total_score >= 7: st.success(f"## 🟢 GREEN LIGHT\n**Score: {total_score}/8**")
-        elif total_score >= 5: st.warning(f"## 🟡 YELLOW LIGHT\n**Score: {total_score}/8**")
-        else: st.error(f"## 🔴 RED LIGHT\n**Score: {total_score}/8**")
+        if total_score >= 7: 
+            st.success(f"## 🟢 GREEN LIGHT\n**Score: {total_score}/8**")
+            st.caption("Action: Execute Trade.")
+        elif total_score >= 5: 
+            st.warning(f"## 🟡 YELLOW LIGHT\n**Score: {total_score}/8**")
+            st.caption("Action: **Reduce Size** or **Wait for Confirmation**.")
+        else: 
+            st.error(f"## 🔴 RED LIGHT\n**Score: {total_score}/8**")
+            st.caption("Action: Do Not Trade.")
 
     with col_audit:
         st.markdown("**📋 Setup Audit:**")
         if fresh == 2: st.markdown("✅ **Freshness:** Perfect (2/2)")
-        else: st.markdown("❌ **Freshness:** Issue Found")
+        elif fresh == 1: st.markdown("⚠️ **Freshness:** Used Level (1/2)")
+        else: st.markdown("❌ **Freshness:** Stale / Dirty (0/2)")
+        
         if score_rr == 2: st.markdown(f"✅ **R/R:** Excellent ({rr:.2f})")
         else: st.markdown(f"❌ **R/R:** Poor ({rr:.2f})")
         if abs(m['gap']) > 2.0: st.markdown(f"🚀 **Gap:** Large ({m['gap']:.2f}%)")
@@ -273,8 +280,8 @@ if st.session_state.data is not None:
         potential_profit = contracts * 100 * premium
         roi = (premium/entry)*100 if entry>0 else 0
         
-        goal_status = "✅ GOAL MET" if potential_profit >= daily_goal else f"❌ MISS (${potential_profit - daily_goal:.2f})"
-        st.info(f"**DAILY GOAL CHECK:** {goal_status} (Target: ${daily_goal:.2f})")
+        goal_status = f"✅ GOAL MET (>${daily_goal:.2f})" if potential_profit >= daily_goal else f"❌ MISS (${potential_profit - daily_goal:.2f})"
+        st.success(f"**DAILY GOAL:** {goal_status}")
         
         st.code(f"SELL TO OPEN: {ticker} {entry:.2f} Strike | Expiration: 30 Days Out")
     else:
@@ -282,7 +289,7 @@ if st.session_state.data is not None:
         potential_profit = shares * (target-entry) if 'Long' in strategy else shares * (entry-target)
         order_type = "BUY" if "Long" in strategy else "SELL SHORT"
         
-        goal_status = "✅ GOAL MET" if potential_profit >= daily_goal else f"❌ MISS (${potential_profit - daily_goal:.2f})"
+        goal_status = f"✅ GOAL MET (Target > ${daily_goal:.0f})" if potential_profit >= daily_goal else f"❌ MISS (< ${daily_goal:.0f})"
         
         col_slip_1, col_slip_2 = st.columns([2, 1])
         with col_slip_1:
@@ -296,8 +303,8 @@ if st.session_state.data is not None:
             """, language="yaml")
         with col_slip_2:
             st.success(f"**GOAL:** {goal_status}")
-            st.write(f"**Reward:** ${potential_profit:.2f}")
-            st.write(f"**Risk:** ${risk_per_trade:.2f}")
+            st.write(f"**Potential Reward:** ${potential_profit:.2f}")
+            st.write(f"**Max Risk:** ${risk_per_trade:.2f}")
 
 else:
     st.info("👈 Please enter a Ticker on the left and click '2. SCAN TICKER'")
