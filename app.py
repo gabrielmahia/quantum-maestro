@@ -15,28 +15,11 @@ st.set_page_config(
     page_icon="🏛️"
 )
 
-# --- 2. THE "BEAUTIFIER" (Custom CSS) ---
-# This block forces the app to look like a Pro Terminal
+# --- 2. CLEAN UI (No Forced Colors) ---
+# We keep the layout tweaks but removed the background colors.
 st.markdown("""
 <style>
-    /* Main Background & Text */
-    .stApp {
-        background-color: #0e1117;
-        color: #fafafa;
-    }
-    /* Metric Cards */
-    div[data-testid="stMetric"] {
-        background-color: #1e2127;
-        border: 1px solid #30333d;
-        border-radius: 8px;
-        padding: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    }
-    div[data-testid="stMetricLabel"] {
-        font-size: 0.9em;
-        color: #a0a0a0;
-    }
-    /* Custom Buttons */
+    /* Better Button Styling */
     .stButton>button {
         width: 100%;
         border-radius: 6px;
@@ -45,19 +28,18 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 1px;
     }
-    /* Dividers */
-    hr {
-        margin-top: 0.5em;
-        margin-bottom: 0.5em;
-        border: 0;
-        border-top: 1px solid #30333d;
+    /* Clean Metric Cards (Adapts to Light/Dark mode) */
+    div[data-testid="stMetric"] {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    /* Verdict Cards */
-    .verdict-box {
-        padding: 20px;
-        border-radius: 10px;
-        margin-top: 10px;
-        border: 1px solid #ffffff20;
+    /* Dark mode override for metrics borders if user is in dark mode */
+    @media (prefers-color-scheme: dark) {
+        div[data-testid="stMetric"] {
+            border: 1px solid #30333d;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -97,7 +79,6 @@ with st.sidebar:
 
     st.divider()
     st.header("3. IWT SCORECARD")
-    # Using columns for tighter layout
     c3, c4 = st.columns(2)
     with c3:
         fresh = st.selectbox("Freshness", [2, 1, 0], format_func=lambda x: {2:'2-Fresh', 1:'1-Used', 0:'0-Stale'}[x])
@@ -227,15 +208,15 @@ if st.session_state.data is not None:
     rr = reward / risk if risk > 0 else 0
     c4.metric("Risk/Reward", f"{rr:.2f}")
 
-    # 2. Chart
+    # 2. Chart (Switched style to 'yahoo' which looks better on light backgrounds)
     chart_slice = df.iloc[-60:]
     fig, ax = mpf.plot(
-        chart_slice, type='candle', style='nightclouds', volume=True,
+        chart_slice, type='candle', style='yahoo', volume=True,
         addplot=[
-            mpf.make_addplot(chart_slice['SMA_20'], color='#2962ff'),
-            mpf.make_addplot(chart_slice['ST_VAL'], color='#ff6d00')
+            mpf.make_addplot(chart_slice['SMA_20'], color='blue'),
+            mpf.make_addplot(chart_slice['ST_VAL'], color='orange')
         ],
-        hlines=dict(hlines=[entry, target if "Income" not in strategy else entry], colors=['#00e676','#ff1744'], linestyle='-.'),
+        hlines=dict(hlines=[entry, target if "Income" not in strategy else entry], colors=['green','red'], linestyle='-.'),
         returnfig=True, figsize=(12, 5), fontscale=0.8
     )
     st.pyplot(fig)
@@ -243,7 +224,6 @@ if st.session_state.data is not None:
     # 3. THE EXPLAINER ENGINE (Verdict Logic)
     st.markdown("### 📝 The Quantum Verdict")
     
-    # Calculate Score
     score_rr = 2 if rr >= 3 or ("Income" in strategy and rr > 0.1) else 1 if rr >= 2 else 0
     total_score = fresh + time_zone + speed + score_rr
     
@@ -256,7 +236,6 @@ if st.session_state.data is not None:
     
     reason_text = " • ".join(reasons) if reasons else "All Odd Enhancers aligned."
 
-    # Render Verdict
     if total_score >= 7:
         st.success(f"### 🟢 GREEN LIGHT (Score: {total_score}/8)")
         st.write(f"**Confidence:** High. {reason_text}")
@@ -268,7 +247,7 @@ if st.session_state.data is not None:
         st.error(f"### 🔴 RED LIGHT (Score: {total_score}/8)")
         st.write(f"**No Trade.** Why? {reason_text}")
 
-    # 4. Execution Plan (Card Style)
+    # 4. Execution Plan
     with st.expander("🏹 View Execution Plan", expanded=True):
         if "Income" in strategy:
             contracts = int((capital / entry) // 100) if entry > 0 else 0
