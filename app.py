@@ -188,7 +188,7 @@ engine = Analyst()
 # --- 8. CONTROL PANEL ---
 c_macro, c_scan = st.columns([1, 1])
 with c_macro:
-    if st.button("🌍 1. CHECK MACRO", type="secondary"):
+    if st.button("🌍 1. CHECK ENTIRE MARKET ENVIRONMENT", type="secondary"):
         with st.spinner("Scanning Global Sensors..."):
             st.session_state.macro = engine.get_macro()
 with c_scan:
@@ -376,4 +376,4 @@ if st.session_state.data is not None:
         st.download_button("📥 Download Journal (CSV)", data=csv, file_name="trade_journal.csv", mime="text/csv")
 
 else:
-    st.info("👈 Please enter a Ticker on the left, AND, AFTER you CONFIRM your ENTRIES for desired STRATEGY and IWT SCORECARD, THEN click '2. SCAN TICKER'")
+    st.info("👈 AFTER checking the MACRO MARKET ENVIRONMENT by clicking 1 ABOVE, please enter a Ticker on the left, AND, AFTER you CONFIRM your ENTRIES for desired STRATEGY and IWT SCORECARD, THEN click '2. SCAN TICKER'")
