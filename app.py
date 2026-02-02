@@ -30,16 +30,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 3. TITLE & ONBOARDING ---
-st.title("🏛️ Quantum Maestro: Mentor Edition")
+st.title("🏛️ Quantum TradeMaster Maestro: Mentor Edition")
 st.markdown("""
-**What is this?** An Algorithmic Assistant that automates the math for the **7-Step Trade System**. 
+**What is this?** An Algorithmic Assistant that automates the math for the **7-Step Financial Trading System**. 
 It calculates Risk/Reward, identifies Demand Zones, and audits your trade setups.
 """)
 
 # --- 4. LEGAL DISCLAIMER & GATE ---
 with st.expander("⚠️ READ FIRST: Legal Disclaimer & Risk Warning", expanded=True):
     st.markdown("""
-    **1. No Affiliation:** This application is an independent educational tool developed by a former student. It is **not** affiliated with, endorsed by, or sponsored by Teri Ijeoma, Trade and Travel, or any associated entities.
+    **1. No Affiliation:** This application is an independent educational tool. It is **not** affiliated with, endorsed by, or sponsored by Teri Ijeoma, Trade and Travel, or any associated entities.
     
     **2. Educational Use Only:** This tool provides technical analysis based on mathematical formulas. It is **not** financial advice. You are solely responsible for your own trading decisions.
     
