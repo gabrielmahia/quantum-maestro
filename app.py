@@ -192,7 +192,7 @@ with c_macro:
         with st.spinner("Scanning Global Sensors..."):
             st.session_state.macro = engine.get_macro()
 with c_scan:
-    if st.button(f"🔎 2. Click SCAN, in this case the DEFAULT is for {ticker}, AFTER you CONFIRM your ENTRIES for desired STRATEGY and IWT SCORECARD", type="primary"):
+    if st.button(f"🔎 2. Click SCAN, in this case the DEFAULT is for {ticker}", type="primary"):
         with st.spinner(f"Parsing {ticker}..."):
             df, gap, fname = engine.fetch_data(ticker)
             
@@ -376,4 +376,4 @@ if st.session_state.data is not None:
         st.download_button("📥 Download Journal (CSV)", data=csv, file_name="trade_journal.csv", mime="text/csv")
 
 else:
-    st.info("👈 Please enter a Ticker on the left AND select your choices for SECTIONS 2 and 3. THEN click '2. SCAN TICKER'")
+    st.info("👈 Please enter a Ticker on the left, AND, AFTER you CONFIRM your ENTRIES for desired STRATEGY and IWT SCORECARD, THEN click '2. SCAN TICKER'")
