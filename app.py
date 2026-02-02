@@ -376,4 +376,4 @@ if st.session_state.data is not None:
         st.download_button("📥 Download Journal (CSV)", data=csv, file_name="trade_journal.csv", mime="text/csv")
 
 else:
-    st.info("👈 AFTER checking the MACRO MARKET ENVIRONMENT by clicking [1] ABOVE, please enter a Ticker on the left, AND, AFTER you CONFIRM your ENTRIES for desired STRATEGY and IWT SCORECARD, THEN click '[2]. SCAN TICKER'")
+    st.info("👈 Start Here: First, check the Global Market [1] above. Next, confirm your Ticker, Strategy and IWT settings on the left tab. Finally, click [2] Scan Ticker."")
