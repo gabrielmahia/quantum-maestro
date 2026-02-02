@@ -192,7 +192,7 @@ with c_macro:
         with st.spinner("Scanning Global Sensors..."):
             st.session_state.macro = engine.get_macro()
 with c_scan:
-    if st.button(f"🔎 2. SCAN {ticker}, AFTER you CONFIRM your selections for SECTIONS 2 and 3", type="primary"):
+    if st.button(f"🔎 2. Click SCAN, in this case the DEFAULT is ==> {ticker}, AFTER you CONFIRM your selections for SECTIONS 2 and 3", type="primary"):
         with st.spinner(f"Parsing {ticker}..."):
             df, gap, fname = engine.fetch_data(ticker)
             
