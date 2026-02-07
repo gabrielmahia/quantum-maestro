@@ -995,4 +995,4 @@ else:
 
 # --- 12. FOOTER ---
 st.divider()
-st.caption("Quantum Maestro Financial Markets TradingBot| Built for institutional-grade risk management | Educational purposes only")
+st.caption("Quantum Maestro Financial Markets TradingBot | Built for institutional-grade risk management | Educational purposes only")
