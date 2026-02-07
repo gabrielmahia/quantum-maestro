@@ -991,7 +991,7 @@ if st.session_state.journal:
             )
 
 else:
-   st.info("👈 **Start Here:** 1. Click **'Macro Audit'** 🌍 above to check the trend. 2. Set your **Ticker/Asset**, **Strategy** & **IWT Scores**on the left sidebar. 3. Click the red **'Scan'** button 🔴 to get your verdict.")
+   st.info("👈 **Start Here:** 1. Click **'Macro Audit'** 🌍 above to check the trend. 2. Set your **Ticker/Asset**, **Strategy** & **IWT Scores** on the left sidebar. 3. Click the red **'Scan'** button 🔴 to get your verdict.")
 
 # --- 12. FOOTER ---
 st.divider()
