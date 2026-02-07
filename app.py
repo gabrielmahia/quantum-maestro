@@ -991,8 +991,8 @@ if st.session_state.journal:
             )
 
 else:
-    st.info("👈 **Quick Start:** 1. Check Macro → 2. Scan a ticker → 3. Review verdict → 4. Log trade")
+   st.info("👈 **Start Here:** 1. Click **'Macro Audit'** 🌍 above to check the trend. 2. Set your **Ticker/Asset**, **Strategy** & **IWT Scores**on the left sidebar. 3. Click the red **'Scan'** button 🔴 to get your verdict.")
 
 # --- 12. FOOTER ---
 st.divider()
-st.caption("Quantum Maestro V12.0 | Built for institutional-grade risk management | Educational purposes only")
+st.caption("Quantum Maestro Financial Markets TradingBot| Built for institutional-grade risk management | Educational purposes only")
