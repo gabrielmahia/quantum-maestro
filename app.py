@@ -1,3 +1,7 @@
+# Copyright (c) 2024 Gabriel Mahia. All Rights Reserved.
+# Unauthorized copying of this file, via any medium, is strictly prohibited.
+# Proprietary and confidential.
+# Written by Gabriel Mahia, 7 February 2026
 # app.py
 import streamlit as st
 import yfinance as yf
