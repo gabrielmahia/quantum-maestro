@@ -800,7 +800,7 @@ R/R:     {rr:.2f}
         
         # Warren AI export
         st.markdown("---")
-        st.caption("**Copy for WarrenAI:**")
+        st.caption("**Copy for Further Analysis:**")
         ai_export = f"""
 [ARCHITECT REVIEW - {ticker}]
 Strategy: {strategy}
