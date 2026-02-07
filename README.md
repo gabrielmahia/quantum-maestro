@@ -37,5 +37,5 @@ Quantum Maestro is not just a trading bot; it is a **Senior Portfolio Risk Archi
 **Educational Use Only.** This software is for simulation and risk analysis training. It is not financial advice. Trading involves substantial risk of loss.
 
 ## 🔒 Copyright
-Copyright © 2024 Gabriel Mahia. All Rights Reserved.
+Copyright © 2026 Gabriel Mahia. All Rights Reserved.
 This code is proprietary. You may not sell, distribute, or modify this software without express written permission.
