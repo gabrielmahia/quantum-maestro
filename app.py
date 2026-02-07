@@ -39,7 +39,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. LEGAL & ONBOARDING ---
-st.title("🏛️ Quantum Maestro: Institutional Edition (V12.0)")
+st.title("🏛️ Quantum Maestro [TradingBot]: Institutional Edition ")
 st.caption("Portfolio Risk Architecture | Volatility Regimes | Multi-Position Management | Performance Analytics")
 
 with st.expander("⚠️ READ FIRST: Legal Disclaimer", expanded=True):
