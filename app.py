@@ -1149,31 +1149,7 @@ if st.session_state.data is not None:
         gross_reward = shares * reward
         
     net_reward = gross_reward - slippage - commissions
-    
-    # EXECUTION SLIP (PROMINENT)
-    st.markdown("### 📋 Execution Slip")
-    order_type = "SELL TO OPEN" if "Income" in strategy else ("BUY" if "Long" in strategy else "SELL SHORT")
-    qty_label = "Contracts" if "Income" in strategy else "Shares"
-    
-    st.code(f"""
-═══════════════════════════════════════
-           TRADE EXECUTION SLIP
-═══════════════════════════════════════
-ACTION:   {order_type}
-TICKER:   {ticker} ({timeframe})
-SIZE:     {shares} {qty_label}
-ENTRY:    ${entry:.2f}
-STOP:     ${stop:.2f}
-TARGET:   ${target:.2f}
-───────────────────────────────────────
-RISK:     ${total_trade_risk:.2f} (Collateral/Risk)
-REWARD:   ${net_reward:.2f} (Net)
-R/R:      {rr:.2f}:1
-SLIPPAGE: ${slippage:.2f}
-COMMISH:  ${commissions:.2f}
-═══════════════════════════════════════
-    """)
-    
+
     # VERDICT
     st.divider()
     st.subheader("🚦 The Ultimate Verdict")
@@ -1253,7 +1229,31 @@ COMMISH:  ${commissions:.2f}
         
         for icon, text in checks:
             st.caption(f"{icon} {text}")
+       
+    # EXECUTION SLIP (PROMINENT)
+    st.markdown("### 📋 Execution Slip")
+    order_type = "SELL TO OPEN" if "Income" in strategy else ("BUY" if "Long" in strategy else "SELL SHORT")
+    qty_label = "Contracts" if "Income" in strategy else "Shares"
     
+    st.code(f"""
+═══════════════════════════════════════
+           TRADE EXECUTION SLIP
+═══════════════════════════════════════
+ACTION:   {order_type}
+TICKER:   {ticker} ({timeframe})
+SIZE:     {shares} {qty_label}
+ENTRY:    ${entry:.2f}
+STOP:     ${stop:.2f}
+TARGET:   ${target:.2f}
+───────────────────────────────────────
+RISK:     ${total_trade_risk:.2f} (Collateral/Risk)
+REWARD:   ${net_reward:.2f} (Net)
+R/R:      {rr:.2f}:1
+SLIPPAGE: ${slippage:.2f}
+COMMISH:  ${commissions:.2f}
+═══════════════════════════════════════
+    """)
+     
     # EXECUTION
     if can_trade and total_score >= 5:
         st.divider()
