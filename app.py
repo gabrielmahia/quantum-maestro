@@ -1289,7 +1289,7 @@ COMMISH:  ${commissions:.2f}
                 st.rerun()
 
 else:
-    st.info("👈 **Quick Start:** 1. Scan Macro → 2. Select your **Ticker/Asset** [**left sidebar**] → 3. Review [**Strategy** & **IWT Scores** on the **left sidebar**] → 4. Execute")
+    st.info("👈 **Quick Start:** 1. Scan Macro → 2. Select your **Ticker/Asset** [**left sidebar**] → 3. Review [**Strategy** & **IWT Scores** on the **left sidebar**] → 4. Scan Ticker")
 
 # ============================================================================
 # 11. POSITION MANAGEMENT
