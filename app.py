@@ -785,7 +785,7 @@ with st.sidebar:
     if st.session_state.metrics:
         m = st.session_state.metrics
         suggested_fresh = 2 if m.get('support_touches', 0) == 0 else 1 if m.get('support_touches', 0) <= 2 else 0
-        st.caption(f"💡 Suggested: {suggested_fresh} ({m.get('support_touches', 0)} touches)")
+        st.caption(f"💡 Suggested points: {suggested_fresh} ({m.get('support_touches', 8)} touches)")
     
     fresh = st.selectbox("1. Freshness", [2, 1, 0], format_func=lambda x: {2:'2-Fresh', 1:'1-Used', 0:'0-Stale'}[x])
     speed = st.selectbox("2. Speed Out", [2, 1, 0], format_func=lambda x: {2:'2-Fast', 1:'1-Avg', 0:'0-Slow'}[x])
