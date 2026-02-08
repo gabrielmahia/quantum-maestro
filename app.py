@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Gabriel Mahia. All Rights Reserved.
+# Copyright (c) 2026 Gabriel Mahia. All Rights Reserved.
 # Unauthorized copying of this file, via any medium, is strictly prohibited.
 # Proprietary and confidential.
 # Written by Gabriel Mahia, 2026
