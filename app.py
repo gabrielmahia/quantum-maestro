@@ -1218,6 +1218,23 @@ COMMISH:  ${commissions:.2f}
         for icon, text in checks:
             st.caption(f"{icon} {text}")
     
+        # Warren AI export
+        st.markdown("---")
+        st.caption("**Copy for WarrenAI:**")
+        ai_export = f"""
+[ARCHITECT REVIEW - {ticker}]
+Strategy: {strategy}
+Score: {total_score}/8
+Verdict: {'GREEN' if total_score>=7 else 'YELLOW' if total_score>=5 else 'RED'}
+Entry: ${entry:.2f} | Stop: ${stop:.2f} | Target: ${target:.2f}
+R/R: {rr:.2f} | Size: {shares} shares
+VIX Regime: {vix_regime if st.session_state.macro else 'N/A'}
+Passive Flow: {flow_strength}
+10Y Yield: {'RISING >1%' if warsh_penalty else 'STABLE'}
+        """
+        st.code(ai_export.strip(), language='text')
+    
+ 
     # EXECUTION
     if can_trade and total_score >= 5:
         st.divider()
