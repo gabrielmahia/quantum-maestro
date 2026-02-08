@@ -1118,36 +1118,87 @@ if st.session_state.data is not None:
             st.warning(f"### 🟡 OVERALL MULTI-ALGO VERDICT: NEUTRAL ({score} points)")
             st.caption("💡 Indicators are mixed. No clear direction. Wait for better setup or use smaller size.")
     
-    # ===== CHART WITH HELP NOTE =====
-    st.divider()
-    st.subheader("📊 Technical Chart (Last 60 Days)")
-    st.caption("💡 Blue line = SMA20 (short-term trend). Orange = SMA50 (medium-term). Red = SMA200 (long-term trend). Gray bands = Bollinger Bands (volatility envelope). Green/Red horizontal lines = Support/Resistance zones.")
+   # COMPLETE FIX - Replace the entire chart section (around lines 1115-1150)
+
+# ===== CHART WITH HELP NOTE =====
+st.divider()
+st.subheader("📊 Technical Chart (Last 60 Days)")
+st.caption("💡 Blue line = SMA20 (short-term trend). Orange = SMA50 (medium-term). Red = SMA200 (long-term trend). Gray bands = Bollinger Bands (volatility envelope). Green/Red horizontal lines = Support/Resistance zones.")
+
+chart_data = df.iloc[-60:]
+
+# Build addplots list dynamically with error handling
+addplots = []
+
+try:
+    # SMAs
+    if 'SMA_20' in chart_data.columns:
+        addplots.append(mpf.make_addplot(chart_data['SMA_20'], color='blue', width=1.5, label='SMA 20'))
     
-    chart_data = df.iloc[-60:]
+    if 'SMA_50' in chart_data.columns:
+        addplots.append(mpf.make_addplot(chart_data['SMA_50'], color='orange', width=1.5, label='SMA 50'))
     
-    addplots = [
-        mpf.make_addplot(chart_data['SMA_20'], color='blue', width=1.5),
-        mpf.make_addplot(chart_data['SMA_50'], color='orange', width=1.5),
-        mpf.make_addplot(chart_data['SMA_200'], color='red', width=2),
-        mpf.make_addplot(chart_data['BBU_20_2.0'], color='gray', linestyle='--', width=1),
-        mpf.make_addplot(chart_data['BBL_20_2.0'], color='gray', linestyle='--', width=1),
-    ]
+    if 'SMA_200' in chart_data.columns:
+        addplots.append(mpf.make_addplot(chart_data['SMA_200'], color='red', width=2, label='SMA 200'))
     
+    # Bollinger Bands - Find columns dynamically
+    bb_cols = [col for col in chart_data.columns if 'BB' in col]
+    
+    bb_upper = None
+    bb_lower = None
+    
+    # Search for upper and lower bands
+    for col in bb_cols:
+        if 'U' in col or 'upper' in col.lower():
+            bb_upper = col
+        elif 'L' in col or 'lower' in col.lower():
+            bb_lower = col
+    
+    if bb_upper and bb_upper in chart_data.columns:
+        addplots.append(mpf.make_addplot(chart_data[bb_upper], color='gray', linestyle='--', width=1, label='BB Upper'))
+    
+    if bb_lower and bb_lower in chart_data.columns:
+        addplots.append(mpf.make_addplot(chart_data[bb_lower], color='gray', linestyle='--', width=1, label='BB Lower'))
+    
+    # Create the plot
     fig, axes = mpf.plot(
-        chart_data, type='candle', style='yahoo', volume=True,
-        addplot=addplots,
+        chart_data, 
+        type='candle', 
+        style='yahoo', 
+        volume=True,
+        addplot=addplots if addplots else None,
         hlines=dict(hlines=[m['supp'], m['res']], colors=['green', 'red'], linestyle='-.', linewidths=2),
-        returnfig=True, figsize=(14, 8), title=f"{ticker} - Multi-Indicator Technical Analysis"
+        returnfig=True, 
+        figsize=(14, 8), 
+        title=f"{ticker} - Multi-Indicator Technical Analysis"
     )
     
     st.pyplot(fig)
     
-    # Fibonacci Levels
-    with st.expander("📐 Fibonacci Retracement Levels (Mathematical Support/Resistance)", expanded=False):
-        st.caption("💡 Fibonacci levels are based on the golden ratio (1.618). Traders use these as psychological support/resistance. 61.8% (the 'golden pocket') is the most important.")
-        fib = m['fib_levels']
-        for level, price in fib.items():
-            st.caption(f"{level}: ${price:.2f}")
+except KeyError as ke:
+    st.error(f"⚠️ Chart column error: Missing indicator data. Try a different ticker.")
+    st.caption(f"Technical detail: {str(ke)}")
+    
+    # Fallback: Simple chart without indicators
+    try:
+        fig_simple, axes_simple = mpf.plot(
+            chart_data, 
+            type='candle', 
+            style='yahoo', 
+            volume=True,
+            hlines=dict(hlines=[m['supp'], m['res']], colors=['green', 'red'], linestyle='-.', linewidths=2),
+            returnfig=True, 
+            figsize=(14, 8), 
+            title=f"{ticker} - Basic Price Chart"
+        )
+        st.pyplot(fig_simple)
+        st.caption("📊 Showing basic chart without technical indicators.")
+    except Exception as fallback_error:
+        st.error(f"❌ Unable to render chart: {str(fallback_error)}")
+
+except Exception as e:
+    st.error(f"⚠️ Chart rendering error: {str(e)}")
+    st.caption("💡 This can happen with low-liquidity stocks or data gaps. Try a major ticker like AAPL or NVDA.")
     
     # ===== TRADE CALCULATION WITH COMPREHENSIVE HELP =====
     st.divider()
