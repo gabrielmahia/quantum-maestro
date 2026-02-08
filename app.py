@@ -1118,29 +1118,7 @@ if st.session_state.data is not None:
     gross_reward = shares * reward
     net_reward = gross_reward - slippage - commissions
     
-    # EXECUTION SLIP (PROMINENT)
-    st.markdown("### 📋 Execution Slip")
-    order_type = "SELL TO OPEN" if "Income" in strategy else ("BUY" if "Long" in strategy else "SELL SHORT")
-    
-    st.code(f"""
-═══════════════════════════════════════
-           TRADE EXECUTION SLIP
-═══════════════════════════════════════
-ACTION:   {order_type}
-TICKER:   {ticker} ({timeframe})
-SIZE:     {shares} {'Contracts' if 'Income' in strategy else 'Shares'}
-ENTRY:    ${entry:.2f}
-STOP:     ${stop:.2f}
-TARGET:   ${target:.2f}
-───────────────────────────────────────
-RISK:     ${total_trade_risk:.2f}
-REWARD:   ${net_reward:.2f} (after costs)
-R/R:      {rr:.2f}:1
-SLIPPAGE: ${slippage:.2f}
-COMMISH:  ${commissions:.2f}
-═══════════════════════════════════════
-    """)
-    
+
     # VERDICT
     st.divider()
     st.subheader("🚦 The Ultimate Verdict")
@@ -1233,6 +1211,29 @@ COMMISH:  ${commissions:.2f}
 #10Y Yield: {'RISING >1%' if warsh_penalty else 'STABLE'}
  #       """
   #      st.code(ai_export.strip(), language='text')
+
+        # EXECUTION SLIP (PROMINENT)
+    st.markdown("### 📋 Execution Slip")
+    order_type = "SELL TO OPEN" if "Income" in strategy else ("BUY" if "Long" in strategy else "SELL SHORT")
+    
+    st.code(f"""
+═══════════════════════════════════════
+           TRADE EXECUTION SLIP
+═══════════════════════════════════════
+ACTION:   {order_type}
+TICKER:   {ticker} ({timeframe})
+SIZE:     {shares} {'Contracts' if 'Income' in strategy else 'Shares'}
+ENTRY:    ${entry:.2f}
+STOP:     ${stop:.2f}
+TARGET:   ${target:.2f}
+───────────────────────────────────────
+RISK:     ${total_trade_risk:.2f}
+REWARD:   ${net_reward:.2f} (after costs)
+R/R:      {rr:.2f}:1
+SLIPPAGE: ${slippage:.2f}
+COMMISH:  ${commissions:.2f}
+═══════════════════════════════════════
+    """)
     
  
     # EXECUTION
@@ -1270,7 +1271,7 @@ COMMISH:  ${commissions:.2f}
                 st.rerun()
 
 else:
-    st.info("👈 **Quick Start:** 1. Scan Macro → 2. Confirm Ticker/Asset → 3. Review [confirm your **Ticker**, **Strategy** and **IWT settings** on the left tab] → 4. Execute")
+    st.info("👈 **Quick Start:** 1. Scan Macro → 2. Confirm Ticker/Asset [**Left Tab**] → 3. Review [confirm your **Ticker**, **Strategy** and **IWT settings** on the **left tab**] → 4. Execute")
 
 # ============================================================================
 # 11. POSITION MANAGEMENT
