@@ -724,6 +724,48 @@ with st.sidebar:
         st.session_state.consecutive_losses = 0
         st.success("✅ Session reset!")
         st.rerun()
+# ============================================================================
+# 8. BEGINNER'S GUIDE
+# ============================================================================
+
+with st.expander("🎓 Beginner's Guide (Read This First)", expanded=False):
+    st.markdown("""
+### 🎓 How to Use Quantum Maestro
+
+**Step 1: Set Your Risk**
+- Total Capital = actual account size
+- Risk per Trade = ~1% of capital ($10,000 → $100)
+- Never risk more than 2% per trade
+
+**Step 2: Check Macro FIRST**
+- Scan VIX before individual stocks
+- If VIX HIGH/CRISIS → reduce size or don't trade
+- If Risk-Off (Gold + VIX rising) → avoid longs
+
+**Step 3: Scan a Stock**
+- Use VIP List (safest) or enter ticker
+- Wait for 15+ indicators to load
+
+**Step 4: Score the Setup (IWT)**
+- Freshness (fresh > stale)
+- Time in zone (fast rejection > lingering)
+- Speed out (explosive > grinding)
+- R/R must be ≥ 2.0 (prefer ≥ 3.0)
+
+**Step 5: Verdict Discipline**
+- 7-8 → GREEN (execute)
+- 5-6 → YELLOW (reduce size or wait)
+- 0-4 → RED (no trade)
+
+**Golden Rules**
+1) Stop trading when daily goal met
+2) Don't stack too many positions
+3) Trade WITH the trend
+4) High VIX = smaller size or sit out
+5) Journal every trade (wins + losses)
+""")
+
+
 
 # --- 6. MAIN UI ---
 st.subheader("📊 Market Intelligence Dashboard")
@@ -1196,7 +1238,7 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
     
     # === WARREN AI EXPORT ===
     st.markdown("---")
-    st.caption("**📋 Copy for WarrenAI:**")
+    st.caption("**📋 Copy for 2nd Opinion on different platform:**")
     
     if st.session_state.macro:
         flow_strength = engine.check_passive_intensity(
