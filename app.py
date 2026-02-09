@@ -1300,7 +1300,7 @@ Passive Flow: {flow_strength}
                 st.rerun()
 
 else:
-    st.info("👈 ****Quick Start Guide:** 1. Scan Macro (check global markets) → 2. Select a Ticker/Asset (**left sidebar**) → 4. Check/Enter IWT Score + Penalties (**left sidebar**) → 5. Scan Ticker/Asset → 5. Review Multi-Algo Signals → 5. Log Paper or Live Trade")
+    st.info("👈 **Quick Start Guide:** 1. Scan Macro (check global markets) → 2. Select a Ticker/Asset (**left sidebar**) → 4. Check/Enter IWT Score + Penalties (**left sidebar**) → 5. Scan Ticker/Asset → 5. Review Multi-Algo Signals → 5. Log Paper or Live Trade")
 
 # POSITION MANAGEMENT
 if st.session_state.open_positions:
