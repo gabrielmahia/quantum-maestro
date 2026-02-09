@@ -1009,7 +1009,29 @@ if st.session_state.data is not None:
         fib = m['fib_levels']
         for level, price in fib.items():
             st.caption(f"{level}: ${price:.2f}")
-    # VERDICT
+   
+    # TRADE CALCULATION
+    st.divider()
+    st.subheader("🎯 Trade Setup Calculator")
+    st.caption("💡 Calculates entry, stop, target, position size, and REAL costs")
+    
+    if entry_mode == "Manual Override":
+        entry = manual_price
+    elif "Short" in strategy:
+        entry = m['res'] if "Auto" in entry_mode else m['price']
+    else:
+        entry = m['supp'] if "Auto" in entry_mode else m['price']
+    
+    if st.session_state.macro:
+        vix_regime = engine.classify_vix_regime(st.session_state.macro['vix'])
+        regime_guide = engine.get_regime_guidance(vix_regime)
+        vol_multiplier = regime_guide['size_multiplier']
+        stop_multiplier = regime_guide['stop_multiplier']
+    else:
+        vol_multiplier = 1.0
+        stop_multiplier = 1.0
+
+     # VERDICT
     st.divider()
     st.subheader("🚦 The Ultimate Verdict (IWT + Institutional Filters)")
     st.caption("💡 Combines IWT score with 13 institutional penalty filters")
@@ -1116,29 +1138,7 @@ if st.session_state.data is not None:
         for icon, text in checks:
             st.caption(f"{icon} {text}")
     
-    
-    # TRADE CALCULATION
-    st.divider()
-    st.subheader("🎯 Trade Setup Calculator")
-    st.caption("💡 Calculates entry, stop, target, position size, and REAL costs")
-    
-    if entry_mode == "Manual Override":
-        entry = manual_price
-    elif "Short" in strategy:
-        entry = m['res'] if "Auto" in entry_mode else m['price']
-    else:
-        entry = m['supp'] if "Auto" in entry_mode else m['price']
-    
-    if st.session_state.macro:
-        vix_regime = engine.classify_vix_regime(st.session_state.macro['vix'])
-        regime_guide = engine.get_regime_guidance(vix_regime)
-        vol_multiplier = regime_guide['size_multiplier']
-        stop_multiplier = regime_guide['stop_multiplier']
-    else:
-        vol_multiplier = 1.0
-        stop_multiplier = 1.0
-    
-    # === INCOME (PUTS) CALCULATION FIX ===
+        # === INCOME (PUTS) CALCULATION FIX ===
     if "Income" in strategy:
         # For selling puts:
         # - Entry = Strike price (price you'd buy stock at if assigned)
