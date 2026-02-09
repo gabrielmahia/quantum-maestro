@@ -1009,6 +1009,113 @@ if st.session_state.data is not None:
         fib = m['fib_levels']
         for level, price in fib.items():
             st.caption(f"{level}: ${price:.2f}")
+    # VERDICT
+    st.divider()
+    st.subheader("🚦 The Ultimate Verdict (IWT + Institutional Filters)")
+    st.caption("💡 Combines IWT score with 13 institutional penalty filters")
+    
+    score_rr = 2 if rr >= 3 or ("Income" in strategy and rr > 0.1) else 1 if rr >= 2 else 0
+    total_score = fresh + time_z + speed + score_rr
+    
+    penalties = []
+    warsh_penalty = False
+    
+    if st.session_state.macro and st.session_state.macro['tnx_chg'] > 1.0 and ticker in GROWTH_TICKERS and "Long" in strategy:
+        total_score -= 2
+        warsh_penalty = True
+        penalties.append("Warsh (-2): Yields rising >1% hurt growth stocks")
+    
+    market_phase, _ = engine.get_market_hours_status()
+    if market_phase in ["LUNCH", "PRE_MARKET", "AFTER_HOURS"]:
+        total_score -= 1
+        penalties.append(f"Market Hours (-1): {market_phase} (low liquidity)")
+    
+    if "Long" in strategy and m['trend_strength'] in ["BEAR", "STRONG_BEAR"]:
+        total_score -= 1
+        penalties.append("Trend Misalignment (-1): Long in downtrend")
+    elif "Short" in strategy and m['trend_strength'] in ["BULL", "STRONG_BULL"]:
+        total_score -= 1
+        penalties.append("Trend Misalignment (-1): Short in uptrend")
+    
+    sector = SECTOR_MAP.get(ticker, "Unknown")
+    sector_exposure = sum(1 for p in st.session_state.open_positions if SECTOR_MAP.get(p['ticker'], '') == sector)
+    if sector_exposure >= 2:
+        total_score -= 1
+        penalties.append(f"Concentration Risk (-1): {sector_exposure+1} positions in {sector}")
+    
+    if st.session_state.macro and st.session_state.macro.get('risk_off') and "Long" in strategy:
+        total_score -= 1
+        penalties.append("Risk-Off (-1): Gold+VIX rising")
+    
+    if st.session_state.macro and st.session_state.macro.get('dollar_headwind') and ticker in COMMODITY_TICKERS and "Long" in strategy:
+        total_score -= 1
+        penalties.append("Dollar Headwind (-1): DXY rising hurts commodities")
+    
+    if 'ST_DIR' in df.columns:
+        if "Long" in strategy and df['ST_DIR'].iloc[-1] == -1:
+            total_score -= 1
+            penalties.append("SuperTrend Conflict (-1): Indicator is bearish")
+        elif "Short" in strategy and df['ST_DIR'].iloc[-1] == 1:
+            total_score -= 1
+            penalties.append("SuperTrend Conflict (-1): Indicator is bullish")
+    
+    if "Long" in strategy and m['rsi'] > 70:
+        total_score -= 1
+        penalties.append("RSI Extreme (-1): Overbought (>70)")
+    elif "Short" in strategy and m['rsi'] < 30:
+        total_score -= 1
+        penalties.append("RSI Extreme (-1): Oversold (<30)")
+    
+    if st.session_state.signals:
+        sig_score = st.session_state.signals['score']
+        if "Long" in strategy and sig_score < -2:
+            total_score -= 1
+            penalties.append("Multi-Algo Conflict (-1): Signals overwhelmingly bearish")
+        elif "Short" in strategy and sig_score > 2:
+            total_score -= 1
+            penalties.append("Multi-Algo Conflict (-1): Signals overwhelmingly bullish")
+    
+    col_verdict, col_analysis = st.columns([1, 1])
+    
+    with col_verdict:
+        if st.session_state.goal_met:
+            st.error("## 🛑 DAILY GOAL MET - STOP TRADING")
+            st.markdown("<div class='risk-warning'><strong>CLOSE YOUR TERMINAL.</strong> Protect your gains. Consistency beats intensity.</div>", unsafe_allow_html=True)
+            can_trade = False
+        elif (st.session_state.total_risk_deployed + total_trade_risk) > (capital * max_portfolio_risk / 100):
+            st.error("## 🛑 PORTFOLIO RISK LIMIT EXCEEDED")
+            st.markdown(f"<div class='risk-warning'>Adding this trade would exceed your {max_portfolio_risk}% limit.</div>", unsafe_allow_html=True)
+            can_trade = False
+        else:
+            can_trade = True
+            if total_score >= 7:
+                st.success(f"## 🟢 GREEN LIGHT\n**Final Score: {total_score}/8**")
+                st.caption("✅ **Action:** Execute with FULL confidence. All systems GO.")
+            elif total_score >= 5:
+                st.warning(f"## 🟡 YELLOW LIGHT\n**Final Score: {total_score}/8**")
+                st.caption("⚠️ **Action:** Tradeable but NOT ideal. Reduce size 50% OR wait.")
+            else:
+                st.error(f"## 🔴 RED LIGHT\n**Final Score: {total_score}/8**")
+                st.caption("🛑 **Action:** DO NOT TRADE. Setup is flawed.")
+        
+        if penalties:
+            st.markdown("**⚠️ Penalties Applied:**")
+            for p in penalties:
+                st.caption(f"• {p}")
+    
+    with col_analysis:
+        st.markdown("**📋 Setup Quality Checklist**")
+        
+        checks = []
+        checks.append(("✅" if fresh == 2 else "⚠️" if fresh == 1 else "❌", f"Freshness: {['Stale (Weak)','Used (OK)','Fresh (Strong)'][fresh]}"))
+        checks.append(("✅" if score_rr == 2 else "⚠️" if score_rr == 1 else "❌", f"R/R: {rr:.2f} ({['Poor (<2)', 'Acceptable (2-3)', 'Excellent (3+)'][score_rr]})"))
+        checks.append(("✅" if abs(m['gap']) > 2 and m['rvol'] > 1.5 else "⚠️" if abs(m['gap']) > 2 else "➖", f"Gap: {m['gap']:.2f}%"))
+        checks.append(("✅" if m['rvol'] > 1.2 else "⚠️", f"Volume: {m['rvol']:.1f}x"))
+        checks.append(("✅" if m['adx'] > 25 else "⚠️", f"Trend Strength: ADX {m['adx']:.0f}"))
+        
+        for icon, text in checks:
+            st.caption(f"{icon} {text}")
+    
     
     # TRADE CALCULATION
     st.divider()
@@ -1129,113 +1236,7 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
         """)
         st.caption("💡 Real costs reduce your profit. This is why high-frequency trading is hard.")
     
-    # VERDICT
-    st.divider()
-    st.subheader("🚦 The Ultimate Verdict (IWT + Institutional Filters)")
-    st.caption("💡 Combines IWT score with 13 institutional penalty filters")
-    
-    score_rr = 2 if rr >= 3 or ("Income" in strategy and rr > 0.1) else 1 if rr >= 2 else 0
-    total_score = fresh + time_z + speed + score_rr
-    
-    penalties = []
-    warsh_penalty = False
-    
-    if st.session_state.macro and st.session_state.macro['tnx_chg'] > 1.0 and ticker in GROWTH_TICKERS and "Long" in strategy:
-        total_score -= 2
-        warsh_penalty = True
-        penalties.append("Warsh (-2): Yields rising >1% hurt growth stocks")
-    
-    market_phase, _ = engine.get_market_hours_status()
-    if market_phase in ["LUNCH", "PRE_MARKET", "AFTER_HOURS"]:
-        total_score -= 1
-        penalties.append(f"Market Hours (-1): {market_phase} (low liquidity)")
-    
-    if "Long" in strategy and m['trend_strength'] in ["BEAR", "STRONG_BEAR"]:
-        total_score -= 1
-        penalties.append("Trend Misalignment (-1): Long in downtrend")
-    elif "Short" in strategy and m['trend_strength'] in ["BULL", "STRONG_BULL"]:
-        total_score -= 1
-        penalties.append("Trend Misalignment (-1): Short in uptrend")
-    
-    sector = SECTOR_MAP.get(ticker, "Unknown")
-    sector_exposure = sum(1 for p in st.session_state.open_positions if SECTOR_MAP.get(p['ticker'], '') == sector)
-    if sector_exposure >= 2:
-        total_score -= 1
-        penalties.append(f"Concentration Risk (-1): {sector_exposure+1} positions in {sector}")
-    
-    if st.session_state.macro and st.session_state.macro.get('risk_off') and "Long" in strategy:
-        total_score -= 1
-        penalties.append("Risk-Off (-1): Gold+VIX rising")
-    
-    if st.session_state.macro and st.session_state.macro.get('dollar_headwind') and ticker in COMMODITY_TICKERS and "Long" in strategy:
-        total_score -= 1
-        penalties.append("Dollar Headwind (-1): DXY rising hurts commodities")
-    
-    if 'ST_DIR' in df.columns:
-        if "Long" in strategy and df['ST_DIR'].iloc[-1] == -1:
-            total_score -= 1
-            penalties.append("SuperTrend Conflict (-1): Indicator is bearish")
-        elif "Short" in strategy and df['ST_DIR'].iloc[-1] == 1:
-            total_score -= 1
-            penalties.append("SuperTrend Conflict (-1): Indicator is bullish")
-    
-    if "Long" in strategy and m['rsi'] > 70:
-        total_score -= 1
-        penalties.append("RSI Extreme (-1): Overbought (>70)")
-    elif "Short" in strategy and m['rsi'] < 30:
-        total_score -= 1
-        penalties.append("RSI Extreme (-1): Oversold (<30)")
-    
-    if st.session_state.signals:
-        sig_score = st.session_state.signals['score']
-        if "Long" in strategy and sig_score < -2:
-            total_score -= 1
-            penalties.append("Multi-Algo Conflict (-1): Signals overwhelmingly bearish")
-        elif "Short" in strategy and sig_score > 2:
-            total_score -= 1
-            penalties.append("Multi-Algo Conflict (-1): Signals overwhelmingly bullish")
-    
-    col_verdict, col_analysis = st.columns([1, 1])
-    
-    with col_verdict:
-        if st.session_state.goal_met:
-            st.error("## 🛑 DAILY GOAL MET - STOP TRADING")
-            st.markdown("<div class='risk-warning'><strong>CLOSE YOUR TERMINAL.</strong> Protect your gains. Consistency beats intensity.</div>", unsafe_allow_html=True)
-            can_trade = False
-        elif (st.session_state.total_risk_deployed + total_trade_risk) > (capital * max_portfolio_risk / 100):
-            st.error("## 🛑 PORTFOLIO RISK LIMIT EXCEEDED")
-            st.markdown(f"<div class='risk-warning'>Adding this trade would exceed your {max_portfolio_risk}% limit.</div>", unsafe_allow_html=True)
-            can_trade = False
-        else:
-            can_trade = True
-            if total_score >= 7:
-                st.success(f"## 🟢 GREEN LIGHT\n**Final Score: {total_score}/8**")
-                st.caption("✅ **Action:** Execute with FULL confidence. All systems GO.")
-            elif total_score >= 5:
-                st.warning(f"## 🟡 YELLOW LIGHT\n**Final Score: {total_score}/8**")
-                st.caption("⚠️ **Action:** Tradeable but NOT ideal. Reduce size 50% OR wait.")
-            else:
-                st.error(f"## 🔴 RED LIGHT\n**Final Score: {total_score}/8**")
-                st.caption("🛑 **Action:** DO NOT TRADE. Setup is flawed.")
-        
-        if penalties:
-            st.markdown("**⚠️ Penalties Applied:**")
-            for p in penalties:
-                st.caption(f"• {p}")
-    
-    with col_analysis:
-        st.markdown("**📋 Setup Quality Checklist**")
-        
-        checks = []
-        checks.append(("✅" if fresh == 2 else "⚠️" if fresh == 1 else "❌", f"Freshness: {['Stale (Weak)','Used (OK)','Fresh (Strong)'][fresh]}"))
-        checks.append(("✅" if score_rr == 2 else "⚠️" if score_rr == 1 else "❌", f"R/R: {rr:.2f} ({['Poor (<2)', 'Acceptable (2-3)', 'Excellent (3+)'][score_rr]})"))
-        checks.append(("✅" if abs(m['gap']) > 2 and m['rvol'] > 1.5 else "⚠️" if abs(m['gap']) > 2 else "➖", f"Gap: {m['gap']:.2f}%"))
-        checks.append(("✅" if m['rvol'] > 1.2 else "⚠️", f"Volume: {m['rvol']:.1f}x"))
-        checks.append(("✅" if m['adx'] > 25 else "⚠️", f"Trend Strength: ADX {m['adx']:.0f}"))
-        
-        for icon, text in checks:
-            st.caption(f"{icon} {text}")
-    
+
     # === WARREN AI EXPORT ===
     st.markdown("---")
     st.caption("**📋 Copy for 2nd Opinion on different platform:**")
