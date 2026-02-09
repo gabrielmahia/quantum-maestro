@@ -1244,7 +1244,7 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
     
     # === WARREN AI EXPORT ===
     st.markdown("---")
-    st.caption("**📋 Copy for WarrenAI:**")
+    st.caption("**📋 Copy for **2nd Opinion** elsewhere:**")
     
     if st.session_state.macro:
         flow_strength = engine.check_passive_intensity(
@@ -1306,7 +1306,7 @@ Passive Flow: {flow_strength}
                 st.rerun()
 
 else:
-    st.info("👈 **Quick Start:** 1. Scan Macro → 2. Scan Ticker → 3. Review Signals → 4. Check Verdict → 5. Execute")
+    st.info("👈 **Quick Start Guide:** 1. Scan Macro (check global markets) → 2. Select a Ticker/Asset (**left sidebar**) → 3. Check/Enter IWT Score + Penalties (**left sidebar**) → 4. Scan Ticker/Asset → 5. Review Multi-Algo Signals → 6. Log Paper or Live Trade")
 
 # POSITION MANAGEMENT
 if st.session_state.open_positions:
