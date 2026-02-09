@@ -724,6 +724,7 @@ with st.sidebar:
         st.session_state.consecutive_losses = 0
         st.success("✅ Session reset!")
         st.rerun()
+
 # ============================================================================
 # 8. BEGINNER'S GUIDE
 # ============================================================================
@@ -764,7 +765,6 @@ with st.expander("🎓 Beginner's Guide (Read This First)", expanded=False):
 4) High VIX = smaller size or sit out
 5) Journal every trade (wins + losses)
 """)
-
 
 
 # --- 6. MAIN UI ---
@@ -1009,7 +1009,7 @@ if st.session_state.data is not None:
         fib = m['fib_levels']
         for level, price in fib.items():
             st.caption(f"{level}: ${price:.2f}")
-   
+    
     # TRADE CALCULATION
     st.divider()
     st.subheader("🎯 Trade Setup Calculator")
@@ -1030,8 +1030,106 @@ if st.session_state.data is not None:
     else:
         vol_multiplier = 1.0
         stop_multiplier = 1.0
-
-     # VERDICT
+    
+    # === INCOME (PUTS) CALCULATION FIX ===
+    if "Income" in strategy:
+        # For selling puts:
+        # - Entry = Strike price (price you'd buy stock at if assigned)
+        # - Stop = Technical stop below entry (or entry - 2*ATR as safety)
+        # - Target = Entry (stock stays above strike, you keep premium)
+        # - Risk per contract = (Strike × 100) - (Premium × 100) = max capital at risk
+        # - Reward per contract = Premium × 100
+        
+        stop = entry - (m['atr'] * 2)  # Technical stop 2 ATRs below strike
+        target = entry  # Keep premium if stock stays above strike
+        
+        # Risk per contract (if assigned and stock drops to stop)
+        risk_per_contract = (entry - stop) * 100  # 100 shares per contract
+        
+        # Reward per contract (premium collected)
+        reward_per_contract = premium * 100
+        
+        # Calculate number of contracts based on capital and risk
+        if risk_per_contract > 0:
+            contracts = int(risk_per_trade / risk_per_contract)
+        else:
+            contracts = 0
+        
+        shares = max(0, contracts)  # "shares" = contracts for Income strategy
+        
+        risk = risk_per_contract
+        reward = reward_per_contract
+        
+    elif "Short" in strategy:
+        stop = entry + (m['atr'] * stop_mode * stop_multiplier)
+        target = m['supp']
+        risk = stop - entry
+        reward = entry - target
+    else:  # Long
+        stop = entry - (m['atr'] * stop_mode * stop_multiplier)
+        target = m['res']
+        risk = entry - stop
+        reward = target - entry
+    
+    rr = reward / risk if risk > 0 else 0
+    
+    # Position sizing (skip for Income since already calculated)
+    if "Income" not in strategy:
+        shares = engine.calculate_position_size(
+            capital, risk_per_trade, risk, position_sizing_method, 
+            vol_multiplier, m.get('beta', 1.0), st.session_state.consecutive_losses
+        )
+    
+    total_trade_risk = shares * risk if shares > 0 else 0
+    
+    # Costs & Net Reward
+    if "Income" in strategy:
+        slippage = 0  # Options have bid-ask spread, but we'll keep calculation simple
+        commissions = shares * 0.65  # Typical options commission per contract
+        gross_reward = shares * reward
+    else:
+        slippage = entry * (SLIPPAGE_BPS / 10000) * shares
+        commissions = shares * COMMISSION_PER_SHARE * 2
+        gross_reward = shares * reward
+    
+    net_reward = gross_reward - slippage - commissions
+    
+    col_setup1, col_setup2, col_setup3 = st.columns(3)
+    
+    with col_setup1:
+        st.markdown("**📍 Price Levels**")
+        st.code(f"""
+Entry:  ${entry:.2f}
+Stop:   ${stop:.2f}
+Target: ${target:.2f}
+        """)
+        st.caption("💡 Entry=where you buy/sell. Stop=exit if wrong. Target=exit if right.")
+    
+    with col_setup2:
+        st.markdown("**💰 Position Sizing**")
+        qty_label = "Contracts" if "Income" in strategy else "Shares"
+        st.code(f"""
+Size:    {shares} {qty_label}
+Risk:    ${total_trade_risk:.2f}
+Reward:  ${gross_reward:.2f}
+R/R:     {rr:.2f}
+        """)
+        if "Income" in strategy:
+            st.caption(f"💡 Each contract = 100 shares. Premium = ${premium:.2f}/share = ${premium*100:.2f}/contract")
+        else:
+            st.caption(f"💡 Size calculated using {position_sizing_method}. Risk = max loss if stopped out.")
+    
+    with col_setup3:
+        st.markdown("**💸 Real Costs**")
+        st.code(f"""
+Slippage:     ${slippage:.2f}
+Commissions:  ${commissions:.2f}
+Net Reward:   ${net_reward:.2f}
+Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
+        """)
+        st.caption("💡 Real costs reduce your profit. This is why high-frequency trading is hard.")
+    
+    # VERDICT
     st.divider()
     st.subheader("🚦 The Ultimate Verdict (IWT + Institutional Filters)")
     st.caption("💡 Combines IWT score with 13 institutional penalty filters")
@@ -1138,108 +1236,9 @@ if st.session_state.data is not None:
         for icon, text in checks:
             st.caption(f"{icon} {text}")
     
-        # === INCOME (PUTS) CALCULATION FIX ===
-    if "Income" in strategy:
-        # For selling puts:
-        # - Entry = Strike price (price you'd buy stock at if assigned)
-        # - Stop = Technical stop below entry (or entry - 2*ATR as safety)
-        # - Target = Entry (stock stays above strike, you keep premium)
-        # - Risk per contract = (Strike × 100) - (Premium × 100) = max capital at risk
-        # - Reward per contract = Premium × 100
-        
-        stop = entry - (m['atr'] * 2)  # Technical stop 2 ATRs below strike
-        target = entry  # Keep premium if stock stays above strike
-        
-        # Risk per contract (if assigned and stock drops to stop)
-        risk_per_contract = (entry - stop) * 100  # 100 shares per contract
-        
-        # Reward per contract (premium collected)
-        reward_per_contract = premium * 100
-        
-        # Calculate number of contracts based on capital and risk
-        if risk_per_contract > 0:
-            contracts = int(risk_per_trade / risk_per_contract)
-        else:
-            contracts = 0
-        
-        shares = max(0, contracts)  # "shares" = contracts for Income strategy
-        
-        risk = risk_per_contract
-        reward = reward_per_contract
-        
-    elif "Short" in strategy:
-        stop = entry + (m['atr'] * stop_mode * stop_multiplier)
-        target = m['supp']
-        risk = stop - entry
-        reward = entry - target
-    else:  # Long
-        stop = entry - (m['atr'] * stop_mode * stop_multiplier)
-        target = m['res']
-        risk = entry - stop
-        reward = target - entry
-    
-    rr = reward / risk if risk > 0 else 0
-    
-    # Position sizing (skip for Income since already calculated)
-    if "Income" not in strategy:
-        shares = engine.calculate_position_size(
-            capital, risk_per_trade, risk, position_sizing_method, 
-            vol_multiplier, m.get('beta', 1.0), st.session_state.consecutive_losses
-        )
-    
-    total_trade_risk = shares * risk if shares > 0 else 0
-    
-    # Costs & Net Reward
-    if "Income" in strategy:
-        slippage = 0  # Options have bid-ask spread, but we'll keep calculation simple
-        commissions = shares * 0.65  # Typical options commission per contract
-        gross_reward = shares * reward
-    else:
-        slippage = entry * (SLIPPAGE_BPS / 10000) * shares
-        commissions = shares * COMMISSION_PER_SHARE * 2
-        gross_reward = shares * reward
-    
-    net_reward = gross_reward - slippage - commissions
-    
-    col_setup1, col_setup2, col_setup3 = st.columns(3)
-    
-    with col_setup1:
-        st.markdown("**📍 Price Levels**")
-        st.code(f"""
-Entry:  ${entry:.2f}
-Stop:   ${stop:.2f}
-Target: ${target:.2f}
-        """)
-        st.caption("💡 Entry=where you buy/sell. Stop=exit if wrong. Target=exit if right.")
-    
-    with col_setup2:
-        st.markdown("**💰 Position Sizing**")
-        qty_label = "Contracts" if "Income" in strategy else "Shares"
-        st.code(f"""
-Size:    {shares} {qty_label}
-Risk:    ${total_trade_risk:.2f}
-Reward:  ${gross_reward:.2f}
-R/R:     {rr:.2f}
-        """)
-        if "Income" in strategy:
-            st.caption(f"💡 Each contract = 100 shares. Premium = ${premium:.2f}/share = ${premium*100:.2f}/contract")
-        else:
-            st.caption(f"💡 Size calculated using {position_sizing_method}. Risk = max loss if stopped out.")
-    
-    with col_setup3:
-        st.markdown("**💸 Real Costs**")
-        st.code(f"""
-Slippage:     ${slippage:.2f}
-Commissions:  ${commissions:.2f}
-Net Reward:   ${net_reward:.2f}
-Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
-        """)
-        st.caption("💡 Real costs reduce your profit. This is why high-frequency trading is hard.")
-    
-
     # === WARREN AI EXPORT ===
     st.markdown("---")
-    st.caption("**📋 Copy for 2nd Opinion on different platform:**")
+    st.caption("**📋 Copy for WarrenAI:**")
     
     if st.session_state.macro:
         flow_strength = engine.check_passive_intensity(
@@ -1301,7 +1300,7 @@ Passive Flow: {flow_strength}
                 st.rerun()
 
 else:
-    st.info("👈 **Quick Start:** 1. Scan Macro → 2. Scan Ticker → 3. Review Signals → 4. Check Verdict → 5. Execute")
+    st.info("👈 ****Quick Start Guide:** 1. Scan Macro (check global markets) → 2. Select a Ticker/Asset (**left sidebar**) → 4. Check/Enter IWT Score + Penalties (**left sidebar**) → 5. Scan Ticker/Asset → 5. Review Multi-Algo Signals → 5. Log Paper or Live Trade")
 
 # POSITION MANAGEMENT
 if st.session_state.open_positions:
