@@ -1238,7 +1238,7 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
     
     # === WARREN AI EXPORT ===
     st.markdown("---")
-    st.caption("**📋 Copy for WarrenAI:**")
+    st.caption("**📋 Copy for 2nd Opinion elsewhere:**")
     
     if st.session_state.macro:
         flow_strength = engine.check_passive_intensity(
