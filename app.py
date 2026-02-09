@@ -55,9 +55,50 @@ st.markdown("""
     }
     .risk-warning { background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 10px 0; }
     .success-box { background-color: #d4edda; padding: 15px; border-left: 4px solid #28a745; margin: 10px 0; }
-    .signal-bull { background-color: #d4edda; padding: 8px; border-radius: 4px; margin: 5px 0; }
-    .signal-bear { background-color: #f8d7da; padding: 8px; border-radius: 4px; margin: 5px 0; }
-    .signal-neutral { background-color: #fff3cd; padding: 8px; border-radius: 4px; margin: 5px 0; }
+    .signal-bull { 
+        background-color: #d4edda; 
+        color: #155724;
+        padding: 8px 12px; 
+        border-radius: 4px; 
+        margin: 5px 0;
+        border: 1px solid #28a745;
+        font-weight: 500;
+    }
+    .signal-bear { 
+        background-color: #f8d7da; 
+        color: #721c24;
+        padding: 8px 12px; 
+        border-radius: 4px; 
+        margin: 5px 0;
+        border: 1px solid #dc3545;
+        font-weight: 500;
+    }
+    .signal-neutral { 
+        background-color: #fff3cd; 
+        color: #856404;
+        padding: 8px 12px; 
+        border-radius: 4px; 
+        margin: 5px 0;
+        border: 1px solid #ffc107;
+        font-weight: 500;
+    }
+    @media (prefers-color-scheme: dark) {
+        .signal-bull { 
+            background-color: #1e4620; 
+            color: #7dcea0;
+            border-color: #28a745;
+        }
+        .signal-bear { 
+            background-color: #4a1c1c; 
+            color: #f1948a;
+            border-color: #dc3545;
+        }
+        .signal-neutral { 
+            background-color: #4a3f1a; 
+            color: #f9e79f;
+            border-color: #ffc107;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -725,48 +766,6 @@ with st.sidebar:
         st.success("✅ Session reset!")
         st.rerun()
 
-# ============================================================================
-# 8. BEGINNER'S GUIDE
-# ============================================================================
-
-with st.expander("🎓 Beginner's Guide (Read This First)", expanded=False):
-    st.markdown("""
-### 🎓 How to Use Quantum Maestro
-
-**Step 1: Set Your Risk**
-- Total Capital = actual account size
-- Risk per Trade = ~1% of capital ($10,000 → $100)
-- Never risk more than 2% per trade
-
-**Step 2: Check Macro FIRST**
-- Scan VIX before individual stocks
-- If VIX HIGH/CRISIS → reduce size or don't trade
-- If Risk-Off (Gold + VIX rising) → avoid longs
-
-**Step 3: Scan a Stock**
-- Use VIP List (safest) or enter ticker
-- Wait for 15+ indicators to load
-
-**Step 4: Score the Setup (IWT)**
-- Freshness (fresh > stale)
-- Time in zone (fast rejection > lingering)
-- Speed out (explosive > grinding)
-- R/R must be ≥ 2.0 (prefer ≥ 3.0)
-
-**Step 5: Verdict Discipline**
-- 7-8 → GREEN (execute)
-- 5-6 → YELLOW (reduce size or wait)
-- 0-4 → RED (no trade)
-
-**Golden Rules**
-1) Stop trading when daily goal met
-2) Don't stack too many positions
-3) Trade WITH the trend
-4) High VIX = smaller size or sit out
-5) Journal every trade (wins + losses)
-""")
-
-
 # --- 6. MAIN UI ---
 st.subheader("📊 Market Intelligence Dashboard")
 
@@ -859,12 +858,19 @@ if st.session_state.macro:
         st.error("🌍 **GLOBAL CORRELATION BREAK:** US/Europe/Asia markets diverging. Elevated volatility risk.")
     
     with st.expander("🌍 Global Macro Dashboard", expanded=False):
-        col1, col2, col3, col4, col5 = st.columns(5)
-        col1.metric("🇺🇸 S&P 500", f"{m['sp']:.2f}%")
-        col2.metric("🇩🇪 DAX", f"{m['dax']:.2f}%")
-        col3.metric("🇯🇵 Nikkei", f"{m['nikkei']:.2f}%")
-        col4.metric("💵 DXY", f"{m['dxy']:.1f}", delta=f"{m['dxy_chg']:.2f}%", delta_color="inverse")
-        col5.metric("📈 10Y Yield", f"{m['tnx']:.2f}%", delta=f"{m['tnx_chg']:.2f}%", delta_color="inverse")
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
+        col1.metric("🇺🇸 S&P 500", f"{m['sp']:.2f}%", 
+                   help="S&P 500 futures. Heartbeat of US markets. Green=risk-on, Red=risk-off.")
+        col2.metric("🔥 VIX", f"{m['vix']:.1f}",
+                   help="Fear Index. <15=calm, 15-20=normal, 20-30=elevated, >30=crisis mode.")
+        col3.metric("🇩🇪 DAX", f"{m['dax']:.2f}%",
+                   help="German stock index. Represents European equities. Should correlate with US.")
+        col4.metric("🇯🇵 Nikkei", f"{m['nikkei']:.2f}%",
+                   help="Japanese stock index. Represents Asian markets. Should correlate with US/EU.")
+        col5.metric("💵 DXY", f"{m['dxy']:.1f}", delta=f"{m['dxy_chg']:.2f}%", delta_color="inverse",
+                   help="US Dollar Index. UP=Strong dollar=Bad for commodities. DOWN=Weak dollar=Good for gold/oil.")
+        col6.metric("📈 10Y Yield", f"{m['tnx']:.2f}%", delta=f"{m['tnx_chg']:.2f}%", delta_color="inverse",
+                   help="10-Year Treasury yield. UP=Rising rates=Bad for growth stocks. DOWN=Falling rates=Good for growth.")
 
 # ASSET ANALYSIS
 if st.session_state.data is not None:
@@ -1238,7 +1244,7 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
     
     # === WARREN AI EXPORT ===
     st.markdown("---")
-    st.caption("**📋 Copy for 2nd Opinion elsewhere:**")
+    st.caption("**📋 Copy for WarrenAI:**")
     
     if st.session_state.macro:
         flow_strength = engine.check_passive_intensity(
@@ -1300,7 +1306,7 @@ Passive Flow: {flow_strength}
                 st.rerun()
 
 else:
-    st.info("👈 **Quick Start Guide:** 1. Scan Macro (check global markets) → 2. Select a Ticker/Asset (**left sidebar**) → 3. Check/Enter IWT Score + Penalties (**left sidebar**) → 4. Scan Ticker/Asset → 5. Review Multi-Algo Signals → 6. Log Paper or Live Trade")
+    st.info("👈 **Quick Start:** 1. Scan Macro → 2. Scan Ticker → 3. Review Signals → 4. Check Verdict → 5. Execute")
 
 # POSITION MANAGEMENT
 if st.session_state.open_positions:
