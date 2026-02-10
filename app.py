@@ -23,17 +23,31 @@ from datetime import datetime, time, timedelta
 import pytz
 
 # --- 1. CONFIGURATION ---
+# 🇺🇸 US / GLOBAL VIPs
 VIP_TICKERS = ["NVDA", "AAPL", "AMZN", "GOOGL", "TSLA", "MSFT", "META", "AMD", "NFLX", "SPY", "QQQ", "IWM", "GLD", "SLV", "USO"]
 GROWTH_TICKERS = ["NVDA", "AAPL", "AMZN", "GOOGL", "TSLA", "MSFT", "META", "AMD", "NFLX", "QQQ", "ARKK", "COIN", "SHOP", "SQ"]
 COMMODITY_TICKERS = ["GLD", "SLV", "GDX", "USO", "XLE", "FCX"]
 VALUE_TICKERS = ["JPM", "BAC", "XOM", "CVX", "BRK.B", "JNJ", "PG"]
 
+# 🇰🇪 KENYA VIPs (The "Zidii Trader" Watchlist - Nairobi Securities Exchange)
+# SCOM: Safaricom (The Market Mover - M-Pesa parent) | EQTY: Equity Bank | KCB: KCB Group
+# EABL: East African Breweries | COOP: Co-op Bank | ABSA: Absa Kenya | NCBA: NCBA Group | BAT: BAT Kenya
+KENYA_TICKERS = ["SCOM.NR", "EQTY.NR", "KCB.NR", "EABL.NR", "COOP.NR", "ABSA.NR", "NCBA.NR", "BAT.NR"]
+
+# 📊 COMBINED TICKER LIST (US + Kenya)
+ALL_TICKERS = VIP_TICKERS + KENYA_TICKERS
+
 SECTOR_MAP = {
+    # 🇺🇸 US Stocks
     "NVDA": "Tech", "AMD": "Tech", "MSFT": "Tech", "AAPL": "Tech", "META": "Tech", "GOOGL": "Tech",
     "TSLA": "Auto", "AMZN": "Consumer", "NFLX": "Media", "SPY": "Index", "QQQ": "Tech-Index", "IWM": "Index",
     "GLD": "Commodity", "SLV": "Commodity", "GDX": "Mining", "USO": "Energy", "XLE": "Energy",
     "JPM": "Finance", "BAC": "Finance", "XOM": "Energy", "CVX": "Energy", "BRK.B": "Conglomerate",
-    "JNJ": "Healthcare", "PG": "Staples", "ARKK": "Thematic", "COIN": "Crypto", "SHOP": "Tech", "SQ": "Fintech", "FCX": "Materials"
+    "JNJ": "Healthcare", "PG": "Staples", "ARKK": "Thematic", "COIN": "Crypto", "SHOP": "Tech", "SQ": "Fintech", "FCX": "Materials",
+    # 🇰🇪 Kenya Stocks (Nairobi Securities Exchange)
+    "SCOM.NR": "Telecom", "EQTY.NR": "Finance", "KCB.NR": "Finance",
+    "EABL.NR": "Consumer", "COOP.NR": "Finance", "ABSA.NR": "Finance",
+    "NCBA.NR": "Finance", "BAT.NR": "Consumer"
 }
 
 COMMISSION_PER_SHARE = 0.005
@@ -699,10 +713,10 @@ with st.sidebar:
     st.header("2. Asset Selection")
     
     input_mode = st.radio("Input:", ["VIP List", "Manual Search"], 
-                         help="VIP List = Pre-vetted high-liquidity stocks. Manual = Enter any ticker.")
+                         help="VIP List = Pre-vetted high-liquidity stocks (US + Kenya). Manual = Enter any ticker.")
     
     if input_mode == "VIP List":
-        ticker = st.selectbox("Ticker", VIP_TICKERS, help="High-liquidity institutional favorites with tight spreads.")
+        ticker = st.selectbox("Ticker", ALL_TICKERS, help="High-liquidity stocks from US (Nasdaq/NYSE) and Kenya (NSE) exchanges.")
     else:
         ticker = st.text_input("Ticker", "NVDA", help="Enter any stock symbol (e.g., AAPL, TSLA, GME).").upper()
 
@@ -765,48 +779,6 @@ with st.sidebar:
         st.session_state.consecutive_losses = 0
         st.success("✅ Session reset!")
         st.rerun()
-# ============================================================================
-# BEGINNER'S GUIDE
-# ============================================================================
-
-with st.expander("🎓 Beginner's Guide (Read This First)", expanded=False):
-    st.markdown("""
-### 🎓 How to Use Quantum Maestro
-
-**Step 1: Set Your Risk**
-- Total Capital = actual account size
-- Risk per Trade = ~1% of capital ($10,000 → $100)
-- Never risk more than 2% per trade
-
-**Step 2: Check Macro FIRST**
-- Scan VIX before individual stocks
-- If VIX HIGH/CRISIS → reduce size or don't trade
-- If Risk-Off (Gold + VIX rising) → avoid longs
-
-**Step 3: Scan a Stock**
-- Use VIP List (safest) or enter ticker
-- Wait for 15+ indicators to load
-
-**Step 4: Score the Setup (IWT)**
-- Freshness (fresh > stale)
-- Time in zone (fast rejection > lingering)
-- Speed out (explosive > grinding)
-- R/R must be ≥ 2.0 (prefer ≥ 3.0)
-
-**Step 5: Verdict Discipline**
-- 7-8 → GREEN (execute)
-- 5-6 → YELLOW (reduce size or wait)
-- 0-4 → RED (no trade)
-
-**Golden Rules**
-1) Stop trading when daily goal met
-2) Don't stack too many positions
-3) Trade WITH the trend
-4) High VIX = smaller size or sit out
-5) Journal every trade (wins + losses)
-""")
-
-
 
 # --- 6. MAIN UI ---
 st.subheader("📊 Market Intelligence Dashboard")
@@ -881,6 +853,11 @@ if st.session_state.macro:
     if m.get('dollar_headwind') and ticker in COMMODITY_TICKERS:
         st.warning("💵 **DOLLAR HEADWIND:** DXY rising hurts commodities (gold, silver, oil).")
     
+    # 🇰🇪 KENYA-SPECIFIC MACRO FILTER
+    if ticker.endswith('.NR') and m.get('dxy_chg', 0) > 0.5:
+        st.warning("💵 🇰🇪 **KENYA ALERT:** Strong Dollar (DXY rising) typically triggers foreign outflows from NSE. Consider defensive sizing.")
+        st.caption("💡 Frontier markets are highly sensitive to USD strength. Watch USD/KES exchange rate closely.")
+    
     flow_strength = engine.check_passive_intensity(
         datetime.now().day, 
         st.session_state.metrics.get('rvol', 0) if st.session_state.metrics else 0
@@ -940,6 +917,10 @@ if st.session_state.data is not None:
     vol_status = "🔥 HOT" if m['rvol'] > 1.5 else "✅ NORMAL" if m['rvol'] > 0.8 else "💤 THIN"
     col3.metric("Volume (RVOL)", f"{m['rvol']:.1f}x", delta=vol_status, 
                help="Relative Volume. >1.5x = HIGH interest. <0.8x = LOW interest (thin/dangerous).")
+    
+    # 🇰🇪 DATA QUALITY WARNING FOR KENYA
+    if ticker.endswith('.NR') and m['rvol'] < 0.5:
+        st.caption("⚠️ 🇰🇪 **Kenya Data Note:** Yahoo Finance volume for NSE can be delayed. If showing near-zero, ignore RVOL signal.")
     
     trend_emoji = {"STRONG_BULL": "🚀", "BULL": "📈", "NEUTRAL": "➡️", "BEAR": "📉", "STRONG_BEAR": "🔻"}
     col4.metric("Trend", m['trend_strength'], delta=trend_emoji.get(m['trend_strength'], "➡️"), 
@@ -1286,7 +1267,7 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
     
     # === WARREN AI EXPORT ===
     st.markdown("---")
-    st.caption("**📋 Copy for **2nd Opinion** elsewhere:**")
+    st.caption("**📋 Copy for WarrenAI:**")
     
     if st.session_state.macro:
         flow_strength = engine.check_passive_intensity(
@@ -1348,7 +1329,7 @@ Passive Flow: {flow_strength}
                 st.rerun()
 
 else:
-    st.info("👈 **Quick Start Guide:** 1. Scan Macro (check global markets) → 2. Select a Ticker/Asset (**left sidebar**) → 3. Check/Enter **Strategy** + **IWT Score** (**left sidebar**) → 4. Scan Ticker/Asset → 5. Review Multi-Algo Signals → 6. Log Paper or Live Trade")
+    st.info("👈 **Quick Start:** 1. Scan Macro → 2. Scan Ticker → 3. Review Signals → 4. Check Verdict → 5. Execute")
 
 # POSITION MANAGEMENT
 if st.session_state.open_positions:
