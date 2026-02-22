@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install ruff
+
+      - name: Lint
+        run: ruff check app.py --select E,F,W --ignore E501,E402,F401,W605
+
+      - name: Smoke test (import check)
+        run: python3 -c "
+import ast, sys
+with open('app.py') as f:
+    src = f.read()
+try:
+    ast.parse(src)
+    print('✅ app.py parses cleanly')
+except SyntaxError as e:
+    print(f'❌ Syntax error: {e}')
+    sys.exit(1)
+"

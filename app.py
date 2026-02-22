@@ -117,7 +117,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. LEGAL & ONBOARDING ---
-st.title("🏛️ Quantum Maestro [TradingBot]: Institutional Edition")
+st.title("🏛️ Quantum Maestro — Macro Risk & Trade Analysis Terminal")
 st.caption("Portfolio Risk Architecture | Volatility Regimes | Multi-Algorithm Fusion | IWT Execution Discipline | Performance Analytics")
 
 with st.expander("⚠️ READ FIRST: Legal Disclaimer", expanded=True):
@@ -133,6 +133,12 @@ if not agree:
     st.warning("🛑 Please accept the disclaimer above.")
     st.stop()
 
+st.error(
+    "⚠️ **SIMULATION ONLY** — This tool analyses signals and scores setups. "
+    "It does not execute trades or connect to any broker. Not financial advice. "
+    "Trading involves substantial risk of loss.",
+    icon=None
+)
 st.divider()
 
 # --- 3. SESSION STATE ---
@@ -1541,5 +1547,5 @@ if st.session_state.journal:
             )
 
 st.divider()
-st.caption("🏛️ Quantum Maestro [TradingBot] — Ultimate Institutional Edition | Educational Use Only")
+st.caption("🏛️ Quantum Maestro — Macro Risk & Trade Analysis Terminal | Simulation Only — Not Financial Advice")
 st.caption("© 2026 Gabriel Mahia | Consistency beats intensity.")
