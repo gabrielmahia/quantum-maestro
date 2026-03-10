@@ -54,7 +54,7 @@ COMMISSION_PER_SHARE = 0.005
 SLIPPAGE_BPS = 5
 
 st.set_page_config(
-    page_title="Quantum Maestro Terminal",
+    page_title="Msimamo — Macro Risk & Trade Intelligence",
     layout="wide",
     initial_sidebar_state="expanded",
     page_icon="🏛️"
@@ -129,7 +129,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. LEGAL & ONBOARDING ---
-st.title("🏛️ Quantum Maestro — Macro Risk & Trade Analysis Terminal")
+st.title("🏛️ Msimamo — Macro Risk & Trade Analysis Terminal")
 st.caption("Portfolio Risk Architecture | Volatility Regimes | Multi-Algorithm Fusion | IWT Execution Discipline | Performance Analytics")
 
 with st.expander("⚠️ READ FIRST: Legal Disclaimer", expanded=True):
