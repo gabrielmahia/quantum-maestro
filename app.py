@@ -14,10 +14,133 @@
 
 import streamlit as st
 import yfinance as yf
-import pandas_ta as ta
 import mplfinance as mpf
 import pandas as pd
 import numpy as np
+
+# ── Pure numpy/pandas technical indicator library ─────────────────────────────
+# Replaces pandas_ta (dropped: depends on numba/llvmlite, incompatible with
+# Python 3.14+). Column names kept identical so downstream code is unchanged.
+
+def _calc_indicators(df):
+    """Append all technical indicators to df in-place. Returns df."""
+    hi, lo, cl, vo = df['High'], df['Low'], df['Close'], df['Volume']
+
+    # SMA
+    for n in (20, 50, 200):
+        df[f'SMA_{n}'] = cl.rolling(n).mean()
+
+    # EMA
+    for n in (12, 26):
+        df[f'EMA_{n}'] = cl.ewm(span=n, adjust=False).mean()
+
+    # ATR
+    prev_cl = cl.shift(1)
+    tr = pd.concat([hi - lo, (hi - prev_cl).abs(), (lo - prev_cl).abs()], axis=1).max(axis=1)
+    df['ATRr_14'] = tr.ewm(alpha=1/14, adjust=False).mean()
+
+    # RSI
+    delta = cl.diff()
+    gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
+    rs = gain / loss.replace(0, np.nan)
+    df['RSI_14'] = 100 - (100 / (1 + rs))
+
+    # MACD
+    ema12 = cl.ewm(span=12, adjust=False).mean()
+    ema26 = cl.ewm(span=26, adjust=False).mean()
+    macd_line = ema12 - ema26
+    signal_line = macd_line.ewm(span=9, adjust=False).mean()
+    df['MACD_12_26_9']  = macd_line
+    df['MACDs_12_26_9'] = signal_line
+    df['MACDh_12_26_9'] = macd_line - signal_line
+
+    # Bollinger Bands
+    sma20 = cl.rolling(20).mean()
+    std20 = cl.rolling(20).std()
+    df['BBU_20_2.0'] = sma20 + 2 * std20
+    df['BBL_20_2.0'] = sma20 - 2 * std20
+    df['BBM_20_2.0'] = sma20
+
+    # Stochastic %K/%D
+    lo14 = lo.rolling(14).min()
+    hi14 = hi.rolling(14).max()
+    k = 100 * (cl - lo14) / (hi14 - lo14).replace(0, np.nan)
+    df['STOCHk_14_3_3'] = k.rolling(3).mean()
+    df['STOCHd_14_3_3'] = df['STOCHk_14_3_3'].rolling(3).mean()
+
+    # ADX
+    up   = hi.diff()
+    down = -lo.diff()
+    plus_dm  = up.where((up > down) & (up > 0), 0.0)
+    minus_dm = down.where((down > up) & (down > 0), 0.0)
+    atr14 = tr.ewm(alpha=1/14, adjust=False).mean()
+    plus_di  = 100 * plus_dm.ewm(alpha=1/14, adjust=False).mean()  / atr14
+    minus_di = 100 * minus_dm.ewm(alpha=1/14, adjust=False).mean() / atr14
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    df['ADX_14'] = dx.ewm(alpha=1/14, adjust=False).mean()
+
+    # OBV
+    direction = np.sign(cl.diff()).fillna(0)
+    df['OBV'] = (direction * vo).cumsum()
+
+    # MFI (Money Flow Index)
+    tp = (hi + lo + cl) / 3
+    mf = tp * vo
+    pos_mf = mf.where(tp > tp.shift(1), 0.0).rolling(14).sum()
+    neg_mf = mf.where(tp < tp.shift(1), 0.0).rolling(14).sum()
+    mfr = pos_mf / neg_mf.replace(0, np.nan)
+    df['MFI_14'] = 100 - (100 / (1 + mfr))
+
+    # Williams %R
+    df['WILLR_14'] = -100 * (hi14 - cl) / (hi14 - lo14).replace(0, np.nan)
+
+    # Supertrend (10, 3)
+    _supertrend(df, length=10, multiplier=3)
+
+    # Ichimoku (simplified: Span A & B)
+    _ichimoku(df)
+
+    return df
+
+
+def _supertrend(df, length=10, multiplier=3):
+    hi, lo, cl = df['High'], df['Low'], df['Close']
+    prev_cl = cl.shift(1)
+    tr = pd.concat([hi - lo, (hi - prev_cl).abs(), (lo - prev_cl).abs()], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1/length, adjust=False).mean()
+    hl2 = (hi + lo) / 2
+    upper = hl2 + multiplier * atr
+    lower = hl2 - multiplier * atr
+
+    st_val = pd.Series(index=df.index, dtype=float)
+    st_dir = pd.Series(1, index=df.index, dtype=int)
+    for i in range(1, len(df)):
+        prev_upper = upper.iloc[i-1]
+        prev_lower = lower.iloc[i-1]
+        cur_upper  = upper.iloc[i]
+        cur_lower  = lower.iloc[i]
+        upper.iloc[i] = cur_upper if cur_upper < prev_upper or cl.iloc[i-1] > prev_upper else prev_upper
+        lower.iloc[i] = cur_lower if cur_lower > prev_lower or cl.iloc[i-1] < prev_lower else prev_lower
+        if st_dir.iloc[i-1] == 1:
+            st_dir.iloc[i] = -1 if cl.iloc[i] < lower.iloc[i] else 1
+        else:
+            st_dir.iloc[i] =  1 if cl.iloc[i] > upper.iloc[i] else -1
+        st_val.iloc[i] = lower.iloc[i] if st_dir.iloc[i] == 1 else upper.iloc[i]
+
+    df['ST_VAL'] = st_val
+    df['ST_DIR'] = st_dir
+
+
+def _ichimoku(df):
+    hi, lo = df['High'], df['Low']
+    tenkan   = (hi.rolling(9).max()  + lo.rolling(9).min())  / 2
+    kijun    = (hi.rolling(26).max() + lo.rolling(26).min()) / 2
+    df['ICH_SPAN_A'] = ((tenkan + kijun) / 2).shift(26)
+    df['ICH_SPAN_B'] = ((hi.rolling(52).max() + lo.rolling(52).min()) / 2).shift(26)
+    # Fill forward so iloc[-1] is always valid
+    df['ICH_SPAN_A'] = df['ICH_SPAN_A'].ffill().fillna(df['Close'])
+    df['ICH_SPAN_B'] = df['ICH_SPAN_B'].ffill().fillna(df['Close'])
 from scipy.signal import argrelextrema
 from datetime import datetime, time, timedelta
 import pytz
@@ -262,38 +385,8 @@ class InstitutionalAnalyst:
                 full_name = t
                 beta = 1.0
             
-            # Core indicators
-            data.ta.atr(length=14, append=True)
-            data.ta.rsi(length=14, append=True)
-            data.ta.macd(fast=12, slow=26, signal=9, append=True)
-            data.ta.bbands(length=20, std=2, append=True)
-            data.ta.stoch(k=14, d=3, append=True)
-            data.ta.adx(length=14, append=True)
-            data.ta.obv(append=True)
-            data.ta.mfi(length=14, append=True)
-            data.ta.willr(length=14, append=True)
-            
-            data.ta.sma(length=20, append=True)
-            data.ta.sma(length=50, append=True)
-            data.ta.sma(length=200, append=True)
-            data.ta.ema(length=12, append=True)
-            data.ta.ema(length=26, append=True)
-            
-            try:
-                st_data = data.ta.supertrend(length=10, multiplier=3)
-                data['ST_VAL'] = st_data.iloc[:, 0]
-                data['ST_DIR'] = st_data.iloc[:, 1]
-            except:
-                data['ST_VAL'] = data['Close']
-                data['ST_DIR'] = 1
-            
-            try:
-                ich = data.ta.ichimoku()[0]
-                data['ICH_SPAN_A'] = ich['ISA_9']
-                data['ICH_SPAN_B'] = ich['ISB_26']
-            except:
-                data['ICH_SPAN_A'] = data['Close']
-                data['ICH_SPAN_B'] = data['Close']
+            # Core indicators — pure numpy/pandas (no pandas_ta dependency)
+            _calc_indicators(data)
             
             vol_sma = data['Volume'].rolling(20).mean()
             data['RVOL'] = data['Volume'] / vol_sma
