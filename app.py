@@ -118,7 +118,12 @@ st.markdown("""
         [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
         [data-testid="stDataFrame"] { overflow-x: auto !important; }
         [data-testid="stPlotlyChart"] > div { width: 100% !important; }
-        .stButton > button { width: 100% !important; min-height: 48px !important; }
+        [data-testid="stPlotlyChart"] canvas { touch-action: pan-y !important; }
+        iframe { width: 100% !important; max-width: 100% !important; }
+        .stButton > button { width: 100% !important; min-height: 48px !important; font-size: 0.95rem !important; }
+        .stSelectbox > div { font-size: 0.9rem !important; }
+        .risk-warning { padding: 10px !important; font-size: 0.88rem !important; }
+        section[data-testid="stSidebar"] { min-width: 180px !important; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -247,7 +252,8 @@ class InstitutionalAnalyst:
             data = ticker_obj.history(period="1y")
             
             if data.empty or len(data) < 50:
-                return None, None, f"ERROR: Insufficient data for {t}. Need at least 50 trading days."
+                nse_hint = " NSE data via yfinance is often unavailable — check nse.co.ke directly." if t.endswith('.NR') else ""
+                return None, None, f"ERROR: Insufficient data for {t}. Need at least 50 trading days.{nse_hint}"
             
             try: 
                 full_name = ticker_obj.info.get('longName', t)
@@ -910,6 +916,15 @@ if st.session_state.macro:
         st.warning("💵 **DOLLAR HEADWIND:** DXY rising hurts commodities (gold, silver, oil).")
     
     # 🇰🇪 KENYA-SPECIFIC MACRO FILTER
+    if ticker.endswith('.NR'):
+        st.info(
+            "🇰🇪 **NSE Ticker Note** — Nairobi Securities Exchange data via yfinance "
+            "has irregular coverage and may be delayed by days or unavailable. "
+            "For reliable NSE data use the [NSE website](https://www.nse.co.ke) or "
+            "[CBK financial markets portal](https://www.centralbank.go.ke). "
+            "Technical indicators below are only meaningful when data has ≥50 trading days.",
+            icon=None
+        )
     if ticker.endswith('.NR') and m.get('dxy_chg', 0) > 0.5:
         st.warning("💵 🇰🇪 **KENYA ALERT:** Strong Dollar (DXY rising) typically triggers foreign outflows from NSE. Consider defensive sizing.")
         st.caption("💡 Frontier markets are highly sensitive to USD strength. Watch USD/KES exchange rate closely.")
