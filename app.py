@@ -722,10 +722,10 @@ class InstitutionalAnalyst:
             return 0
         
         drawdown_mult = 1.0
-        if consecutive_losses >= 3:
-            drawdown_mult = 0.5
-        elif consecutive_losses >= 5:
+        if consecutive_losses >= 5:
             drawdown_mult = 0.25
+        elif consecutive_losses >= 3:
+            drawdown_mult = 0.5
         
         beta_mult = 1.0 / max(beta, 0.5) if beta > 1.5 else 1.0
         
@@ -1522,9 +1522,13 @@ if st.session_state.open_positions:
                         if "Long" in pos['action']:
                             actual_pnl = (exit_price - pos['entry']) * pos['shares']
                         elif "Income" in pos['action']:
-                            # For Income: PnL = Premium kept (if expired worthless) OR loss if assigned
-                            # Simplified: If closed early, profit/loss based on option price movement
-                            actual_pnl = pos['expected_reward']  # Assume full premium kept for simplicity
+                            # For Income (short put): profit = premium kept if price > strike at close.
+                            # If assigned (price < strike), loss = (strike - exit_price) * shares - premium
+                            if exit_price >= pos['entry']:
+                                actual_pnl = pos['expected_reward']  # Put expired worthless, keep premium
+                            else:
+                                assignment_loss = (pos['entry'] - exit_price) * pos['shares'] * 100
+                                actual_pnl = pos['expected_reward'] - assignment_loss
                         else:  # Short
                             actual_pnl = (pos['entry'] - exit_price) * pos['shares']
                         
