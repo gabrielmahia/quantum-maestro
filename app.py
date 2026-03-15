@@ -5,11 +5,9 @@
 # app.py
 
 # =============================================================================
-# 🏛️ QUANTUM MAESTRO — ULTIMATE INSTITUTIONAL EDITION V13.0 FINAL
-# =============================================================================
-# Multi-Algorithm Fusion | Pattern Recognition | Adaptive Risk | Performance Analytics
-# Combines: Teri Ijeoma's IWT + WarrenAI Macro + 15+ Technical Indicators
-# Educational simulation tool — NOT financial advice.
+# Msimamo — Macro Risk & Trade Intelligence
+# Educational simulation. Does not execute trades. Not financial advice.
+# IWT framework: Teri Ijeoma (investwithteri.com)
 # =============================================================================
 
 import streamlit as st
@@ -1662,5 +1660,5 @@ if st.session_state.journal:
             )
 
 st.divider()
-st.caption("🏛️ Quantum Maestro — Macro Risk & Trade Analysis Terminal | Simulation Only — Not Financial Advice")
+st.caption("📊 Msimamo — Macro Risk & Trade Intelligence | Simulation Only — Not Financial Advice")
 st.caption("© 2026 Gabriel Mahia | Consistency beats intensity.")
