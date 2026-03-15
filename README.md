@@ -1,11 +1,14 @@
-# 🏛️ Macro Risk Desk — Quantum Maestro
+# 📊 Msimamo — Macro Risk & Trade Intelligence
 
 **Global macro trading analysis terminal with IWT execution discipline.**  
 Simulation only — does not execute trades. For education and trade planning.
 
+[![Live App](https://img.shields.io/badge/Live%20App-quantum--maestro.streamlit.app-FF4B4B?logo=streamlit)](https://quantum-maestro.streamlit.app)
 [![License](https://img.shields.io/badge/license-CC%20BY--NC--ND%204.0-red)](LICENSE)
 [![Status](https://img.shields.io/badge/status-Simulation%20Only-orange)](#disclaimer)
 [![Data](https://img.shields.io/badge/data-Yahoo%20Finance%20(live)-blue)](https://finance.yahoo.com)
+
+> **Msimamo** /msimɑːmɔ/ — *Kiswahili*: position, stance, posture.
 
 > ⚠️ **SIMULATION ONLY** — This tool analyses market signals and scores trade setups. It does not execute trades, connect to any broker, or manage real funds. Not financial advice.
 
@@ -73,3 +76,24 @@ This software is for educational use and trade simulation only. It does not cons
 CC BY-NC-ND 4.0 — personal and educational use permitted. Commercial use prohibited. Contact: [contact@aikungfu.dev](mailto:contact@aikungfu.dev)
 
 Copyright © 2026 Gabriel Mahia. All Rights Reserved.
+---
+
+## Portfolio
+
+Part of a suite of civic and community tools built by [Gabriel Mahia](https://github.com/gabrielmahia):
+
+| App | What it does |
+|-----|-------------|
+| [🌊 Mafuriko](https://floodwatch-kenya.streamlit.app) | Flood risk & policy enforcement tracker — Kenya |
+| [💧 WapiMaji](https://wapimaji.streamlit.app) | Water stress & drought intelligence — 47 counties |
+| [🏛️ Macho ya Wananchi](https://civic-decoder.streamlit.app) | MP voting records, CDF spending, bill tracker |
+| [🌾 JuaMazao](https://mazao-intel.streamlit.app) | Live food price intelligence for smallholders |
+| [🏦 ChaguaSacco](https://sacco-scout.streamlit.app) | Compare Kenya SACCOs on dividends & loan rates |
+| [🛡️ Hesabu](https://budget-sentinel.streamlit.app) | County budget absorption tracker |
+| [🗺️ Hifadhi](https://hifadhi.streamlit.app) | Riparian encroachment & Water Act compliance map |
+| [💰 Hela](https://hela.streamlit.app) | Chama management for the 21st century |
+| [💸 TumaPesa](https://remit-lens.streamlit.app) | True cost remittance comparison — diaspora to Kenya |
+| [📊 Msimamo](https://quantum-maestro.streamlit.app) | Macro risk & trade intelligence terminal |
+| [🦁 Dagoretti](https://dagoretti-community-hub.streamlit.app) | Alumni atlas & community hub for Dagoretti High |
+| [⛪ Jumuia](https://catholicparishsteward.streamlit.app) | Catholic parish tools — church finder, pastoral care |
+
