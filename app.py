@@ -827,6 +827,14 @@ with st.sidebar:
     
     if input_mode == "VIP List":
         ticker = st.selectbox("Ticker", ALL_TICKERS, help="High-liquidity stocks from US (Nasdaq/NYSE) and Kenya (NSE) exchanges.")
+        if ticker.endswith(".NR"):
+            st.warning(
+                "⚠️ **NSE tickers (.NR) are not available via Yahoo Finance** — "
+                "yfinance returns no data for all 8 NSE listings. "
+                "For Nairobi Securities Exchange data use [nse.co.ke](https://nse.co.ke) directly. "
+                "Selecting a Kenya ticker will produce an error when you scan.",
+                icon=None
+            )
     else:
         ticker = st.text_input("Ticker", "NVDA", help="Enter any stock symbol (e.g., AAPL, TSLA, GME).").upper()
 
