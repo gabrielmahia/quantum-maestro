@@ -92,7 +92,7 @@ Part of a suite of civic and community tools built by [Gabriel Mahia](https://gi
 | [🛡️ Hesabu](https://budget-sentinel.streamlit.app) | County budget absorption tracker |
 | [🗺️ Hifadhi](https://hifadhi.streamlit.app) | Riparian encroachment & Water Act compliance map |
 | [💰 Hela](https://hela.streamlit.app) | Chama management for the 21st century |
-| [💸 TumaPesa](https://remit-lens.streamlit.app) | True cost remittance comparison — diaspora to Kenya |
+| [💸 Peleka](https://remit-lens.streamlit.app) | True cost remittance comparison — diaspora to Kenya |
 | [📊 Msimamo](https://quantum-maestro.streamlit.app) | Macro risk & trade intelligence terminal |
 | [🦁 Dagoretti](https://dagoretti-community-hub.streamlit.app) | Alumni atlas & community hub for Dagoretti High |
 | [⛪ Jumuia](https://catholicparishsteward.streamlit.app) | Catholic parish tools — church finder, pastoral care |
