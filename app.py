@@ -174,6 +174,29 @@ SECTOR_MAP = {
 COMMISSION_PER_SHARE = 0.005
 SLIPPAGE_BPS = 5
 
+
+@st.cache_data(ttl=7200)
+def fetch_ndma_macro_signal():
+    """NDMA drought alerts — commodity price pressure signal for Kenya macro."""
+    try:
+        req = urllib.request.Request(
+            "https://www.ndma.go.ke/feed/",
+            headers={"User-Agent": "quantum-maestro/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            root = _ET.fromstring(r.read())
+        items = []
+        for item in root.findall(".//item")[:2]:
+            title = item.findtext("title", "").strip()
+            link  = item.findtext("link",  "").strip()
+            date  = item.findtext("pubDate", "").strip()[:16]
+            desc  = _re_qm.sub(r"<[^>]+>", "", item.findtext("description","")).strip()[:120]
+            if title:
+                items.append({"title": title, "link": link, "date": date, "summary": desc})
+        return items
+    except Exception:
+        return []
+
 st.set_page_config(
     page_title="Msimamo — Macro Risk & Trade Intelligence",
     layout="wide",
@@ -275,6 +298,16 @@ if _kes["live"] or _wb:
     if _kes["live"]: src.append(f"FX: open.er-api.com ({_kes['updated']})")
     if _wb: src.append("Macro: World Bank Open Data")
     st.caption("📡 Live · " + " · ".join(src))
+
+# NDMA drought signal — food price pressure indicator
+_ndma_qm = fetch_ndma_macro_signal()
+if _ndma_qm:
+    with st.expander(f"📡 NDMA Drought Signal — Kenya commodity pressure ({_ndma_qm[0]['date']})", expanded=False):
+        st.caption("Drought → food price inflation → CPI pressure → BoK rate outlook")
+        for _nq in _ndma_qm:
+            st.markdown(f"**[{_nq['title'][:80]}]({_nq['link']})**  *{_nq['date']}*")
+            if _nq['summary']:
+                st.caption(_nq['summary'][:120] + "…")
 
 st.caption("Portfolio Risk Architecture | Volatility Regimes | Multi-Algorithm Fusion | IWT Execution Discipline | Performance Analytics")
 
