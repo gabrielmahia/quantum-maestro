@@ -251,6 +251,31 @@ st.markdown("""
 
 # --- 2. LEGAL & ONBOARDING ---
 st.title("🏛️ Msimamo — Macro Risk & Trade Analysis Terminal")
+
+# ── Live Kenya macro context ───────────────────────────────────────────────
+_kes = fetch_kes_rate()
+_wb  = fetch_kenya_macro()
+if _kes["live"] or _wb:
+    _mc = st.columns(5)
+    if _kes["live"]:
+        _mc[0].metric("USD/KES", f"{_kes['kes']:.2f}", help="open.er-api.com live")
+        _mc[1].metric("EUR/KES", f"{_kes['kes']/_kes['eur']:.2f}", help="Derived")
+        _mc[2].metric("GBP/KES", f"{_kes['kes']/_kes['gbp']:.2f}", help="Derived")
+    if _wb:
+        _codes = list(_wb.keys())
+        if len(_codes) > 0:
+            _d = _wb[_codes[0]]
+            _mc[3].metric(f"Kenya GDP {_d['year']}", 
+                         f"${_d['value']/1e9:.0f}B", help="World Bank")
+        if len(_codes) > 1:
+            _d2 = _wb[_codes[1]]
+            _mc[4].metric(f"Inflation {_d2['year']}", 
+                         f"{_d2['value']}%", help="World Bank CPI")
+    src = []
+    if _kes["live"]: src.append(f"FX: open.er-api.com ({_kes['updated']})")
+    if _wb: src.append("Macro: World Bank Open Data")
+    st.caption("📡 Live · " + " · ".join(src))
+
 st.caption("Portfolio Risk Architecture | Volatility Regimes | Multi-Algorithm Fusion | IWT Execution Discipline | Performance Analytics")
 
 with st.expander("⚠️ READ FIRST: Legal Disclaimer", expanded=True):
