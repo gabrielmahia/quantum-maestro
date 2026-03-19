@@ -4,6 +4,7 @@
 Simulation only — does not execute trades. For education and trade planning.
 
 [![Live App](https://img.shields.io/badge/Live%20App-quantum--maestro.streamlit.app-FF4B4B?logo=streamlit)](https://quantum-maestro.streamlit.app)
+[![Live Data](https://img.shields.io/badge/Live%20Data-Yahoo%20Finance%20%C2%B7%20open.er-api.com%20%C2%B7%20NDMA%20%C2%B7%20World%20Bank-00b4d8)](#quantum-maestro)
 [![License](https://img.shields.io/badge/license-CC%20BY--NC--ND%204.0-red)](LICENSE)
 [![Status](https://img.shields.io/badge/status-Simulation%20Only-orange)](#disclaimer)
 [![Data](https://img.shields.io/badge/data-Yahoo%20Finance%20(live)-blue)](https://finance.yahoo.com)
