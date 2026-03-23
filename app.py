@@ -275,6 +275,53 @@ st.markdown("""
 # --- 2. LEGAL & ONBOARDING ---
 st.title("🏛️ Msimamo — Macro Risk & Trade Analysis Terminal")
 
+@st.cache_data(ttl=3600)
+def fetch_kes_rate():
+    """Live KES rate from open.er-api.com."""
+    import json as _qj
+    try:
+        with urllib.request.urlopen(
+            "https://open.er-api.com/v6/latest/USD", timeout=6
+        ) as r:
+            d = _qj.loads(r.read())
+        rates = d["rates"]
+        kes = rates["KES"]
+        return {
+            "kes": round(kes, 2),
+            "eur": round(rates["EUR"], 4),
+            "gbp": round(rates["GBP"], 4),
+            "updated": d.get("time_last_update_utc", "")[:16],
+            "live": True,
+        }
+    except Exception:
+        return {"kes": 129.0, "eur": 0.87, "gbp": 0.75, "updated": "fallback", "live": False}
+
+
+@st.cache_data(ttl=86400)
+def fetch_kenya_macro():
+    """World Bank Kenya macro indicators."""
+    import json as _qj2
+    results = {}
+    for code, label in [
+        ("FP.CPI.TOTL.ZG", "Kenya Inflation (%)"),
+        ("NY.GDP.PCAP.CD",  "GDP per capita (USD)"),
+        ("SL.UEM.TOTL.ZS",  "Unemployment (%)"),
+        ("BN.CAB.XOKA.GD.ZS", "Current account / GDP (%)"),
+    ]:
+        try:
+            url = (f"https://api.worldbank.org/v2/country/KE/indicator/{code}"
+                   f"?format=json&mrv=1&per_page=1")
+            with urllib.request.urlopen(url, timeout=15) as r:
+                data = _qj2.loads(r.read())
+            entries = [e for e in (data[1] if len(data) > 1 else []) if e.get("value")]
+            if entries:
+                e = entries[0]
+                results[code] = {"label": label, "value": round(e["value"], 2),
+                                  "year": e.get("date", "?")}
+        except Exception:
+            pass
+    return results
+
 # ── Live Kenya macro context ───────────────────────────────────────────────
 _kes = fetch_kes_rate()
 _wb  = fetch_kenya_macro()
