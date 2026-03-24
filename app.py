@@ -304,6 +304,46 @@ st.markdown("""
         .risk-warning { padding: 10px !important; font-size: 0.88rem !important; }
         section[data-testid="stSidebar"] { min-width: 180px !important; }
     }
+
+    /* Key Levels display — theme-adaptive */
+    .key-levels-bar {
+        font-size: 0.87rem;
+        margin: 6px 0 14px 0;
+        line-height: 1.8;
+        color: var(--text-color, #1a1a1a);
+    }
+    .key-levels-bar strong { color: inherit; }
+    .kl-touches {
+        font-size: 0.78rem;
+        color: var(--text-color, #444);
+        opacity: 0.8;
+    }
+    .kl-support {
+        display: inline-block;
+        background: #0e7c4a;
+        color: #ffffff !important;
+        padding: 2px 10px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+    }
+    .kl-resistance {
+        display: inline-block;
+        background: #c0392b;
+        color: #ffffff !important;
+        padding: 2px 10px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+    }
+    /* Dark mode — slightly brighter variants */
+    @media (prefers-color-scheme: dark) {
+        .kl-support    { background: #27ae60; }
+        .kl-resistance { background: #e74c3c; }
+        .kl-touches    { opacity: 0.9; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1244,19 +1284,13 @@ if st.session_state.data is not None:
                help="Average Directional Index. >25 = Strong trend. <20 = Weak/choppy.")
 
     st.markdown(
-        f"""<div style='font-size:0.85rem;margin:6px 0 12px 0;line-height:1.6;'>
+        f"""<div class='key-levels-bar'>
         <strong>Key Levels:</strong>&nbsp;
-        <span style='background:#d1ecf1;color:#0c5460;padding:2px 8px;border-radius:4px;
-                     font-family:monospace;font-weight:600;'>
-            &#9660; ${m['supp']:.2f}
-        </span>
-        <span style='color:#666;font-size:0.8rem;'>&nbsp;support&nbsp;&bull;&nbsp;{m.get('support_touches',0)}&nbsp;touches</span>
-        &nbsp;&nbsp;
-        <span style='background:#f8d7da;color:#721c24;padding:2px 8px;border-radius:4px;
-                     font-family:monospace;font-weight:600;'>
-            &#9650; ${m['res']:.2f}
-        </span>
-        <span style='color:#666;font-size:0.8rem;'>&nbsp;resistance&nbsp;&bull;&nbsp;{m.get('resistance_touches',0)}&nbsp;touches</span>
+        <span class='kl-support'>&#9660;&nbsp;${m['supp']:.2f}</span>
+        <span class='kl-touches'>&nbsp;support &bull; {m.get('support_touches',0)} touches</span>
+        &nbsp;&nbsp;&nbsp;
+        <span class='kl-resistance'>&#9650;&nbsp;${m['res']:.2f}</span>
+        <span class='kl-touches'>&nbsp;resistance &bull; {m.get('resistance_touches',0)} touches</span>
         </div>""",
         unsafe_allow_html=True
     )
