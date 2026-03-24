@@ -5,7 +5,7 @@
 # app.py
 
 # =============================================================================
-# Msimamo — Macro Risk & Trade Intelligence
+# EasyStockTrader — Smart Stock Analysis
 # Educational simulation. Does not execute trades. Not financial advice.
 # IWT framework: Teri Ijeoma (investwithteri.com)
 # =============================================================================
@@ -202,7 +202,7 @@ def fetch_ndma_macro_signal():
         return []
 
 st.set_page_config(
-    page_title="Msimamo — Macro Risk & Trade Intelligence",
+    page_title="EasyStockTrader — Smart Stock Analysis",
     layout="wide",
     initial_sidebar_state="expanded",
     page_icon="🏛️"
@@ -330,7 +330,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. LEGAL & ONBOARDING ---
-st.title("🏛️ Msimamo — Macro Risk & Trade Analysis Terminal")
+st.title("🏛️ EasyStockTrader — Smart Stock Analysis")
 
 @st.cache_data(ttl=3600)
 def fetch_kes_rate():
@@ -1844,5 +1844,5 @@ if st.session_state.journal:
             )
 
 st.divider()
-st.caption("📊 Msimamo — Macro Risk & Trade Intelligence | Simulation Only — Not Financial Advice")
+st.caption("📊 EasyStockTrader — Smart Stock Analysis | Simulation Only — Not Financial Advice")
 st.caption("© 2026 Gabriel Mahia | Consistency beats intensity.")
