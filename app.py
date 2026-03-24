@@ -210,139 +210,121 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .stButton>button { width: 100%; border-radius: 4px; height: 3em; font-weight: 600; letter-spacing: 0.5px; }
-    div[data-testid="stMetric"] { background-color: #f0f2f6; border: 1px solid #d6d6d6; border-radius: 6px; padding: 10px 15px; }
+    /* ── Buttons ──────────────────────────────────────────────── */
+    .stButton > button {
+        width: 100%; border-radius: 4px; height: 3em;
+        font-weight: 600; letter-spacing: 0.5px;
+    }
+
+    /* ── Metric cards — LIGHT MODE ────────────────────────────── */
+    div[data-testid="stMetric"] {
+        background-color: #f0f2f6;
+        border: 1px solid #d0d3da;
+        border-radius: 8px;
+        padding: 12px 16px;
+    }
+    [data-testid="stMetricLabel"]  { color: #444444 !important; font-size: 0.8rem !important; }
+    [data-testid="stMetricValue"]  { color: #111111 !important; font-size: 1.25rem !important; font-weight: 700 !important; }
+    [data-testid="stMetricDelta"]  { color: #333333 !important; font-size: 0.82rem !important; }
+
+    /* ── Metric cards — DARK MODE (OS preference) ─────────────── */
     @media (prefers-color-scheme: dark) {
-        div[data-testid="stMetric"] { background-color: #1e2127; border: 1px solid #30333d; }
+        div[data-testid="stMetric"] {
+            background-color: #1e2127 !important;
+            border-color: #30333d !important;
+        }
+        [data-testid="stMetricLabel"] { color: #aaaaaa !important; }
+        [data-testid="stMetricValue"] { color: #f0f0f0 !important; }
+        [data-testid="stMetricDelta"] { color: #cccccc !important; }
     }
-    .risk-warning { background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 10px 0; }
-    .success-box { background-color: #d4edda; padding: 15px; border-left: 4px solid #28a745; margin: 10px 0; }
-    .signal-bull {
-        background-color: #d4edda;
-        color: #155724;
-        padding: 8px 12px;
-        border-radius: 4px;
-        margin: 5px 0;
-        border: 1px solid #28a745;
-        font-weight: 500;
+
+    /* ── Metric cards — DARK MODE (Streamlit theme toggle) ─────── */
+    [data-theme="dark"] div[data-testid="stMetric"],
+    .stApp[data-theme="dark"] div[data-testid="stMetric"] {
+        background-color: #1e2127 !important;
+        border-color: #30333d !important;
     }
-    .signal-bear {
-        background-color: #f8d7da;
-        color: #721c24;
-        padding: 8px 12px;
-        border-radius: 4px;
-        margin: 5px 0;
-        border: 1px solid #dc3545;
-        font-weight: 500;
+    [data-theme="dark"] [data-testid="stMetricLabel"],
+    .stApp[data-theme="dark"] [data-testid="stMetricLabel"] { color: #aaaaaa !important; }
+    [data-theme="dark"] [data-testid="stMetricValue"],
+    .stApp[data-theme="dark"] [data-testid="stMetricValue"] { color: #f0f0f0 !important; }
+    [data-theme="dark"] [data-testid="stMetricDelta"],
+    .stApp[data-theme="dark"] [data-testid="stMetricDelta"] { color: #cccccc !important; }
+
+    /* ── Signal boxes ─────────────────────────────────────────── */
+    .signal-bull { background:#d4edda; color:#155724 !important; padding:8px 12px; border-radius:4px; margin:5px 0; border:1px solid #28a745; font-weight:500; }
+    .signal-bear { background:#f8d7da; color:#721c24 !important; padding:8px 12px; border-radius:4px; margin:5px 0; border:1px solid #dc3545; font-weight:500; }
+    .signal-neutral { background:#fff3cd; color:#856404 !important; padding:8px 12px; border-radius:4px; margin:5px 0; border:1px solid #ffc107; font-weight:500; }
+    @media (prefers-color-scheme: dark) {
+        .signal-bull    { background:#1e4620; color:#7dcea0 !important; border-color:#28a745; }
+        .signal-bear    { background:#4a1c1c; color:#f1948a !important; border-color:#dc3545; }
+        .signal-neutral { background:#4a3f1a; color:#f9e79f !important; border-color:#ffc107; }
     }
-    .signal-neutral {
-        background-color: #fff3cd;
-        color: #856404;
-        padding: 8px 12px;
-        border-radius: 4px;
-        margin: 5px 0;
-        border: 1px solid #ffc107;
-        font-weight: 500;
+
+    /* ── Risk / info boxes ────────────────────────────────────── */
+    .risk-warning { background:#fff3cd; color:#333 !important; padding:15px; border-left:4px solid #ffc107; margin:10px 0; }
+    .success-box  { background:#d4edda; color:#333 !important; padding:15px; border-left:4px solid #28a745; margin:10px 0; }
+
+    /* ── Key Levels ───────────────────────────────────────────── */
+    .key-levels-bar {
+        font-size: 0.97rem;
+        margin: 8px 0 16px 0;
+        line-height: 2;
+        color: #111111;
+    }
+    @media (prefers-color-scheme: dark) { .key-levels-bar { color: #f0f0f0; } }
+    [data-theme="dark"] .key-levels-bar { color: #f0f0f0 !important; }
+
+    .key-levels-bar strong { color: inherit; font-size: 1rem; }
+    .kl-touches { font-size: 0.82rem; color: #555555; }
+    @media (prefers-color-scheme: dark) { .kl-touches { color: #bbbbbb; } }
+    [data-theme="dark"] .kl-touches { color: #bbbbbb !important; }
+
+    .kl-support {
+        display: inline-block;
+        background: #0e7c4a; color: #ffffff !important;
+        padding: 3px 12px; border-radius: 5px;
+        font-family: monospace; font-weight: 700;
+        font-size: 0.97rem; letter-spacing: 0.03em;
+    }
+    .kl-resistance {
+        display: inline-block;
+        background: #c0392b; color: #ffffff !important;
+        padding: 3px 12px; border-radius: 5px;
+        font-family: monospace; font-weight: 700;
+        font-size: 0.97rem; letter-spacing: 0.03em;
     }
     @media (prefers-color-scheme: dark) {
-        .signal-bull {
-            background-color: #1e4620;
-            color: #7dcea0;
-            border-color: #28a745;
-        }
-        .signal-bear {
-            background-color: #4a1c1c;
-            color: #f1948a;
-            border-color: #dc3545;
-        }
-        .signal-neutral {
-            background-color: #4a3f1a;
-            color: #f9e79f;
-            border-color: #ffc107;
-        }
+        .kl-support    { background: #27ae60; }
+        .kl-resistance { background: #e74c3c; }
     }
+
+    /* ── Mobile: 768px ───────────────────────────────────────── */
     @media (max-width: 768px) {
-        /* Stack all columns */
-        [data-testid="column"] { width: 100% !important; flex: 1 1 100% !important; min-width: 100% !important; }
-        /* Readable metric values */
+        [data-testid="column"] { width:100% !important; flex:1 1 100% !important; min-width:100% !important; }
         [data-testid="stMetricValue"] { font-size: 1.1rem !important; }
-        [data-testid="stMetricLabel"] { font-size: 0.75rem !important; }
-        [data-testid="stMetricDelta"] { font-size: 0.75rem !important; }
-        /* Metric cards full width */
-        div[data-testid="stMetric"] { padding: 8px 10px !important; margin-bottom: 6px !important; }
-        /* Sidebar collapses by default */
+        [data-testid="stMetricLabel"] { font-size: 0.72rem !important; }
+        [data-testid="stMetricDelta"] { font-size: 0.72rem !important; }
+        div[data-testid="stMetric"]   { padding: 8px 10px !important; margin-bottom: 6px !important; }
         section[data-testid="stSidebar"] { min-width: 180px !important; }
-        /* Plotly charts full width */
-        [data-testid="stPlotlyChart"] { width: 100% !important; }
-        /* Tables scroll horizontally */
-        [data-testid="stDataFrame"] { overflow-x: auto !important; }
-        /* Buttons full width */
-        .stButton > button { width: 100% !important; min-height: 48px !important; font-size: 0.95rem !important; }
-        /* Select boxes readable */
+        [data-testid="stPlotlyChart"]    { width: 100% !important; }
+        [data-testid="stDataFrame"]      { overflow-x: auto !important; }
+        [data-testid="stPlotlyChart"] canvas { touch-action: pan-y !important; }
+        .stButton > button { width:100% !important; min-height:48px !important; font-size:0.95rem !important; }
         .stSelectbox > div { font-size: 0.9rem !important; }
-        /* Risk warning padding */
-        .risk-warning { padding: 10px !important; font-size: 0.88rem !important; }
-        /* Code blocks scroll */
-        pre, code { overflow-x: auto !important; font-size: 0.8rem !important; }
-        /* Key level pills smaller */
-        div[style*="background:#d1ecf1"], div[style*="background:#f8d7da"] { font-size: 0.8rem !important; }
+        .risk-warning      { padding: 10px !important; font-size: 0.88rem !important; }
+        pre, code          { overflow-x: auto !important; font-size: 0.8rem !important; }
+        iframe             { width: 100% !important; max-width: 100% !important; }
+        .key-levels-bar    { font-size: 0.88rem; }
+        .kl-support, .kl-resistance { font-size: 0.88rem; padding: 2px 8px; }
     }
+    /* ── Mobile: 480px ───────────────────────────────────────── */
     @media (max-width: 480px) {
         [data-testid="stMetricValue"] { font-size: 1rem !important; }
         h1 { font-size: 1.4rem !important; }
         h2 { font-size: 1.1rem !important; }
         h3 { font-size: 1rem !important; }
         .stButton > button { min-height: 52px !important; }
-    }
-        [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
-        [data-testid="stDataFrame"] { overflow-x: auto !important; }
-        [data-testid="stPlotlyChart"] > div { width: 100% !important; }
-        [data-testid="stPlotlyChart"] canvas { touch-action: pan-y !important; }
-        iframe { width: 100% !important; max-width: 100% !important; }
-        .stButton > button { width: 100% !important; min-height: 48px !important; font-size: 0.95rem !important; }
-        .stSelectbox > div { font-size: 0.9rem !important; }
-        .risk-warning { padding: 10px !important; font-size: 0.88rem !important; }
-        section[data-testid="stSidebar"] { min-width: 180px !important; }
-    }
-
-    /* Key Levels display — theme-adaptive */
-    .key-levels-bar {
-        font-size: 0.87rem;
-        margin: 6px 0 14px 0;
-        line-height: 1.8;
-        color: var(--text-color, #1a1a1a);
-    }
-    .key-levels-bar strong { color: inherit; }
-    .kl-touches {
-        font-size: 0.78rem;
-        color: var(--text-color, #444);
-        opacity: 0.8;
-    }
-    .kl-support {
-        display: inline-block;
-        background: #0e7c4a;
-        color: #ffffff !important;
-        padding: 2px 10px;
-        border-radius: 4px;
-        font-family: monospace;
-        font-weight: 700;
-        letter-spacing: 0.03em;
-    }
-    .kl-resistance {
-        display: inline-block;
-        background: #c0392b;
-        color: #ffffff !important;
-        padding: 2px 10px;
-        border-radius: 4px;
-        font-family: monospace;
-        font-weight: 700;
-        letter-spacing: 0.03em;
-    }
-    /* Dark mode — slightly brighter variants */
-    @media (prefers-color-scheme: dark) {
-        .kl-support    { background: #27ae60; }
-        .kl-resistance { background: #e74c3c; }
-        .kl-touches    { opacity: 0.9; }
     }
 </style>
 """, unsafe_allow_html=True)
