@@ -11,6 +11,10 @@
 # =============================================================================
 
 import streamlit as st
+import urllib.request
+import xml.etree.ElementTree as _ET
+import re as _re_qm
+import json as _json_qm
 import yfinance as yf
 import mplfinance as mpf
 import pandas as pd
@@ -213,46 +217,46 @@ st.markdown("""
     }
     .risk-warning { background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 10px 0; }
     .success-box { background-color: #d4edda; padding: 15px; border-left: 4px solid #28a745; margin: 10px 0; }
-    .signal-bull { 
-        background-color: #d4edda; 
+    .signal-bull {
+        background-color: #d4edda;
         color: #155724;
-        padding: 8px 12px; 
-        border-radius: 4px; 
+        padding: 8px 12px;
+        border-radius: 4px;
         margin: 5px 0;
         border: 1px solid #28a745;
         font-weight: 500;
     }
-    .signal-bear { 
-        background-color: #f8d7da; 
+    .signal-bear {
+        background-color: #f8d7da;
         color: #721c24;
-        padding: 8px 12px; 
-        border-radius: 4px; 
+        padding: 8px 12px;
+        border-radius: 4px;
         margin: 5px 0;
         border: 1px solid #dc3545;
         font-weight: 500;
     }
-    .signal-neutral { 
-        background-color: #fff3cd; 
+    .signal-neutral {
+        background-color: #fff3cd;
         color: #856404;
-        padding: 8px 12px; 
-        border-radius: 4px; 
+        padding: 8px 12px;
+        border-radius: 4px;
         margin: 5px 0;
         border: 1px solid #ffc107;
         font-weight: 500;
     }
     @media (prefers-color-scheme: dark) {
-        .signal-bull { 
-            background-color: #1e4620; 
+        .signal-bull {
+            background-color: #1e4620;
             color: #7dcea0;
             border-color: #28a745;
         }
-        .signal-bear { 
-            background-color: #4a1c1c; 
+        .signal-bear {
+            background-color: #4a1c1c;
             color: #f1948a;
             border-color: #dc3545;
         }
-        .signal-neutral { 
-            background-color: #4a3f1a; 
+        .signal-neutral {
+            background-color: #4a3f1a;
             color: #f9e79f;
             border-color: #ffc107;
         }
@@ -335,11 +339,11 @@ if _kes["live"] or _wb:
         _codes = list(_wb.keys())
         if len(_codes) > 0:
             _d = _wb[_codes[0]]
-            _mc[3].metric(f"Kenya GDP {_d['year']}", 
+            _mc[3].metric(f"Kenya GDP {_d['year']}",
                          f"${_d['value']/1e9:.0f}B", help="World Bank")
         if len(_codes) > 1:
             _d2 = _wb[_codes[1]]
-            _mc[4].metric(f"Inflation {_d2['year']}", 
+            _mc[4].metric(f"Inflation {_d2['year']}",
                          f"{_d2['value']}%", help="World Bank CPI")
     src = []
     if _kes["live"]: src.append(f"FX: open.er-api.com ({_kes['updated']})")
@@ -394,20 +398,20 @@ if 'consecutive_losses' not in st.session_state: st.session_state.consecutive_lo
 
 # --- 4. INSTITUTIONAL ANALYST ENGINE ---
 class InstitutionalAnalyst:
-    
+
     def __init__(self):
         self.vix_regimes = {
             "EXTREME_LOW": (0, 12), "LOW": (12, 15), "NORMAL": (15, 20),
             "ELEVATED": (20, 30), "HIGH": (30, 40), "EXTREME": (40, 100)
         }
         self.fib_levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
-    
+
     def get_market_hours_status(self):
         try:
             et = pytz.timezone('US/Eastern')
             now = datetime.now(et)
             current_time = now.time()
-            
+
             if current_time < time(9, 30):
                 return "PRE_MARKET", "⏰ Pre-Market (Higher volatility, lower liquidity)"
             elif current_time < time(10, 0):
@@ -424,13 +428,13 @@ class InstitutionalAnalyst:
                 return "AFTER_HOURS", "🌙 After Hours (Extended hours risk)"
         except:
             return "UNKNOWN", "⚠️ Unable to determine market hours"
-    
+
     def classify_vix_regime(self, vix_level):
         for regime, (low, high) in self.vix_regimes.items():
             if low <= vix_level < high:
                 return regime
         return "EXTREME"
-    
+
     def get_regime_guidance(self, regime):
         guidance = {
             "EXTREME_LOW": {
@@ -471,51 +475,51 @@ class InstitutionalAnalyst:
             }
         }
         return guidance.get(regime, guidance["NORMAL"])
-    
+
     def fetch_data(self, t):
         try:
             ticker_obj = yf.Ticker(t)
             data = ticker_obj.history(period="1y")
-            
+
             if data.empty or len(data) < 50:
                 nse_hint = " NSE data via yfinance is often unavailable — check nse.co.ke directly." if t.endswith('.NR') else ""
                 return None, None, f"ERROR: Insufficient data for {t}. Need at least 50 trading days.{nse_hint}"
-            
-            try: 
+
+            try:
                 full_name = ticker_obj.info.get('longName', t)
                 beta = ticker_obj.info.get('beta', 1.0)
-            except: 
+            except:
                 full_name = t
                 beta = 1.0
-            
+
             # Core indicators — pure numpy/pandas (no pandas_ta dependency)
             _calc_indicators(data)
-            
+
             vol_sma = data['Volume'].rolling(20).mean()
             data['RVOL'] = data['Volume'] / vol_sma
-            
+
             # Support/Resistance
             swing_high = data['High'].rolling(20).max()
             swing_low = data['Low'].rolling(20).min()
-            
+
             recent_high = swing_high.iloc[-1]
             recent_low = swing_low.iloc[-1]
             price_range = recent_high - recent_low
-            
+
             fib_levels = {}
             for level in self.fib_levels:
                 fib_levels[f"fib_{level}"] = recent_high - (price_range * level)
-            
+
             try:
                 local_min_idx = argrelextrema(data['Close'].values, np.less_equal, order=5)[0]
                 local_max_idx = argrelextrema(data['Close'].values, np.greater_equal, order=5)[0]
-                
+
                 if len(local_min_idx) > 0:
                     recent_mins = data.iloc[local_min_idx[-3:]]['Close'].values if len(local_min_idx) >= 3 else data.iloc[local_min_idx]['Close'].values
                     support_level = np.mean(recent_mins)
                 else:
                     support_level = swing_low.iloc[-1]
-                
+
                 if len(local_max_idx) > 0:
                     recent_maxs = data.iloc[local_max_idx[-3:]]['Close'].values if len(local_max_idx) >= 3 else data.iloc[local_max_idx]['Close'].values
                     resistance_level = np.mean(recent_maxs)
@@ -524,7 +528,7 @@ class InstitutionalAnalyst:
             except:
                 support_level = swing_low.iloc[-1]
                 resistance_level = swing_high.iloc[-1]
-            
+
             support_touches = 0
             resistance_touches = 0
             for i in range(max(0, len(data)-60), len(data)):
@@ -532,32 +536,32 @@ class InstitutionalAnalyst:
                     support_touches += 1
                 if abs(data['High'].iloc[i] - resistance_level) / resistance_level < 0.01:
                     resistance_touches += 1
-            
+
             if len(data) >= 2:
                 prev_close = data['Close'].iloc[-2]
                 curr_open = data['Open'].iloc[-1]
-                gap_pct = ((curr_open - prev_close) / prev_close) * 100
+                ((curr_open - prev_close) / prev_close) * 100
             else:
-                gap_pct = 0.0
-            
+                pass
+
             price = data['Close'].iloc[-1]
             sma20 = data['SMA_20'].iloc[-1]
             sma50 = data['SMA_50'].iloc[-1]
             sma200 = data['SMA_200'].iloc[-1]
-            
+
             trend_score = 0
             if price > sma20: trend_score += 1
             if price > sma50: trend_score += 1
             if price > sma200: trend_score += 1
             if sma20 > sma50: trend_score += 1
             if sma50 > sma200: trend_score += 1
-            
+
             trend_strength = "STRONG_BULL" if trend_score >= 4 else "BULL" if trend_score == 3 else \
                            "NEUTRAL" if trend_score == 2 else "BEAR" if trend_score == 1 else "STRONG_BEAR"
-            
+
             patterns = self.detect_patterns(data)
             divergences = self.detect_divergences(data)
-            
+
             metrics = {
                 "support": support_level,
                 "resistance": resistance_level,
@@ -584,85 +588,85 @@ class InstitutionalAnalyst:
                 "patterns": patterns,
                 "divergences": divergences
             }
-            
+
             return data, metrics, full_name
-            
+
         except Exception as e:
             return None, None, f"ERROR: {str(e)}"
-    
+
     def detect_patterns(self, data):
         patterns = []
         if len(data) < 3:
             return patterns
-        
+
         last_3 = data.iloc[-3:]
-        c0, c1, c2 = last_3.iloc[0], last_3.iloc[1], last_3.iloc[2]
-        
+        _c0, c1, c2 = last_3.iloc[0], last_3.iloc[1], last_3.iloc[2]
+
         if c1['Close'] < c1['Open'] and c2['Close'] > c2['Open'] and \
            c2['Open'] < c1['Close'] and c2['Close'] > c1['Open']:
             patterns.append("🟢 Bullish Engulfing")
-        
+
         if c1['Close'] > c1['Open'] and c2['Close'] < c2['Open'] and \
            c2['Open'] > c1['Close'] and c2['Close'] < c1['Open']:
             patterns.append("🔴 Bearish Engulfing")
-        
+
         body = abs(c2['Close'] - c2['Open'])
         lower_wick = min(c2['Open'], c2['Close']) - c2['Low']
         upper_wick = c2['High'] - max(c2['Open'], c2['Close'])
-        
+
         if lower_wick > 2 * body and upper_wick < body:
             patterns.append("🔨 Hammer (Bullish)")
-        
+
         if upper_wick > 2 * body and lower_wick < body:
             patterns.append("💫 Shooting Star (Bearish)")
-        
+
         if body < (c2['High'] - c2['Low']) * 0.1:
             patterns.append("➕ Doji (Indecision)")
-        
+
         return patterns
-    
+
     def detect_divergences(self, data):
         divergences = []
         if len(data) < 20:
             return divergences
-        
+
         recent = data.iloc[-20:]
-        
+
         if 'RSI_14' in recent.columns:
             price_highs = recent['High'].iloc[-10:].max()
             price_lows = recent['Low'].iloc[-10:].min()
             rsi_highs = recent['RSI_14'].iloc[-10:].max()
             rsi_lows = recent['RSI_14'].iloc[-10:].min()
-            
+
             current_price = recent['Close'].iloc[-1]
             current_rsi = recent['RSI_14'].iloc[-1]
-            
+
             if current_price < price_lows * 1.01 and current_rsi > rsi_lows * 1.05:
                 divergences.append("🟢 RSI Bullish Divergence")
-            
+
             if current_price > price_highs * 0.99 and current_rsi < rsi_highs * 0.95:
                 divergences.append("🔴 RSI Bearish Divergence")
-        
+
         if 'MACD_12_26_9' in recent.columns:
             macd_current = recent['MACD_12_26_9'].iloc[-1]
             macd_prev_high = recent['MACD_12_26_9'].iloc[-10:].max()
-            
+
             price_current = recent['Close'].iloc[-1]
             price_prev_high = recent['High'].iloc[-10:].max()
-            
+
             if price_current > price_prev_high * 0.99 and macd_current < macd_prev_high * 0.95:
                 divergences.append("🔴 MACD Bearish Divergence")
-        
+
         return divergences
 
     def get_macro(self):
         try:
             tickers = ["ES=F", "^VIX", "GC=F", "^GDAXI", "^N225", "^TNX", "DX-Y.NYB"]
             df = yf.download(tickers, period="5d", progress=False, timeout=10)['Close']
-            
-            if df.empty: 
+
+            if df.empty:
                 return None
-            
+
             try:
                 sp = df["ES=F"].dropna()
                 vix = df["^VIX"].dropna()
@@ -673,29 +677,29 @@ class InstitutionalAnalyst:
                 dxy = df["DX-Y.NYB"].dropna() if "DX-Y.NYB" in df.columns else None
             except KeyError:
                 return None
-            
+
             sp_chg = ((sp.iloc[-1]-sp.iloc[-2])/sp.iloc[-2])*100 if len(sp) >= 2 else 0
             dax_chg = ((dax.iloc[-1]-dax.iloc[-2])/dax.iloc[-2])*100 if len(dax) >= 2 else 0
             nikkei_chg = ((nikkei.iloc[-1]-nikkei.iloc[-2])/nikkei.iloc[-2])*100 if len(nikkei) >= 2 else 0
             tnx_chg = ((tnx.iloc[-1]-tnx.iloc[-2])/tnx.iloc[-2])*100 if len(tnx) >= 2 else 0
             dxy_chg = ((dxy.iloc[-1]-dxy.iloc[-2])/dxy.iloc[-2])*100 if dxy is not None and len(dxy) >= 2 else 0
             gold_chg = ((gold.iloc[-1]-gold.iloc[-2])/gold.iloc[-2])*100 if len(gold) >= 2 else 0
-            
+
             day = datetime.now().day
             passive_on = (1 <= day <= 5) or (15 <= day <= 20)
-            
+
             risk_off = gold_chg > 1.0 and vix.iloc[-1] > 25
             dollar_headwind = dxy_chg > 0.5 if dxy is not None else False
-            
+
             return {
-                "sp": sp_chg, 
+                "sp": sp_chg,
                 "vix": vix.iloc[-1] if len(vix) > 0 else 20,
                 "gold": gold.iloc[-1] if len(gold) > 0 else 2000,
                 "gold_chg": gold_chg,
-                "dax": dax_chg, 
-                "nikkei": nikkei_chg, 
+                "dax": dax_chg,
+                "nikkei": nikkei_chg,
                 "tnx": tnx.iloc[-1] if len(tnx) > 0 else 4.0,
-                "tnx_chg": tnx_chg, 
+                "tnx_chg": tnx_chg,
                 "dxy": dxy.iloc[-1] if dxy is not None and len(dxy) > 0 else 100,
                 "dxy_chg": dxy_chg,
                 "passive": passive_on,
@@ -703,26 +707,26 @@ class InstitutionalAnalyst:
                 "dollar_headwind": dollar_headwind,
                 "data_quality": "GOOD"
             }
-        except Exception as e:
+        except Exception:
             return None
-    
+
     def generate_signals(self, data, metrics, ticker):
         signals = {"bullish": [], "bearish": [], "neutral": [], "score": 0}
-        
+
         if metrics['macd'] > metrics['macd_signal']:
             signals['bullish'].append("MACD: Bullish crossover")
             signals['score'] += 1
         elif metrics['macd'] < metrics['macd_signal']:
             signals['bearish'].append("MACD: Bearish crossover")
             signals['score'] -= 1
-        
+
         if metrics['rsi'] < 30:
             signals['bullish'].append("RSI: Oversold (<30)")
             signals['score'] += 1
         elif metrics['rsi'] > 70:
             signals['bearish'].append("RSI: Overbought (>70)")
             signals['score'] -= 1
-        
+
         price = data['Close'].iloc[-1]
         if price < metrics['bb_lower']:
             signals['bullish'].append("BB: Below lower band")
@@ -730,18 +734,18 @@ class InstitutionalAnalyst:
         elif price > metrics['bb_upper']:
             signals['bearish'].append("BB: Above upper band")
             signals['score'] -= 1
-        
+
         avg_bb_width = (data['BBU_20_2.0'] - data['BBL_20_2.0']).mean() if 'BBU_20_2.0' in data.columns else 0
         if metrics['bb_width'] < avg_bb_width * 0.7:
             signals['neutral'].append("BB: Squeeze detected")
-        
+
         if metrics['stoch_k'] < 20:
             signals['bullish'].append("Stochastic: Oversold")
             signals['score'] += 1
         elif metrics['stoch_k'] > 80:
             signals['bearish'].append("Stochastic: Overbought")
             signals['score'] -= 1
-        
+
         if metrics['adx'] > 25:
             if metrics['trend_strength'] in ["STRONG_BULL", "BULL"]:
                 signals['bullish'].append(f"ADX: Strong uptrend ({metrics['adx']:.1f})")
@@ -751,7 +755,7 @@ class InstitutionalAnalyst:
                 signals['score'] -= 1
         else:
             signals['neutral'].append(f"ADX: Weak trend ({metrics['adx']:.1f})")
-        
+
         if metrics['ich_position'] == "ABOVE_CLOUD":
             signals['bullish'].append("Ichimoku: Above cloud")
             signals['score'] += 1
@@ -760,17 +764,17 @@ class InstitutionalAnalyst:
             signals['score'] -= 1
         else:
             signals['neutral'].append("Ichimoku: Inside cloud")
-        
+
         if metrics['mfi'] < 20:
             signals['bullish'].append("MFI: Money flowing in")
         elif metrics['mfi'] > 80:
             signals['bearish'].append("MFI: Money flowing out")
-        
+
         if metrics['willr'] < -80:
             signals['bullish'].append("Williams %R: Oversold")
         elif metrics['willr'] > -20:
             signals['bearish'].append("Williams %R: Overbought")
-        
+
         sma20 = data['SMA_20'].iloc[-1]
         sma50 = data['SMA_50'].iloc[-1]
         if sma20 > sma50 and data['SMA_20'].iloc[-2] <= data['SMA_50'].iloc[-2]:
@@ -779,14 +783,14 @@ class InstitutionalAnalyst:
         elif sma20 < sma50 and data['SMA_20'].iloc[-2] >= data['SMA_50'].iloc[-2]:
             signals['bearish'].append("MA: Death Cross")
             signals['score'] -= 2
-        
+
         if data['ST_DIR'].iloc[-1] == 1:
             signals['bullish'].append("SuperTrend: Long signal")
             signals['score'] += 1
         else:
             signals['bearish'].append("SuperTrend: Short signal")
             signals['score'] -= 1
-        
+
         for pattern in metrics['patterns']:
             if "Bullish" in pattern or "Hammer" in pattern:
                 signals['bullish'].append(f"Pattern: {pattern}")
@@ -796,7 +800,7 @@ class InstitutionalAnalyst:
                 signals['score'] -= 1
             else:
                 signals['neutral'].append(f"Pattern: {pattern}")
-        
+
         for div in metrics['divergences']:
             if "Bullish" in div:
                 signals['bullish'].append(div)
@@ -804,15 +808,15 @@ class InstitutionalAnalyst:
             elif "Bearish" in div:
                 signals['bearish'].append(div)
                 signals['score'] -= 2
-        
+
         return signals
-    
+
     def detect_correlation_break(self, macro_data):
         us = macro_data['sp']
         eu = macro_data['dax']
         jp = macro_data['nikkei']
         return (us > 1.0 and (eu < -1.0 or jp < -1.0)) or (us < -1.0 and (eu > 1.0 or jp > 1.0))
-    
+
     def check_passive_intensity(self, day, rvol):
         passive_window = (1 <= day <= 5) or (15 <= day <= 20)
         if passive_window:
@@ -820,20 +824,20 @@ class InstitutionalAnalyst:
             elif rvol > 1.0: return "MODERATE"
             else: return "WEAK"
         return "NEUTRAL"
-    
-    def calculate_position_size(self, capital, risk_per_trade, risk_distance, method="FIXED", 
+
+    def calculate_position_size(self, capital, risk_per_trade, risk_distance, method="FIXED",
                                volatility_mult=1.0, beta=1.0, consecutive_losses=0):
         if risk_distance <= 0:
             return 0
-        
+
         drawdown_mult = 1.0
         if consecutive_losses >= 5:
             drawdown_mult = 0.25
         elif consecutive_losses >= 3:
             drawdown_mult = 0.5
-        
+
         beta_mult = 1.0 / max(beta, 0.5) if beta > 1.5 else 1.0
-        
+
         if method == "FIXED":
             shares = int((risk_per_trade * volatility_mult * drawdown_mult * beta_mult) / risk_distance)
         elif method == "VOLATILITY_ADJUSTED":
@@ -846,9 +850,9 @@ class InstitutionalAnalyst:
             kelly_fraction = max(0.1, min(kelly_fraction * 0.5 * drawdown_mult, 0.25))
             adjusted_risk = capital * kelly_fraction
             shares = int(adjusted_risk / risk_distance)
-        
+
         return max(0, shares)
-    
+
     def calculate_sharpe_ratio(self, trades):
         if len(trades) < 5:
             return None
@@ -861,20 +865,20 @@ class InstitutionalAnalyst:
             return None
         sharpe = (mean_return / std_return) * np.sqrt(252)
         return sharpe
-    
+
     def calculate_expectancy(self, trades):
         if not trades:
             return 0
         total_pnl = sum(t['actual_pnl'] for t in trades if 'actual_pnl' in t)
         return total_pnl / len(trades)
-    
+
     def calculate_profit_factor(self, trades):
         wins = [t['actual_pnl'] for t in trades if 'actual_pnl' in t and t['actual_pnl'] > 0]
         losses = [abs(t['actual_pnl']) for t in trades if 'actual_pnl' in t and t['actual_pnl'] < 0]
         if not losses or sum(losses) == 0:
             return None
         return sum(wins) / sum(losses)
-    
+
     def calculate_max_drawdown(self, trades):
         if not trades:
             return 0
@@ -896,40 +900,40 @@ engine = InstitutionalAnalyst()
 # --- 5. SIDEBAR (WITH V12 HELP NOTES) ---
 with st.sidebar:
     st.header("1. Portfolio Settings")
-    
-    capital = st.number_input("Total Capital ($)", value=10000, min_value=100, 
+
+    capital = st.number_input("Total Capital ($)", value=10000, min_value=100,
                              help="Your total account size. Example: $10,000 means you have ten thousand dollars.")
-    risk_per_trade = st.number_input("Risk per Trade ($)", value=100, min_value=10, 
+    risk_per_trade = st.number_input("Risk per Trade ($)", value=100, min_value=10,
                                      help="Maximum $ you're willing to lose on a single trade. Recommended: 1-2% of capital.")
-    max_portfolio_risk = st.number_input("Max Portfolio Risk (%)", value=6.0, min_value=1.0, max_value=20.0, step=0.5, 
+    max_portfolio_risk = st.number_input("Max Portfolio Risk (%)", value=6.0, min_value=1.0, max_value=20.0, step=0.5,
                                          help="Maximum total risk across ALL open positions combined. Recommended: 5-10%.")
-    
+
     daily_goal = capital * 0.01
     st.caption(f"🎯 Daily Goal (1%): **${daily_goal:.2f}**")
     st.caption("💡 Discipline rule: stop when you hit your daily goal.")
-    
+
     portfolio_risk_pct = (st.session_state.total_risk_deployed / capital) * 100
     if portfolio_risk_pct > max_portfolio_risk:
         st.error(f"⚠️ Portfolio Risk: {portfolio_risk_pct:.1f}% (OVER LIMIT)")
     else:
         st.info(f"📊 Portfolio Risk: {portfolio_risk_pct:.1f}% / {max_portfolio_risk:.1f}%")
-    
+
     pnl_pct = (st.session_state.daily_pnl / capital) * 100
     if st.session_state.goal_met:
         st.success(f"✅ Goal Achieved: +${st.session_state.daily_pnl:.2f} ({pnl_pct:.2f}%)")
     else:
         st.info(f"📈 Session P&L: ${st.session_state.daily_pnl:.2f} ({pnl_pct:.2f}%)")
-    
+
     if st.session_state.consecutive_losses > 0:
         st.warning(f"⚠️ Losing Streak: {st.session_state.consecutive_losses} trades")
         st.caption("💡 After 3 losses, position size automatically reduced by 50%.")
 
     st.divider()
     st.header("2. Asset Selection")
-    
-    input_mode = st.radio("Input:", ["VIP List", "Manual Search"], 
+
+    input_mode = st.radio("Input:", ["VIP List", "Manual Search"],
                          help="VIP List = Pre-vetted high-liquidity stocks (US + Kenya). Manual = Enter any ticker.")
-    
+
     if input_mode == "VIP List":
         ticker = st.selectbox("Ticker", ALL_TICKERS, help="High-liquidity stocks from US (Nasdaq/NYSE) and Kenya (NSE) exchanges.")
         if ticker.endswith(".NR"):
@@ -945,34 +949,34 @@ with st.sidebar:
 
     st.divider()
     st.header("3. Strategy & Execution")
-    
+
     strategy = st.selectbox("Mode", ['Long (Buy)', 'Short (Sell)', 'Income (Puts)'],
                            help="Long: Buy stock (bullish). Short: Sell stock (bearish). Income: Sell put options for premium.")
-    
+
     entry_mode = st.radio("Entry", ["Auto-Limit (Zone)", "Market (Now)", "Manual Override"],
                          help="Auto-Limit: Wait for price to reach zone. Market: Enter immediately. Manual: Test custom price.")
-    
+
     manual_price = 0.0
     if entry_mode == "Manual Override":
-        manual_price = st.number_input("Entry Price ($)", value=0.0, step=0.01, 
+        manual_price = st.number_input("Entry Price ($)", value=0.0, step=0.01,
                                        help="Custom entry price for testing scenarios.")
-    
-    stop_mode = st.selectbox("Stop Width", [1.0, 0.5, 0.2], 
+
+    stop_mode = st.selectbox("Stop Width", [1.0, 0.5, 0.2],
                             format_func=lambda x: f"Wide ({x} ATR)" if x==1.0 else f"Medium ({x} ATR)" if x==0.5 else f"Tight ({x} ATR)",
                             help="Stop distance in ATR multiples. Wide=swing trades, Tight=day trades.")
-    
+
     position_sizing_method = st.selectbox("Position Sizing", ["FIXED", "VOLATILITY_ADJUSTED", "KELLY"],
                                          help="FIXED: Standard fixed risk. VOLATILITY_ADJUSTED: Scales down in high VIX. KELLY: Mathematical optimal sizing.")
-    
+
     premium = 0.0
     if "Income" in strategy:
-        premium = st.number_input("Option Premium ($)", value=0.0, step=0.05, 
+        premium = st.number_input("Option Premium ($)", value=0.0, step=0.05,
                                  help="Per-share premium received for selling put options. Example: $2.50 = $250 per contract (100 shares).")
 
     st.divider()
     st.header("4. IWT Scorecard")
     st.caption("💡 Hover over (?) for definitions of each element")
-    
+
     if st.session_state.metrics:
         m = st.session_state.metrics
         if "Long" in strategy:
@@ -980,19 +984,19 @@ with st.sidebar:
         else:
             suggested_fresh = 2 if m.get('resistance_touches', 0) == 0 else 1 if m.get('resistance_touches', 0) <= 2 else 0
         st.caption(f"💡 Data suggests: Freshness = {suggested_fresh} ({m.get('support_touches' if 'Long' in strategy else 'resistance_touches', 0)} historical touches)")
-    
-    fresh = st.selectbox("Freshness", [2, 1, 0], 
+
+    fresh = st.selectbox("Freshness", [2, 1, 0],
                         format_func=lambda x: {2:'2-Fresh', 1:'1-Used', 0:'0-Stale'}[x],
                         help="Fresh: Untested level with strong orders waiting. Used: Touched 1-2x, some orders filled. Stale: Weak, tested 3+ times.")
-    
-    speed = st.selectbox("Speed Out", [2, 1, 0], 
+
+    speed = st.selectbox("Speed Out", [2, 1, 0],
                         format_func=lambda x: {2:'2-Fast', 1:'1-Avg', 0:'0-Slow'}[x],
                         help="How quickly price left the zone. Fast = strong hands (2+ ATRs in 1-5 candles). Slow = weak interest.")
-    
-    time_z = st.selectbox("Time in Zone", [2, 1, 0], 
+
+    time_z = st.selectbox("Time in Zone", [2, 1, 0],
                          format_func=lambda x: {2:'2-Short', 1:'1-Med', 0:'0-Long'}[x],
                          help="How long price lingered in zone. Short (1-2 candles) = strong rejection. Long (6+ candles) = indecision/weakness.")
-    
+
     st.divider()
     if st.button("🔄 Reset Session", help="Clears all positions, P&L, and goal status to start fresh."):
         st.session_state.goal_met = False
@@ -1052,7 +1056,7 @@ st.subheader("📊 Market Intelligence Dashboard")
 col_macro, col_scan = st.columns([1, 1])
 
 with col_macro:
-    if st.button("🌍 Macro Audit", use_container_width=True, 
+    if st.button("🌍 Macro Audit", use_container_width=True,
                 help="Scan global markets: VIX, yields, dollar strength, international indices."):
         with st.spinner("Scanning global markets..."):
             st.session_state.macro = engine.get_macro()
@@ -1066,41 +1070,41 @@ with col_scan:
                 help=f"Load 1 year of data for {ticker} with 15+ technical indicators."):
         with st.spinner(f"Analyzing {ticker}..."):
             df, metrics, fname = engine.fetch_data(ticker)
-            
+
             if df is None:
                 st.error(f"🚫 **{ticker}:** {metrics}")
                 st.session_state.data = None
             else:
                 price = df['Close'].iloc[-1]
                 gap_pct = ((df['Open'].iloc[-1] - df['Close'].iloc[-2]) / df['Close'].iloc[-2]) * 100 if len(df) >= 2 else 0
-                
+
                 st.session_state.data = df
                 st.session_state.metrics = {
-                    "price": price, 
+                    "price": price,
                     "atr": df['ATRr_14'].iloc[-1],
-                    "supp": metrics['support'], 
+                    "supp": metrics['support'],
                     "res": metrics['resistance'],
-                    "rvol": df['RVOL'].iloc[-1], 
-                    "gap": gap_pct, 
+                    "rvol": df['RVOL'].iloc[-1],
+                    "gap": gap_pct,
                     "name": fname,
                     **metrics
                 }
-                
+
                 st.session_state.signals = engine.generate_signals(df, metrics, ticker)
                 st.success(f"✅ {fname} loaded successfully")
 
 # MACRO DISPLAY
 if st.session_state.macro:
     m = st.session_state.macro
-    
+
     if m.get('data_quality') == 'DEGRADED':
         st.warning("⚠️ Data quality degraded. Using cached/estimated values.")
-    
+
     vix_regime = engine.classify_vix_regime(m['vix'])
     regime_guide = engine.get_regime_guidance(vix_regime)
-    
+
     market_phase, phase_desc = engine.get_market_hours_status()
-    
+
     if vix_regime in ["EXTREME", "HIGH"]:
         st.error(f"🚨 **VIX REGIME: {regime_guide['desc']} ({m['vix']:.1f})**")
         st.caption(f"{regime_guide['action']}")
@@ -1110,15 +1114,15 @@ if st.session_state.macro:
     else:
         st.success(f"✅ **VIX REGIME: {regime_guide['desc']} ({m['vix']:.1f})**")
         st.caption(f"{regime_guide['action']}")
-    
+
     st.caption(f"**Market Hours:** {phase_desc}")
-    
+
     if m.get('risk_off'):
         st.error("🚨 **RISK-OFF REGIME DETECTED:** Gold + VIX both rising = Flight to safety. Avoid aggressive longs.")
-    
+
     if m.get('dollar_headwind') and ticker in COMMODITY_TICKERS:
         st.warning("💵 **DOLLAR HEADWIND:** DXY rising hurts commodities (gold, silver, oil).")
-    
+
     # 🇰🇪 KENYA-SPECIFIC MACRO FILTER
     if ticker.endswith('.NR'):
         st.info(
@@ -1132,12 +1136,12 @@ if st.session_state.macro:
     if ticker.endswith('.NR') and m.get('dxy_chg', 0) > 0.5:
         st.warning("💵 🇰🇪 **KENYA ALERT:** Strong Dollar (DXY rising) typically triggers foreign outflows from NSE. Consider defensive sizing.")
         st.caption("💡 Frontier markets are highly sensitive to USD strength. Watch USD/KES exchange rate closely.")
-    
+
     flow_strength = engine.check_passive_intensity(
-        datetime.now().day, 
+        datetime.now().day,
         st.session_state.metrics.get('rvol', 0) if st.session_state.metrics else 0
     )
-    
+
     if flow_strength == "STRONG":
         st.success("🌊 **STRONG PASSIVE INFLOWS** (Calendar window + High volume)")
         st.caption("💡 $48T in index funds rebalancing. Bullish tailwind.")
@@ -1147,13 +1151,13 @@ if st.session_state.macro:
         st.warning("🌊 **WEAK PASSIVE INFLOWS** (Calendar window but Low volume)")
     else:
         st.info("⏸️ **PASSIVE FLOWS NEUTRAL**")
-    
+
     if engine.detect_correlation_break(m):
         st.error("🌍 **GLOBAL CORRELATION BREAK:** US/Europe/Asia markets diverging. Elevated volatility risk.")
-    
+
     with st.expander("🌍 Global Macro Dashboard", expanded=False):
         col1, col2, col3, col4, col5, col6 = st.columns(6)
-        col1.metric("🇺🇸 S&P 500", f"{m['sp']:.2f}%", 
+        col1.metric("🇺🇸 S&P 500", f"{m['sp']:.2f}%",
                    help="S&P 500 futures. Heartbeat of US markets. Green=risk-on, Red=risk-off.")
         col2.metric("🔥 VIX", f"{m['vix']:.1f}",
                    help="Fear Index. <15=calm, 15-20=normal, 20-30=elevated, >30=crisis mode.")
@@ -1170,56 +1174,56 @@ if st.session_state.macro:
 if st.session_state.data is not None:
     m = st.session_state.metrics
     df = st.session_state.data
-    
+
     st.divider()
     st.header(f"📈 {m['name']} ({ticker})")
     st.caption("💡 Key metrics showing current state of the asset")
-    
+
     col1, col2, col3, col4, col5, col6 = st.columns(6)
-    
+
     col1.metric("Price", f"${m['price']:.2f}", help="Current closing price")
-    
+
     if abs(m['gap']) > 2.0:
         if m['rvol'] > 1.5:
-            col2.metric("Gap %", f"{m['gap']:.2f}%", delta="🚀 PRO", 
+            col2.metric("Gap %", f"{m['gap']:.2f}%", delta="🚀 PRO",
                        help="PROFESSIONAL GAP: Large gap (>2%) + High volume = Institutional breakout. Gap likely to HOLD.")
         else:
-            col2.metric("Gap %", f"{m['gap']:.2f}%", delta="⚠️ NOVICE", 
+            col2.metric("Gap %", f"{m['gap']:.2f}%", delta="⚠️ NOVICE",
                        help="NOVICE GAP: Large gap but low volume = Retail FOMO. Gap likely to FILL.")
     else:
         col2.metric("Gap %", f"{m['gap']:.2f}%", help="Gap = (Today's Open - Yesterday's Close) / Yesterday's Close")
-    
+
     vol_status = "🔥 HOT" if m['rvol'] > 1.5 else "✅ NORMAL" if m['rvol'] > 0.8 else "💤 THIN"
-    col3.metric("Volume (RVOL)", f"{m['rvol']:.1f}x", delta=vol_status, 
+    col3.metric("Volume (RVOL)", f"{m['rvol']:.1f}x", delta=vol_status,
                help="Relative Volume. >1.5x = HIGH interest. <0.8x = LOW interest (thin/dangerous).")
-    
+
     # 🇰🇪 DATA QUALITY WARNING FOR KENYA
     if ticker.endswith('.NR') and m['rvol'] < 0.5:
         st.caption("⚠️ 🇰🇪 **Kenya Data Note:** Yahoo Finance volume for NSE can be delayed. If showing near-zero, ignore RVOL signal.")
-    
+
     trend_emoji = {"STRONG_BULL": "🚀", "BULL": "📈", "NEUTRAL": "➡️", "BEAR": "📉", "STRONG_BEAR": "🔻"}
-    col4.metric("Trend", m['trend_strength'], delta=trend_emoji.get(m['trend_strength'], "➡️"), 
+    col4.metric("Trend", m['trend_strength'], delta=trend_emoji.get(m['trend_strength'], "➡️"),
                help="Multi-timeframe trend strength (20/50/200 SMAs). Trade WITH the trend.")
-    
+
     rsi_status = "⚠️OB" if m['rsi'] > 70 else "⚠️OS" if m['rsi'] < 30 else "✅"
-    col5.metric("RSI", f"{m['rsi']:.0f}", delta=rsi_status, 
+    col5.metric("RSI", f"{m['rsi']:.0f}", delta=rsi_status,
                help="Relative Strength Index. >70 = Overbought. <30 = Oversold. 50 = Neutral.")
-    
-    col6.metric("ADX (Trend Strength)", f"{m['adx']:.0f}", delta="STRONG" if m['adx'] > 25 else "WEAK", 
+
+    col6.metric("ADX (Trend Strength)", f"{m['adx']:.0f}", delta="STRONG" if m['adx'] > 25 else "WEAK",
                help="Average Directional Index. >25 = Strong trend. <20 = Weak/choppy.")
-    
+
     st.caption(f"**Key Levels:** Support ${m['supp']:.2f} ({m.get('support_touches', 0)} touches) | Resistance ${m['res']:.2f} ({m.get('resistance_touches', 0)} touches)")
-    
+
     # SIGNALS
     if st.session_state.signals:
         st.divider()
         st.subheader("🎯 Multi-Algorithm Signal Fusion (15+ Indicators)")
         st.caption("💡 Combines RSI, MACD, Bollinger Bands, Stochastic, ADX, Ichimoku, MFI, Williams %R, Moving Averages, SuperTrend, Patterns, Divergences")
-        
+
         sig = st.session_state.signals
-        
+
         col_bull, col_bear, col_neut = st.columns(3)
-        
+
         with col_bull:
             st.markdown("### 🟢 Bullish Signals")
             if sig['bullish']:
@@ -1227,7 +1231,7 @@ if st.session_state.data is not None:
                     st.markdown(f"<div class='signal-bull'>• {s}</div>", unsafe_allow_html=True)
             else:
                 st.caption("No bullish signals detected")
-        
+
         with col_bear:
             st.markdown("### 🔴 Bearish Signals")
             if sig['bearish']:
@@ -1235,7 +1239,7 @@ if st.session_state.data is not None:
                     st.markdown(f"<div class='signal-bear'>• {s}</div>", unsafe_allow_html=True)
             else:
                 st.caption("No bearish signals detected")
-        
+
         with col_neut:
             st.markdown("### 🟡 Neutral/Watch Signals")
             if sig['neutral']:
@@ -1243,7 +1247,7 @@ if st.session_state.data is not None:
                     st.markdown(f"<div class='signal-neutral'>• {s}</div>", unsafe_allow_html=True)
             else:
                 st.caption("No neutral signals")
-        
+
         score = sig['score']
         if score >= 3:
             st.success(f"### 🟢 OVERALL MULTI-ALGO VERDICT: BULLISH (+{score} points)")
@@ -1254,78 +1258,78 @@ if st.session_state.data is not None:
         else:
             st.warning(f"### 🟡 OVERALL MULTI-ALGO VERDICT: NEUTRAL ({score} points)")
             st.caption("💡 Indicators are mixed. No clear direction.")
-    
+
     # CHART
     st.divider()
     st.subheader("📊 Technical Chart (Last 60 Days)")
     st.caption("💡 Blue=SMA20, Orange=SMA50, Red=SMA200, Gray=Bollinger Bands, Green/Red lines=Support/Resistance")
-    
+
     try:
         chart_data = df.iloc[-60:]
-        
+
         addplots = []
-        
+
         if 'SMA_20' in chart_data.columns:
             addplots.append(mpf.make_addplot(chart_data['SMA_20'], color='blue', width=1.5))
-        
+
         if 'SMA_50' in chart_data.columns:
             addplots.append(mpf.make_addplot(chart_data['SMA_50'], color='orange', width=1.5))
-        
+
         if 'SMA_200' in chart_data.columns:
             addplots.append(mpf.make_addplot(chart_data['SMA_200'], color='red', width=2))
-        
+
         bb_cols = [col for col in chart_data.columns if 'BB' in col]
         bb_upper = None
         bb_lower = None
-        
+
         for col in bb_cols:
             if 'U' in col or 'upper' in col.lower():
                 bb_upper = col
             elif 'L' in col or 'lower' in col.lower():
                 bb_lower = col
-        
+
         if bb_upper and bb_upper in chart_data.columns:
             addplots.append(mpf.make_addplot(chart_data[bb_upper], color='gray', linestyle='--', width=1))
-        
+
         if bb_lower and bb_lower in chart_data.columns:
             addplots.append(mpf.make_addplot(chart_data[bb_lower], color='gray', linestyle='--', width=1))
-        
+
         fig, axes = mpf.plot(
-            chart_data, 
-            type='candle', 
-            style='yahoo', 
+            chart_data,
+            type='candle',
+            style='yahoo',
             volume=True,
             addplot=addplots if addplots else None,
             hlines=dict(hlines=[m['supp'], m['res']], colors=['green', 'red'], linestyle='-.', linewidths=2),
-            returnfig=True, 
-            figsize=(14, 8), 
+            returnfig=True,
+            figsize=(14, 8),
             title=f"{ticker} - Multi-Indicator Technical Analysis"
         )
-        
+
         st.pyplot(fig)
-        
+
     except Exception as e:
         st.error(f"⚠️ Chart rendering error: {str(e)}")
         st.caption("💡 Try AAPL or NVDA (most reliable data).")
-    
+
     with st.expander("📐 Fibonacci Retracement Levels", expanded=False):
         st.caption("💡 Mathematical support/resistance based on golden ratio")
         fib = m['fib_levels']
         for level, price in fib.items():
             st.caption(f"{level}: ${price:.2f}")
-    
+
     # TRADE CALCULATION
     st.divider()
     st.subheader("🎯 Trade Setup Calculator")
     st.caption("💡 Calculates entry, stop, target, position size, and REAL costs")
-    
+
     if entry_mode == "Manual Override":
         entry = manual_price
     elif "Short" in strategy:
         entry = m['res'] if "Auto" in entry_mode else m['price']
     else:
         entry = m['supp'] if "Auto" in entry_mode else m['price']
-    
+
     if st.session_state.macro:
         vix_regime = engine.classify_vix_regime(st.session_state.macro['vix'])
         regime_guide = engine.get_regime_guidance(vix_regime)
@@ -1334,7 +1338,7 @@ if st.session_state.data is not None:
     else:
         vol_multiplier = 1.0
         stop_multiplier = 1.0
-    
+
     # === INCOME (PUTS) CALCULATION FIX ===
     if "Income" in strategy:
         # For selling puts:
@@ -1343,27 +1347,27 @@ if st.session_state.data is not None:
         # - Target = Entry (stock stays above strike, you keep premium)
         # - Risk per contract = (Strike × 100) - (Premium × 100) = max capital at risk
         # - Reward per contract = Premium × 100
-        
+
         stop = entry - (m['atr'] * 2)  # Technical stop 2 ATRs below strike
         target = entry  # Keep premium if stock stays above strike
-        
+
         # Risk per contract (if assigned and stock drops to stop)
         risk_per_contract = (entry - stop) * 100  # 100 shares per contract
-        
+
         # Reward per contract (premium collected)
         reward_per_contract = premium * 100
-        
+
         # Calculate number of contracts based on capital and risk
         if risk_per_contract > 0:
             contracts = int(risk_per_trade / risk_per_contract)
         else:
             contracts = 0
-        
+
         shares = max(0, contracts)  # "shares" = contracts for Income strategy
-        
+
         risk = risk_per_contract
         reward = reward_per_contract
-        
+
     elif "Short" in strategy:
         stop = entry + (m['atr'] * stop_mode * stop_multiplier)
         target = m['supp']
@@ -1374,18 +1378,18 @@ if st.session_state.data is not None:
         target = m['res']
         risk = entry - stop
         reward = target - entry
-    
+
     rr = reward / risk if risk > 0 else 0
-    
+
     # Position sizing (skip for Income since already calculated)
     if "Income" not in strategy:
         shares = engine.calculate_position_size(
-            capital, risk_per_trade, risk, position_sizing_method, 
+            capital, risk_per_trade, risk, position_sizing_method,
             vol_multiplier, m.get('beta', 1.0), st.session_state.consecutive_losses
         )
-    
+
     total_trade_risk = shares * risk if shares > 0 else 0
-    
+
     # Costs & Net Reward
     if "Income" in strategy:
         slippage = 0  # Options have bid-ask spread, but we'll keep calculation simple
@@ -1395,11 +1399,11 @@ if st.session_state.data is not None:
         slippage = entry * (SLIPPAGE_BPS / 10000) * shares
         commissions = shares * COMMISSION_PER_SHARE * 2
         gross_reward = shares * reward
-    
+
     net_reward = gross_reward - slippage - commissions
-    
+
     col_setup1, col_setup2, col_setup3 = st.columns(3)
-    
+
     with col_setup1:
         st.markdown("**📍 Price Levels**")
         st.code(f"""
@@ -1408,7 +1412,7 @@ Stop:   ${stop:.2f}
 Target: ${target:.2f}
         """)
         st.caption("💡 Entry=where you buy/sell. Stop=exit if wrong. Target=exit if right.")
-    
+
     with col_setup2:
         st.markdown("**💰 Position Sizing**")
         qty_label = "Contracts" if "Income" in strategy else "Shares"
@@ -1422,7 +1426,7 @@ R/R:     {rr:.2f}
             st.caption(f"💡 Each contract = 100 shares. Premium = ${premium:.2f}/share = ${premium*100:.2f}/contract")
         else:
             st.caption(f"💡 Size calculated using {position_sizing_method}. Risk = max loss if stopped out.")
-    
+
     with col_setup3:
         st.markdown("**💸 Real Costs**")
         st.code(f"""
@@ -1432,49 +1436,49 @@ Net Reward:   ${net_reward:.2f}
 Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
         """)
         st.caption("💡 Real costs reduce your profit. This is why high-frequency trading is hard.")
-    
+
     # VERDICT
     st.divider()
     st.subheader("🚦 The Ultimate Verdict (IWT + Institutional Filters)")
     st.caption("💡 Combines IWT score with 13 institutional penalty filters")
-    
+
     score_rr = 2 if rr >= 3 or ("Income" in strategy and rr > 0.1) else 1 if rr >= 2 else 0
     total_score = fresh + time_z + speed + score_rr
-    
+
     penalties = []
     warsh_penalty = False
-    
+
     if st.session_state.macro and st.session_state.macro['tnx_chg'] > 1.0 and ticker in GROWTH_TICKERS and "Long" in strategy:
         total_score -= 2
         warsh_penalty = True
         penalties.append("Warsh (-2): Yields rising >1% hurt growth stocks")
-    
+
     market_phase, _ = engine.get_market_hours_status()
     if market_phase in ["LUNCH", "PRE_MARKET", "AFTER_HOURS"]:
         total_score -= 1
         penalties.append(f"Market Hours (-1): {market_phase} (low liquidity)")
-    
+
     if "Long" in strategy and m['trend_strength'] in ["BEAR", "STRONG_BEAR"]:
         total_score -= 1
         penalties.append("Trend Misalignment (-1): Long in downtrend")
     elif "Short" in strategy and m['trend_strength'] in ["BULL", "STRONG_BULL"]:
         total_score -= 1
         penalties.append("Trend Misalignment (-1): Short in uptrend")
-    
+
     sector = SECTOR_MAP.get(ticker, "Unknown")
     sector_exposure = sum(1 for p in st.session_state.open_positions if SECTOR_MAP.get(p['ticker'], '') == sector)
     if sector_exposure >= 2:
         total_score -= 1
         penalties.append(f"Concentration Risk (-1): {sector_exposure+1} positions in {sector}")
-    
+
     if st.session_state.macro and st.session_state.macro.get('risk_off') and "Long" in strategy:
         total_score -= 1
         penalties.append("Risk-Off (-1): Gold+VIX rising")
-    
+
     if st.session_state.macro and st.session_state.macro.get('dollar_headwind') and ticker in COMMODITY_TICKERS and "Long" in strategy:
         total_score -= 1
         penalties.append("Dollar Headwind (-1): DXY rising hurts commodities")
-    
+
     if 'ST_DIR' in df.columns:
         if "Long" in strategy and df['ST_DIR'].iloc[-1] == -1:
             total_score -= 1
@@ -1482,14 +1486,14 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
         elif "Short" in strategy and df['ST_DIR'].iloc[-1] == 1:
             total_score -= 1
             penalties.append("SuperTrend Conflict (-1): Indicator is bullish")
-    
+
     if "Long" in strategy and m['rsi'] > 70:
         total_score -= 1
         penalties.append("RSI Extreme (-1): Overbought (>70)")
     elif "Short" in strategy and m['rsi'] < 30:
         total_score -= 1
         penalties.append("RSI Extreme (-1): Oversold (<30)")
-    
+
     if st.session_state.signals:
         sig_score = st.session_state.signals['score']
         if "Long" in strategy and sig_score < -2:
@@ -1498,9 +1502,9 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
         elif "Short" in strategy and sig_score > 2:
             total_score -= 1
             penalties.append("Multi-Algo Conflict (-1): Signals overwhelmingly bullish")
-    
+
     col_verdict, col_analysis = st.columns([1, 1])
-    
+
     with col_verdict:
         if st.session_state.goal_met:
             st.error("## 🛑 DAILY GOAL MET - STOP TRADING")
@@ -1521,29 +1525,29 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
             else:
                 st.error(f"## 🔴 RED LIGHT\n**Final Score: {total_score}/8**")
                 st.caption("🛑 **Action:** DO NOT TRADE. Setup is flawed.")
-        
+
         if penalties:
             st.markdown("**⚠️ Penalties Applied:**")
             for p in penalties:
                 st.caption(f"• {p}")
-    
+
     with col_analysis:
         st.markdown("**📋 Setup Quality Checklist**")
-        
+
         checks = []
         checks.append(("✅" if fresh == 2 else "⚠️" if fresh == 1 else "❌", f"Freshness: {['Stale (Weak)','Used (OK)','Fresh (Strong)'][fresh]}"))
         checks.append(("✅" if score_rr == 2 else "⚠️" if score_rr == 1 else "❌", f"R/R: {rr:.2f} ({['Poor (<2)', 'Acceptable (2-3)', 'Excellent (3+)'][score_rr]})"))
         checks.append(("✅" if abs(m['gap']) > 2 and m['rvol'] > 1.5 else "⚠️" if abs(m['gap']) > 2 else "➖", f"Gap: {m['gap']:.2f}%"))
         checks.append(("✅" if m['rvol'] > 1.2 else "⚠️", f"Volume: {m['rvol']:.1f}x"))
         checks.append(("✅" if m['adx'] > 25 else "⚠️", f"Trend Strength: ADX {m['adx']:.0f}"))
-        
+
         for icon, text in checks:
             st.caption(f"{icon} {text}")
-    
+
     # === WARREN AI EXPORT ===
     st.markdown("---")
     st.caption("**📋 Copy for 2nd Opinion:**")
-    
+
     if st.session_state.macro:
         flow_strength = engine.check_passive_intensity(
             datetime.now().day,
@@ -1551,7 +1555,7 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
         )
     else:
         flow_strength = "UNKNOWN"
-    
+
     ai_export = f"""
 [ARCHITECT REVIEW - {ticker}]
 Strategy: {strategy}
@@ -1563,17 +1567,17 @@ VIX Regime: {vix_regime if st.session_state.macro else 'N/A'}
 Passive Flow: {flow_strength}
 10Y Yield: {'RISING >1%' if warsh_penalty else 'STABLE'}
     """
-    
+
     st.code(ai_export.strip(), language='text')
-    
+
     # EXECUTION
     if can_trade and total_score >= 5:
         st.divider()
         st.subheader("⚡ Trade Execution")
         st.caption("💡 PAPER = practice (no P&L). LIVE = real trade (affects P&L).")
-        
+
         col_exec1, col_exec2 = st.columns(2)
-        
+
         with col_exec1:
             if st.button("📝 Log as PAPER TRADE", type="secondary", use_container_width=True,
                         help="Logs for learning. Does NOT affect P&L or portfolio risk."):
@@ -1586,7 +1590,7 @@ Passive Flow: {flow_strength}
                 }
                 st.session_state.journal.append(trade_record)
                 st.success("📋 Paper trade logged!")
-        
+
         with col_exec2:
             if st.button("💵 Log as LIVE TRADE", type="primary", use_container_width=True,
                         help="Logs as open position (affects portfolio risk). Only if you actually entered."):
@@ -1611,22 +1615,22 @@ if st.session_state.open_positions:
     st.divider()
     st.subheader("📊 Open Positions (Live Trades)")
     st.caption("💡 These are trades you logged as LIVE. Close them after you exit in your broker.")
-    
+
     positions_df = pd.DataFrame(st.session_state.open_positions)
     positions_df = positions_df[['ticker', 'action', 'entry', 'stop', 'target', 'shares', 'risk', 'score']]
     st.dataframe(positions_df, use_container_width=True)
-    
+
     st.markdown("**Close a Position:**")
     st.caption("💡 Enter the actual exit price from your broker. System calculates real P&L.")
-    
+
     col_close1, col_close2, col_close3 = st.columns(3)
-    
+
     with col_close1:
         position_to_close = st.selectbox("Select Position", [p['ticker'] for p in st.session_state.open_positions])
-    
+
     with col_close2:
         exit_price = st.number_input("Exit Price ($)", value=0.0, step=0.01)
-    
+
     with col_close3:
         if st.button("✅ CLOSE POSITION"):
             if exit_price > 0:
@@ -1644,26 +1648,26 @@ if st.session_state.open_positions:
                                 actual_pnl = pos['expected_reward'] - assignment_loss
                         else:  # Short
                             actual_pnl = (pos['entry'] - exit_price) * pos['shares']
-                        
+
                         actual_pnl -= (pos['slippage'] + pos['commissions'])
-                        
+
                         pos['exit_price'] = exit_price
                         pos['actual_pnl'] = actual_pnl
                         pos['status'] = 'CLOSED'
-                        
+
                         st.session_state.closed_trades.append(pos)
                         st.session_state.daily_pnl += actual_pnl
                         st.session_state.total_risk_deployed -= pos['risk']
-                        
+
                         if actual_pnl < 0:
                             st.session_state.consecutive_losses += 1
                         else:
                             st.session_state.consecutive_losses = 0
-                        
+
                         if st.session_state.daily_pnl >= daily_goal:
                             st.session_state.goal_met = True
                             st.balloons()
-                        
+
                         st.session_state.open_positions.pop(i)
                         st.success(f"✅ Closed {position_to_close}: P&L = ${actual_pnl:.2f}")
                         st.rerun()
@@ -1676,26 +1680,26 @@ if st.session_state.closed_trades:
     st.divider()
     st.subheader("📈 Performance Analytics Dashboard")
     st.caption("💡 These metrics show how good your trading system is")
-    
+
     closed_df = pd.DataFrame(st.session_state.closed_trades)
-    
+
     col_stats1, col_stats2, col_stats3, col_stats4, col_stats5 = st.columns(5)
-    
+
     wins = len(closed_df[closed_df['actual_pnl'] > 0])
     total_trades = len(closed_df)
     win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
-    
+
     col_stats1.metric("Win Rate", f"{win_rate:.1f}%", delta=f"{wins}/{total_trades} trades",
                      help=">50% is good with 2:1 R/R. >60% is excellent.")
-    
+
     avg_rr = closed_df['rr_ratio'].mean()
     col_stats2.metric("Avg R/R", f"{avg_rr:.2f}",
                      help="Average Risk/Reward. >2.0 means you make 2x what you risk.")
-    
+
     total_pnl = closed_df['actual_pnl'].sum()
     col_stats3.metric("Total P&L", f"${total_pnl:.2f}", delta=f"{(total_pnl/capital)*100:.2f}%",
                      help="Total profit/loss. % shows return on capital.")
-    
+
     sharpe = engine.calculate_sharpe_ratio(st.session_state.closed_trades)
     if sharpe:
         sharpe_quality = "Excellent" if sharpe > 2 else "Good" if sharpe > 1 else "Poor"
@@ -1703,7 +1707,7 @@ if st.session_state.closed_trades:
                          help="Risk-adjusted return. >1 is good, >2 is excellent.")
     else:
         col_stats4.metric("Sharpe Ratio", "N/A", help="Need at least 5 closed trades.")
-    
+
     profit_factor = engine.calculate_profit_factor(st.session_state.closed_trades)
     if profit_factor:
         pf_quality = "Excellent" if profit_factor > 2 else "Good" if profit_factor > 1.5 else "Poor"
@@ -1711,22 +1715,22 @@ if st.session_state.closed_trades:
                          help="Gross Profit / Gross Loss. >1.5 = profitable.")
     else:
         col_stats5.metric("Profit Factor", "N/A")
-    
+
     col_stats6, col_stats7, col_stats8 = st.columns(3)
-    
+
     expectancy = engine.calculate_expectancy(st.session_state.closed_trades)
     col_stats6.metric("Expectancy", f"${expectancy:.2f}",
                      help="Average $/trade. Must be positive to be profitable long-term.")
-    
+
     max_dd = engine.calculate_max_drawdown(st.session_state.closed_trades)
     col_stats7.metric("Max Drawdown", f"${max_dd:.2f}",
                      help="Largest peak-to-trough decline. Keep under 20% of capital.")
-    
+
     consecutive_wins = 0
     consecutive_losses = 0
     max_consec_wins = 0
     max_consec_losses = 0
-    
+
     for t in st.session_state.closed_trades:
         if t['actual_pnl'] > 0:
             consecutive_wins += 1
@@ -1736,10 +1740,10 @@ if st.session_state.closed_trades:
             consecutive_losses += 1
             consecutive_wins = 0
             max_consec_losses = max(max_consec_losses, consecutive_losses)
-    
+
     col_stats8.metric("Max Streak", f"W:{max_consec_wins} / L:{max_consec_losses}",
                      help="Longest winning/losing streaks.")
-    
+
     with st.expander("📋 Complete Trade History", expanded=False):
         history_df = closed_df[['timestamp', 'ticker', 'action', 'entry', 'exit_price', 'actual_pnl', 'score', 'slippage', 'commissions']]
         st.dataframe(history_df, use_container_width=True)
@@ -1749,12 +1753,12 @@ if st.session_state.journal:
     st.divider()
     st.subheader("📓 Trading Journal (All Trades)")
     st.caption("💡 Contains BOTH paper and live trades. Review regularly to find patterns.")
-    
+
     journal_df = pd.DataFrame(st.session_state.journal)
     st.dataframe(journal_df, use_container_width=True)
-    
+
     col_export1, col_export2 = st.columns(2)
-    
+
     with col_export1:
         csv = journal_df.to_csv(index=False).encode('utf-8')
         st.download_button(
@@ -1764,7 +1768,7 @@ if st.session_state.journal:
             mime="text/csv",
             use_container_width=True
         )
-    
+
     with col_export2:
         if st.session_state.closed_trades:
             closed_csv = pd.DataFrame(st.session_state.closed_trades).to_csv(index=False).encode('utf-8')
