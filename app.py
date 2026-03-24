@@ -262,7 +262,38 @@ st.markdown("""
         }
     }
     @media (max-width: 768px) {
+        /* Stack all columns */
         [data-testid="column"] { width: 100% !important; flex: 1 1 100% !important; min-width: 100% !important; }
+        /* Readable metric values */
+        [data-testid="stMetricValue"] { font-size: 1.1rem !important; }
+        [data-testid="stMetricLabel"] { font-size: 0.75rem !important; }
+        [data-testid="stMetricDelta"] { font-size: 0.75rem !important; }
+        /* Metric cards full width */
+        div[data-testid="stMetric"] { padding: 8px 10px !important; margin-bottom: 6px !important; }
+        /* Sidebar collapses by default */
+        section[data-testid="stSidebar"] { min-width: 180px !important; }
+        /* Plotly charts full width */
+        [data-testid="stPlotlyChart"] { width: 100% !important; }
+        /* Tables scroll horizontally */
+        [data-testid="stDataFrame"] { overflow-x: auto !important; }
+        /* Buttons full width */
+        .stButton > button { width: 100% !important; min-height: 48px !important; font-size: 0.95rem !important; }
+        /* Select boxes readable */
+        .stSelectbox > div { font-size: 0.9rem !important; }
+        /* Risk warning padding */
+        .risk-warning { padding: 10px !important; font-size: 0.88rem !important; }
+        /* Code blocks scroll */
+        pre, code { overflow-x: auto !important; font-size: 0.8rem !important; }
+        /* Key level pills smaller */
+        div[style*="background:#d1ecf1"], div[style*="background:#f8d7da"] { font-size: 0.8rem !important; }
+    }
+    @media (max-width: 480px) {
+        [data-testid="stMetricValue"] { font-size: 1rem !important; }
+        h1 { font-size: 1.4rem !important; }
+        h2 { font-size: 1.1rem !important; }
+        h3 { font-size: 1rem !important; }
+        .stButton > button { min-height: 52px !important; }
+    }
         [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
         [data-testid="stDataFrame"] { overflow-x: auto !important; }
         [data-testid="stPlotlyChart"] > div { width: 100% !important; }
@@ -1212,7 +1243,23 @@ if st.session_state.data is not None:
     col6.metric("ADX (Trend Strength)", f"{m['adx']:.0f}", delta="STRONG" if m['adx'] > 25 else "WEAK",
                help="Average Directional Index. >25 = Strong trend. <20 = Weak/choppy.")
 
-    st.caption(f"**Key Levels:** Support ${m['supp']:.2f} ({m.get('support_touches', 0)} touches) | Resistance ${m['res']:.2f} ({m.get('resistance_touches', 0)} touches)")
+    st.markdown(
+        f"""<div style='font-size:0.85rem;margin:6px 0 12px 0;line-height:1.6;'>
+        <strong>Key Levels:</strong>&nbsp;
+        <span style='background:#d1ecf1;color:#0c5460;padding:2px 8px;border-radius:4px;
+                     font-family:monospace;font-weight:600;'>
+            &#9660; ${m['supp']:.2f}
+        </span>
+        <span style='color:#666;font-size:0.8rem;'>&nbsp;support&nbsp;&bull;&nbsp;{m.get('support_touches',0)}&nbsp;touches</span>
+        &nbsp;&nbsp;
+        <span style='background:#f8d7da;color:#721c24;padding:2px 8px;border-radius:4px;
+                     font-family:monospace;font-weight:600;'>
+            &#9650; ${m['res']:.2f}
+        </span>
+        <span style='color:#666;font-size:0.8rem;'>&nbsp;resistance&nbsp;&bull;&nbsp;{m.get('resistance_touches',0)}&nbsp;touches</span>
+        </div>""",
+        unsafe_allow_html=True
+    )
 
     # SIGNALS
     if st.session_state.signals:
