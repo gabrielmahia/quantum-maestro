@@ -1849,11 +1849,12 @@ st.caption("© 2026 Gabriel Mahia | Consistency beats intensity.")
 # -- Feedback sidebar ---------------------------------------------------------
 with st.sidebar:
     st.markdown("---")
-    st.caption(
-        "**Useful? Found a bug?**\n\n"
-        "Email: contact@aikungfu.dev\n\n"
-        "GitHub: [Report issue](https://github.com/gabrielmahia/quantum-maestro/issues/new)\n\n"
+    st.markdown(
+        "**Was this useful?**\n\n"
+        "[:pencil: Leave feedback](https://docs.google.com/forms/d/1rQ8XKzaSDbSu4nOURgwXBrg2VogHUTf7I77DG83hAcY/viewform) (2 min)\n\n"
+        "[:bug: Report a bug](https://github.com/gabrielmahia/quantum-maestro/issues/new)\n\n"
         "---\n"
         "*Built by [Gabriel Mahia](https://aikungfu.dev)*\n\n"
         "[Back to all tools](https://gabrielmahia.github.io)"
     )
+
