@@ -334,6 +334,14 @@ st.markdown("""
     [data-theme="dark"] .risk-warning, .stApp[data-theme="dark"] .risk-warning { background: #3d3010 !important; color: #f0c060 !important; border-color: #ffc107 !important; }
     [data-theme="dark"] .success-box,  .stApp[data-theme="dark"] .success-box  { background: #1a3d24 !important; color: #7dcea0 !important; border-color: #28a745 !important; }
 
+
+    @media (prefers-color-scheme: dark) {
+        .signal-bear    { background-color: #4a1c1c !important; color: #f1948a !important; border-color: #dc3545 !important; }
+        .signal-neutral { background-color: #4a3f1a !important; color: #f9e79f !important; border-color: #ffc107 !important; }
+    }
+    [data-theme="dark"] .signal-bear,    .stApp[data-theme="dark"] .signal-bear    { background-color: #4a1c1c !important; color: #f1948a !important; border-color: #dc3545 !important; }
+    [data-theme="dark"] .signal-neutral, .stApp[data-theme="dark"] .signal-neutral { background-color: #4a3f1a !important; color: #f9e79f !important; border-color: #ffc107 !important; }
+
 </style>
 """, unsafe_allow_html=True)
 
