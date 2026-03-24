@@ -326,6 +326,14 @@ st.markdown("""
         h3 { font-size: 1rem !important; }
         .stButton > button { min-height: 52px !important; }
     }
+
+    @media (prefers-color-scheme: dark) {
+        .risk-warning { background: #3d3010 !important; color: #f0c060 !important; border-color: #ffc107 !important; }
+        .success-box  { background: #1a3d24 !important; color: #7dcea0 !important; border-color: #28a745 !important; }
+    }
+    [data-theme="dark"] .risk-warning, .stApp[data-theme="dark"] .risk-warning { background: #3d3010 !important; color: #f0c060 !important; border-color: #ffc107 !important; }
+    [data-theme="dark"] .success-box,  .stApp[data-theme="dark"] .success-box  { background: #1a3d24 !important; color: #7dcea0 !important; border-color: #28a745 !important; }
+
 </style>
 """, unsafe_allow_html=True)
 
