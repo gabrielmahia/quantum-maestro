@@ -1846,3 +1846,14 @@ if st.session_state.journal:
 st.divider()
 st.caption("📊 EasyStockTrader — Smart Stock Analysis | Simulation Only — Not Financial Advice")
 st.caption("© 2026 Gabriel Mahia | Consistency beats intensity.")
+# -- Feedback sidebar ---------------------------------------------------------
+with st.sidebar:
+    st.markdown("---")
+    st.caption(
+        "**Useful? Found a bug?**\n\n"
+        "Email: contact@aikungfu.dev\n\n"
+        "GitHub: [Report issue](https://github.com/gabrielmahia/quantum-maestro/issues/new)\n\n"
+        "---\n"
+        "*Built by [Gabriel Mahia](https://aikungfu.dev)*\n\n"
+        "[Back to all tools](https://gabrielmahia.github.io)"
+    )
