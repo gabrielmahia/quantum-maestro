@@ -1,4 +1,4 @@
-# 📊 Msimamo — Macro Risk & Trade Intelligence
+# 📊 EasyStockTrader — Macro Risk & Trade Intelligence
 
 **Global macro trading analysis terminal with IWT execution discipline.**  
 Simulation only — does not execute trades. For education and trade planning.
@@ -9,7 +9,7 @@ Simulation only — does not execute trades. For education and trade planning.
 [![Status](https://img.shields.io/badge/status-Simulation%20Only-orange)](#disclaimer)
 [![Data](https://img.shields.io/badge/data-Yahoo%20Finance%20(live)-blue)](https://finance.yahoo.com)
 
-> **Msimamo** /msimɑːmɔ/ — *Kiswahili*: position, stance, posture.
+> **EasyStockTrader** /msimɑːmɔ/ — *Kiswahili*: position, stance, posture.
 
 > ⚠️ **SIMULATION ONLY** — This tool analyses market signals and scores trade setups. It does not execute trades, connect to any broker, or manage real funds. Not financial advice.
 
@@ -94,7 +94,7 @@ Part of a suite of civic and community tools built by [Gabriel Mahia](https://gi
 | [🗺️ Hifadhi](https://hifadhi.streamlit.app) | Riparian encroachment & Water Act compliance map |
 | [💰 Hela](https://helaismoney.streamlit.app) | Chama management for the 21st century |
 | [💸 Peleka](https://tumapesa.streamlit.app) | True cost remittance comparison — diaspora to Kenya |
-| [📊 Msimamo](https://easystocktrader.streamlit.app) | Macro risk & trade intelligence terminal |
+| [📊 EasyStockTrader](https://easystocktrader.streamlit.app) | Macro risk & trade intelligence terminal |
 | [🦁 Dagoretti](https://dagoretti-high-school-community-app.streamlit.app) | Alumni atlas & community hub for Dagoretti High |
 | [⛪ Jumuia](https://jumuia.streamlit.app) | Catholic parish tools — church finder, pastoral care |
 
