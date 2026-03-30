@@ -1,4 +1,4 @@
-streamlit>=1.32.0
+streamlit>=1.55.0
 yfinance>=0.2.40
 mplfinance>=0.12.10b0
 scipy>=1.11.0
