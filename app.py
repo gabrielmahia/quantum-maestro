@@ -115,20 +115,29 @@ def _supertrend(df, length=10, multiplier=3):
     upper = hl2 + multiplier * atr
     lower = hl2 - multiplier * atr
 
-    st_val = pd.Series(index=df.index, dtype=float)
+    st_val = pd.Series(np.nan, index=df.index, dtype=float)
     st_dir = pd.Series(1, index=df.index, dtype=int)
+    upper_vals = upper.values.copy()
+    lower_vals = lower.values.copy()
+    cl_vals    = cl.values
+    st_dir_vals = st_dir.values.copy()
+    st_val_vals = st_val.values.copy()
     for i in range(1, len(df)):
-        prev_upper = upper.iloc[i-1]
-        prev_lower = lower.iloc[i-1]
-        cur_upper  = upper.iloc[i]
-        cur_lower  = lower.iloc[i]
-        upper.iloc[i] = cur_upper if cur_upper < prev_upper or cl.iloc[i-1] > prev_upper else prev_upper
-        lower.iloc[i] = cur_lower if cur_lower > prev_lower or cl.iloc[i-1] < prev_lower else prev_lower
-        if st_dir.iloc[i-1] == 1:
-            st_dir.iloc[i] = -1 if cl.iloc[i] < lower.iloc[i] else 1
+        prev_upper = upper_vals[i-1]
+        prev_lower = lower_vals[i-1]
+        cur_upper  = upper_vals[i]
+        cur_lower  = lower_vals[i]
+        upper_vals[i] = cur_upper if cur_upper < prev_upper or cl_vals[i-1] > prev_upper else prev_upper
+        lower_vals[i] = cur_lower if cur_lower > prev_lower or cl_vals[i-1] < prev_lower else prev_lower
+        if st_dir_vals[i-1] == 1:
+            st_dir_vals[i] = -1 if cl_vals[i] < lower_vals[i] else 1
         else:
-            st_dir.iloc[i] =  1 if cl.iloc[i] > upper.iloc[i] else -1
-        st_val.iloc[i] = lower.iloc[i] if st_dir.iloc[i] == 1 else upper.iloc[i]
+            st_dir_vals[i] =  1 if cl_vals[i] > upper_vals[i] else -1
+        st_val_vals[i] = lower_vals[i] if st_dir_vals[i] == 1 else upper_vals[i]
+    upper[:] = upper_vals
+    lower[:] = lower_vals
+    st_dir[:] = st_dir_vals
+    st_val[:] = st_val_vals
 
     df['ST_VAL'] = st_val
     df['ST_DIR'] = st_dir
@@ -606,12 +615,7 @@ class InstitutionalAnalyst:
                 if abs(data['High'].iloc[i] - resistance_level) / resistance_level < 0.01:
                     resistance_touches += 1
 
-            if len(data) >= 2:
-                prev_close = data['Close'].iloc[-2]
-                curr_open = data['Open'].iloc[-1]
-                ((curr_open - prev_close) / prev_close) * 100
-            else:
-                pass
+            # gap_pct computed in scan button section below
 
             price = data['Close'].iloc[-1]
             sma20 = data['SMA_20'].iloc[-1]
