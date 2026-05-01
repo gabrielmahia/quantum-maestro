@@ -1,6 +1,6 @@
-streamlit>=1.55.0
+streamlit>=1.32.0
 yfinance>=0.2.40
 mplfinance>=0.12.10b0
 scipy>=1.11.0
-pandas>=2.0.0
+pandas>=2.0.0,<3.1
 numpy>=1.24.0
