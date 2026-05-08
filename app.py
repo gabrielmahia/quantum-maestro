@@ -154,6 +154,8 @@ def _ichimoku(df):
     df['ICH_SPAN_B'] = df['ICH_SPAN_B'].ffill().fillna(df['Close'])
 from scipy.signal import argrelextrema
 from datetime import datetime, time, timedelta
+import math
+import calendar
 import pytz
 
 # --- 1. CONFIGURATION ---
@@ -186,6 +188,197 @@ SECTOR_MAP = {
 
 COMMISSION_PER_SHARE = 0.005
 SLIPPAGE_BPS = 5
+OPTION_COMMISSION_PER_CONTRACT = 0.65
+
+
+def calc_vertical_credit_spread(short_strike, long_strike, credit, spread_type="PUT", contracts=1):
+    """
+    Defined-risk vertical credit spread math.
+
+    SPX options are quoted in index points, and each point is worth $100.
+    A $5-wide spread has $500 gross width per contract.
+
+    Put credit spread: sell higher strike put, buy lower strike put.
+    Call credit spread: sell lower strike call, buy higher strike call.
+    """
+    spread_type = str(spread_type).upper()
+    short_strike = float(short_strike)
+    long_strike = float(long_strike)
+    credit = float(credit)
+    contracts = int(max(0, contracts))
+
+    width = abs(short_strike - long_strike)
+    errors = []
+    if width <= 0:
+        errors.append("Spread width must be positive.")
+    if credit <= 0:
+        errors.append("Credit must be positive.")
+    if width > 0 and credit >= width:
+        errors.append("Credit must be less than spread width; otherwise the max-risk math is invalid.")
+    if spread_type == "PUT" and short_strike <= long_strike:
+        errors.append("Put credit spread requires short strike ABOVE long strike.")
+    if spread_type == "CALL" and short_strike >= long_strike:
+        errors.append("Call credit spread requires short strike BELOW long strike.")
+
+    max_profit_per_contract = credit * 100
+    max_loss_per_contract = max(0, (width - credit) * 100)
+    gross_width_per_contract = width * 100
+    breakeven = short_strike - credit if spread_type == "PUT" else short_strike + credit
+    total_credit = max_profit_per_contract * contracts
+    total_max_loss = max_loss_per_contract * contracts
+    commission = contracts * OPTION_COMMISSION_PER_CONTRACT * 2  # two legs
+    net_max_profit = max(0, total_credit - commission)
+    net_risk_reward = net_max_profit / total_max_loss if total_max_loss > 0 else 0
+    credit_pct_width = credit / width if width > 0 else 0
+
+    return {
+        "errors": errors,
+        "spread_type": spread_type,
+        "width": width,
+        "gross_width_per_contract": gross_width_per_contract,
+        "max_profit_per_contract": max_profit_per_contract,
+        "max_loss_per_contract": max_loss_per_contract,
+        "breakeven": breakeven,
+        "total_credit": total_credit,
+        "total_max_loss": total_max_loss,
+        "commission": commission,
+        "net_max_profit": net_max_profit,
+        "net_risk_reward": net_risk_reward,
+        "credit_pct_width": credit_pct_width,
+    }
+
+
+def contracts_for_defined_risk(max_risk_dollars, max_loss_per_contract):
+    """Round down contracts so theoretical max loss never exceeds the risk budget."""
+    if max_loss_per_contract <= 0:
+        return 0
+    return int(max(0, float(max_risk_dollars)) // max_loss_per_contract)
+
+
+def pdt_guidance(account_value, account_type, day_trades_used, planned_same_day_exit, pdt_framework="Legacy PDT"):
+    """
+    Conservative day-trade budget guidance.
+
+    Legacy PDT framework: a small margin account should avoid 4+ day trades in a rolling
+    5-business-day window. New intraday margin framework may remove the fixed $25k PDT
+    threshold when a broker migrates, but broker-specific controls still matter. This app
+    does NOT know your broker's live permissioning; it acts as a discipline/risk budget.
+    """
+    account_type_l = str(account_type).lower()
+    framework = str(pdt_framework).lower()
+
+    if "cash" in account_type_l:
+        return {
+            "remaining": None,
+            "status": "Cash account: PDT generally does not apply, but settled-cash / good-faith rules matter.",
+            "can_day_trade": True,
+            "framework": pdt_framework,
+        }
+
+    if "ira" in account_type_l or "limited" in account_type_l:
+        return {
+            "remaining": None,
+            "status": "IRA / limited-margin: broker-specific rules. Treat same-day exits as scarce unless your broker confirms otherwise.",
+            "can_day_trade": True,
+            "framework": pdt_framework,
+        }
+
+    if "new" in framework and account_value >= 2000:
+        return {
+            "remaining": "broker-controlled",
+            "status": "New intraday-margin framework selected: PDT count may no longer be the binding rule, but broker risk controls still apply.",
+            "can_day_trade": True,
+            "framework": pdt_framework,
+        }
+
+    if account_value >= 25000:
+        return {
+            "remaining": "unrestricted",
+            "status": "Margin account above $25k legacy PDT threshold.",
+            "can_day_trade": True,
+            "framework": pdt_framework,
+        }
+
+    remaining = max(0, 3 - int(day_trades_used))
+    can_day_trade = (remaining > 0) or not planned_same_day_exit
+    status = f"Legacy small-margin mode: preserve limited day trades. Approx. {remaining}/3 day trades left in rolling 5-business-day window."
+    return {"remaining": remaining, "status": status, "can_day_trade": can_day_trade, "framework": pdt_framework}
+
+
+def estimate_expected_move(underlying_price, iv_percent, dte):
+    """Approximate one-standard-deviation expected move from IV and DTE."""
+    try:
+        price = float(underlying_price)
+        iv = float(iv_percent) / 100.0
+        days = max(float(dte), 1.0)
+        return price * iv * math.sqrt(days / 365.0)
+    except Exception:
+        return 0.0
+
+
+def expected_move_check(spread_type, short_strike, underlying_price, expected_move):
+    """Whether the short strike is outside the approximate expected move."""
+    try:
+        stype = str(spread_type).upper()
+        short = float(short_strike)
+        px = float(underlying_price)
+        em = float(expected_move)
+        if em <= 0:
+            return "UNKNOWN", 0.0
+        if stype == "PUT":
+            distance = px - short
+            return ("OUTSIDE" if distance >= em else "INSIDE"), distance / em
+        distance = short - px
+        return ("OUTSIDE" if distance >= em else "INSIDE"), distance / em
+    except Exception:
+        return "UNKNOWN", 0.0
+
+
+def approx_pop_from_delta(short_delta):
+    """Rule-of-thumb POP and probability of touch from absolute short option delta."""
+    d = min(max(abs(float(short_delta)), 0.01), 0.99)
+    pop = max(0.01, min(0.99, 1.0 - d))
+    pot = max(0.01, min(0.99, 2.0 * d))
+    return pop, pot
+
+
+def rank_trade_days(vix_regime, passive_window, event_days, preferred_days, day_trades_remaining, framework_label):
+    """Rank Mon-Thu trade days as a planning aid, not a forecast."""
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday"]
+    results = []
+    for day in days:
+        score = 2
+        reasons = []
+        if day not in preferred_days:
+            score -= 2
+            reasons.append("not selected")
+        if vix_regime in ["NORMAL", "LOW"]:
+            score += 1
+            reasons.append("vol stable")
+        elif vix_regime in ["ELEVATED"]:
+            score -= 1
+            reasons.append("vol elevated")
+        elif vix_regime in ["HIGH", "EXTREME"]:
+            score -= 3
+            reasons.append("vol defensive")
+        if passive_window:
+            score += 1
+            reasons.append("flow window")
+        if day in event_days:
+            score -= 4
+            reasons.append("major event")
+        if day == "Monday":
+            score += 0  # keep neutral: often good after weekend, but gap risk exists
+        if day == "Thursday":
+            score += 1
+            reasons.append("post-week structure")
+        if isinstance(day_trades_remaining, int) and day_trades_remaining <= 1 and score < 5:
+            score -= 2
+            reasons.append("preserve last day trade")
+        label = "🟢 Best Trade Day" if score >= 5 else "🟡 Conditional" if score >= 2 else "🔴 Avoid"
+        results.append({"day": day, "score": score, "label": label, "reasons": ", ".join(reasons) if reasons else "neutral"})
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results
 
 
 @st.cache_data(ttl=7200)
@@ -414,15 +607,17 @@ if _kes["live"] or _wb:
         _mc[1].metric("EUR/KES", f"{_kes['kes']/_kes['eur']:.2f}", help="Derived")
         _mc[2].metric("GBP/KES", f"{_kes['kes']/_kes['gbp']:.2f}", help="Derived")
     if _wb:
-        _codes = list(_wb.keys())
-        if len(_codes) > 0:
-            _d = _wb[_codes[0]]
-            _mc[3].metric(f"Kenya GDP {_d['year']}",
-                         f"${_d['value']/1e9:.0f}B", help="World Bank")
-        if len(_codes) > 1:
-            _d2 = _wb[_codes[1]]
-            _mc[4].metric(f"Inflation {_d2['year']}",
-                         f"{_d2['value']}%", help="World Bank CPI")
+        # Display the correct World Bank indicators by code. The prior version
+        # treated the first returned indicator (inflation) as GDP, which created
+        # impossible values like "Inflation 2132%".
+        _infl = _wb.get("FP.CPI.TOTL.ZG")
+        _gdp_pc = _wb.get("NY.GDP.PCAP.CD")
+        if _gdp_pc:
+            _mc[3].metric(f"GDP/capita {_gdp_pc['year']}",
+                         f"${_gdp_pc['value']:,.0f}", help="World Bank GDP per capita")
+        if _infl:
+            _mc[4].metric(f"Inflation {_infl['year']}",
+                         f"{_infl['value']:.2f}%", help="World Bank CPI inflation")
     src = []
     if _kes["live"]: src.append(f"FX: open.er-api.com ({_kes['updated']})")
     if _wb: src.append("Macro: World Bank Open Data")
@@ -473,6 +668,8 @@ if 'goal_met' not in st.session_state: st.session_state.goal_met = False
 if 'daily_pnl' not in st.session_state: st.session_state.daily_pnl = 0.0
 if 'total_risk_deployed' not in st.session_state: st.session_state.total_risk_deployed = 0.0
 if 'consecutive_losses' not in st.session_state: st.session_state.consecutive_losses = 0
+if 'day_trades_used' not in st.session_state: st.session_state.day_trades_used = 0
+if 'week_event_days' not in st.session_state: st.session_state.week_event_days = []
 
 # --- 4. INSTITUTIONAL ANALYST ENGINE ---
 class InstitutionalAnalyst:
@@ -985,6 +1182,47 @@ with st.sidebar:
     st.caption(f"🎯 Daily Goal (1%): **${daily_goal:.2f}**")
     st.caption("💡 Discipline rule: stop when you hit your daily goal.")
 
+    pdt_framework = st.selectbox(
+        "Day-Trade Rule Framework",
+        ["Legacy PDT", "New Intraday Margin", "Broker Unknown / Conservative"],
+        help="Legacy PDT is safest until your broker confirms migration. New intraday margin may remove fixed PDT counts but still uses broker risk controls."
+    )
+    account_type = st.selectbox(
+        "Account Type",
+        ["Margin < $25k", "Margin ≥ $25k", "Cash Account", "IRA / Limited Margin"],
+        help="Used for conservative trade-budget guidance. Broker rules vary; verify with your broker."
+    )
+    day_trades_used = st.number_input(
+        "Day Trades Used (rolling 5 business days)",
+        value=int(st.session_state.day_trades_used), min_value=0, max_value=3, step=1,
+        help="Under legacy PDT discipline, keep this under 4 in 5 business days for small margin accounts."
+    )
+    st.session_state.day_trades_used = int(day_trades_used)
+    planned_same_day_exit = st.checkbox(
+        "Planned same-day exit?", value=False,
+        help="If checked, this setup may consume a day trade in a small margin account."
+    )
+    _pdt = pdt_guidance(capital, account_type, day_trades_used, planned_same_day_exit, pdt_framework)
+    if not _pdt["can_day_trade"]:
+        st.error("🛑 Trade-budget warning: no same-day exit capacity left. Preserve capital or use a non-day-trade plan.")
+    else:
+        st.caption(f"📌 {_pdt['status']}")
+
+    st.markdown("**🗓️ Weekly Trade Planner**")
+    preferred_trade_days = st.multiselect(
+        "Preferred trade days",
+        ["Monday", "Tuesday", "Wednesday", "Thursday"],
+        default=["Monday", "Tuesday", "Wednesday", "Thursday"],
+        help="Use this to plan Mon–Thu trading once your account/broker allows it. The app will still rank days by risk."
+    )
+    event_days = st.multiselect(
+        "Major macro event days this week",
+        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+        default=st.session_state.week_event_days,
+        help="Mark CPI, PPI, FOMC, NFP, major Treasury auctions, or high-risk geopolitical/event days."
+    )
+    st.session_state.week_event_days = event_days
+
     portfolio_risk_pct = (st.session_state.total_risk_deployed / capital) * 100
     if portfolio_risk_pct > max_portfolio_risk:
         st.error(f"⚠️ Portfolio Risk: {portfolio_risk_pct:.1f}% (OVER LIMIT)")
@@ -1023,8 +1261,11 @@ with st.sidebar:
     st.divider()
     st.header("3. Strategy & Execution")
 
-    strategy = st.selectbox("Mode", ['Long (Buy)', 'Short (Sell)', 'Income (Puts)'],
-                           help="Long: Buy stock (bullish). Short: Sell stock (bearish). Income: Sell put options for premium.")
+    strategy = st.selectbox(
+        "Mode",
+        ['Income (SPX Vertical Credit Spread)', 'Long (Buy)', 'Short (Sell)', 'Income (Cash-Secured Put)'],
+        help="Default is SPX vertical credit spreads for defined-risk income. Long/Short are directional simulations. CSP models assignment risk."
+    )
 
     entry_mode = st.radio("Entry", ["Auto-Limit (Zone)", "Market (Now)", "Manual Override"],
                          help="Auto-Limit: Wait for price to reach zone. Market: Enter immediately. Manual: Test custom price.")
@@ -1042,9 +1283,33 @@ with st.sidebar:
                                          help="FIXED: Standard fixed risk. VOLATILITY_ADJUSTED: Scales down in high VIX. KELLY: Mathematical optimal sizing.")
 
     premium = 0.0
-    if "Income" in strategy:
-        premium = st.number_input("Option Premium ($)", value=0.0, step=0.05,
-                                 help="Per-share premium received for selling put options. Example: $2.50 = $250 per contract (100 shares).")
+    spread_kind = "PUT"
+    short_strike = 0.0
+    long_strike = 0.0
+    spread_credit = 0.0
+    dte = 7
+    spx_reference_price = 0.0
+    iv_percent = 17.0
+    short_delta = 0.15
+    event_risk_48h = False
+    hold_through_event = False
+    if strategy == "Income (Cash-Secured Put)":
+        premium = st.number_input(
+            "Put Premium ($/share)", value=0.0, step=0.05,
+            help="Per-share premium received. $2.50 = $250 per contract. CSP risk is assignment/cash-secured risk, not just a chart stop."
+        )
+    elif strategy == "Income (SPX Vertical Credit Spread)":
+        st.markdown("**SPX Vertical Inputs**")
+        spread_kind = st.selectbox("Spread Type", ["PUT", "CALL"], help="PUT = put credit spread below market. CALL = call credit spread above market.")
+        short_strike = st.number_input("Short Strike", value=0.0, step=5.0, help="Strike you sell. This receives premium and defines the main risk point.")
+        long_strike = st.number_input("Long Strike", value=0.0, step=5.0, help="Protective strike you buy. This caps max loss.")
+        spread_credit = st.number_input("Net Credit ($/spread)", value=0.0, step=0.05, help="Net credit in index points. Example: 1.00 credit = $100 before commissions.")
+        dte = st.number_input("DTE", value=7, min_value=0, max_value=60, step=1, help="Teri-style short income window is usually <=7 DTE. Longer DTE requires stronger macro stability.")
+        spx_reference_price = st.number_input("SPX Reference Price", value=0.0, step=1.0, help="Enter current SPX/US500 level. Used for expected-move and strike-distance checks.")
+        iv_percent = st.number_input("IV / VIX Proxy (%)", value=17.0, min_value=1.0, max_value=100.0, step=0.25, help="Use current SPX IV, IV percentile estimate, or VIX as a proxy if true IV is unavailable.")
+        short_delta = st.number_input("Approx Short Strike Delta", value=0.15, min_value=0.01, max_value=0.60, step=0.01, help="Used for rough POP/POT. Example: 0.15 delta ≈ ~85% probability OTM, ~30% probability touch.")
+        event_risk_48h = st.checkbox("Major event within 48h?", value=False, help="CPI/PPI/FOMC/NFP/Treasury auction/geopolitical shock. If yes, the app penalizes new premium selling.")
+        hold_through_event = st.checkbox("Would hold through event?", value=False, help="Usually avoid holding premium-selling positions through major events unless specifically structured for it.")
 
     st.divider()
     st.header("4. IWT Scorecard")
@@ -1107,6 +1372,13 @@ with st.expander("🎓 Beginner's Guide (Read This First)", expanded=False):
 - Time in zone (fast rejection > lingering)
 - Speed out (explosive > grinding)
 - R/R must be ≥ 2.0 (prefer ≥ 3.0)
+
+**For SPX Vertical Credit Spreads**
+- Short strike = option you sell; long strike = protection you buy
+- Max profit = credit × 100 × contracts
+- Max loss = (spread width − credit) × 100 × contracts
+- For a $5-wide spread, gross width = $500 per contract
+- Defined risk protects the account; do not oversize just because max loss is capped
 
 **Step 5: Verdict Discipline**
 - 7-8 → GREEN (execute)
@@ -1242,6 +1514,24 @@ if st.session_state.macro:
                    help="US Dollar Index. UP=Strong dollar=Bad for commodities. DOWN=Weak dollar=Good for gold/oil.")
         col6.metric("📈 10Y Yield", f"{m['tnx']:.2f}%", delta=f"{m['tnx_chg']:.2f}%", delta_color="inverse",
                    help="10-Year Treasury yield. UP=Rising rates=Bad for growth stocks. DOWN=Falling rates=Good for growth.")
+
+    # Weekly trade-day ranking for small-account / Mon-Thu planning
+    with st.expander("🗓️ Mon–Thu Trade-Day Planner", expanded=False):
+        _pdt_plan = pdt_guidance(capital, account_type, day_trades_used, planned_same_day_exit, pdt_framework)
+        ranked_days = rank_trade_days(
+            vix_regime,
+            m.get('passive', False),
+            st.session_state.week_event_days,
+            preferred_trade_days,
+            _pdt_plan.get('remaining') if isinstance(_pdt_plan.get('remaining'), int) else 99,
+            pdt_framework,
+        )
+        st.caption("Ranks days by volatility regime, passive flows, event risk, and remaining day-trade budget. This is a permission filter, not a prediction.")
+        for row in ranked_days:
+            st.write(f"**{row['day']}** — {row['label']} | Score {row['score']} | {row['reasons']}")
+        best = ranked_days[0] if ranked_days else None
+        if best:
+            st.info(f"Best current candidate day: **{best['day']}**. Avoid wasting limited day trades on YELLOW/RED conditions.")
 
 # ASSET ANALYSIS
 if st.session_state.data is not None:
@@ -1422,34 +1712,78 @@ if st.session_state.data is not None:
         vol_multiplier = 1.0
         stop_multiplier = 1.0
 
-    # === INCOME (PUTS) CALCULATION FIX ===
-    if "Income" in strategy:
-        # For selling puts:
-        # - Entry = Strike price (price you'd buy stock at if assigned)
-        # - Stop = Technical stop below entry (or entry - 2*ATR as safety)
-        # - Target = Entry (stock stays above strike, you keep premium)
-        # - Risk per contract = (Strike × 100) - (Premium × 100) = max capital at risk
-        # - Reward per contract = Premium × 100
+    # === OPTIONS INCOME CALCULATION ===
+    # Directional stock math and options-income math are intentionally separated.
+    # A cash-secured put is assignment/cash risk. A vertical credit spread is
+    # defined-risk options math: max loss = (width - credit) * 100 * contracts.
 
-        stop = entry - (m['atr'] * 2)  # Technical stop 2 ATRs below strike
-        target = entry  # Keep premium if stock stays above strike
+    is_vertical = strategy == "Income (SPX Vertical Credit Spread)"
+    is_csp = strategy == "Income (Cash-Secured Put)"
+    option_details = {}
 
-        # Risk per contract (if assigned and stock drops to stop)
-        risk_per_contract = (entry - stop) * 100  # 100 shares per contract
-
-        # Reward per contract (premium collected)
-        reward_per_contract = premium * 100
-
-        # Calculate number of contracts based on capital and risk
-        if risk_per_contract > 0:
-            contracts = int(risk_per_trade / risk_per_contract)
+    if is_vertical:
+        # Use user-entered strikes/credit. We do not infer strikes from stock support/resistance
+        # because SPX spread risk must be calculated from option chain values.
+        v0 = calc_vertical_credit_spread(short_strike, long_strike, spread_credit, spread_kind, contracts=0)
+        if v0["errors"]:
+            stop = target = entry = 0.0
+            risk = reward = 0.0
+            shares = 0
+            option_details = v0
         else:
-            contracts = 0
+            ref_price = spx_reference_price if spx_reference_price > 0 else m.get('price', 0)
+            expected_move = estimate_expected_move(ref_price, iv_percent, dte)
+            em_status, em_multiple = expected_move_check(spread_kind, short_strike, ref_price, expected_move)
+            approx_pop, approx_pot = approx_pop_from_delta(short_delta)
+            max_loss_per_contract = v0["max_loss_per_contract"]
+            contracts_by_trade_risk = contracts_for_defined_risk(risk_per_trade, max_loss_per_contract)
+            contracts_by_portfolio = contracts_for_defined_risk(
+                max(0, (capital * max_portfolio_risk / 100) - st.session_state.total_risk_deployed),
+                max_loss_per_contract
+            )
+            contracts = max(0, min(contracts_by_trade_risk, contracts_by_portfolio))
+            v = calc_vertical_credit_spread(short_strike, long_strike, spread_credit, spread_kind, contracts=contracts)
+            v.update({
+                "reference_price": ref_price,
+                "iv_percent": iv_percent,
+                "dte": dte,
+                "expected_move": expected_move,
+                "expected_move_status": em_status,
+                "expected_move_multiple": em_multiple,
+                "short_delta": short_delta,
+                "approx_pop": approx_pop,
+                "approx_probability_touch": approx_pot,
+                "event_risk_48h": event_risk_48h,
+                "hold_through_event": hold_through_event,
+            })
+            entry = short_strike
+            stop = long_strike
+            target = v["breakeven"]
+            risk = v["max_loss_per_contract"]
+            reward = v["max_profit_per_contract"]
+            shares = contracts  # UI label switches to contracts below
+            option_details = v
 
-        shares = max(0, contracts)  # "shares" = contracts for Income strategy
-
-        risk = risk_per_contract
+    elif is_csp:
+        # Cash-secured put philosophy:
+        # Max cash-secured exposure = (strike - premium) * 100 per contract.
+        # Technical risk-to-stop is shown separately, but cash must be available for assignment.
+        stop = entry - (m['atr'] * 2)
+        target = entry
+        technical_risk_per_contract = max(0, (entry - stop - premium) * 100)
+        cash_secured_risk_per_contract = max(0, (entry - premium) * 100)
+        reward_per_contract = premium * 100
+        contracts = contracts_for_defined_risk(risk_per_trade, technical_risk_per_contract) if technical_risk_per_contract > 0 else 0
+        shares = contracts
+        risk = technical_risk_per_contract
         reward = reward_per_contract
+        option_details = {
+            "cash_secured_risk_per_contract": cash_secured_risk_per_contract,
+            "technical_risk_per_contract": technical_risk_per_contract,
+            "max_profit_per_contract": reward_per_contract,
+            "breakeven": entry - premium,
+            "errors": [] if premium > 0 else ["Premium must be positive for a cash-secured put."],
+        }
 
     elif "Short" in strategy:
         stop = entry + (m['atr'] * stop_mode * stop_multiplier)
@@ -1474,9 +1808,13 @@ if st.session_state.data is not None:
     total_trade_risk = shares * risk if shares > 0 else 0
 
     # Costs & Net Reward
-    if "Income" in strategy:
-        slippage = 0  # Options have bid-ask spread, but we'll keep calculation simple
-        commissions = shares * 0.65  # Typical options commission per contract
+    if is_vertical:
+        slippage = 0
+        commissions = option_details.get("commission", shares * OPTION_COMMISSION_PER_CONTRACT * 2)
+        gross_reward = option_details.get("total_credit", shares * reward)
+    elif is_csp:
+        slippage = 0
+        commissions = shares * OPTION_COMMISSION_PER_CONTRACT
         gross_reward = shares * reward
     else:
         slippage = entry * (SLIPPAGE_BPS / 10000) * shares
@@ -1484,6 +1822,39 @@ if st.session_state.data is not None:
         gross_reward = shares * reward
 
     net_reward = gross_reward - slippage - commissions
+
+    if is_vertical and option_details.get("errors"):
+        for _err in option_details["errors"]:
+            st.error(f"❌ Vertical spread input error: {_err}")
+    if is_vertical and not option_details.get("errors"):
+        st.info(
+            f"📐 Vertical math: width ${option_details['width']:.2f} = ${option_details['gross_width_per_contract']:.0f} gross width/contract; "
+            f"credit ${spread_credit:.2f} = ${option_details['max_profit_per_contract']:.0f} max profit/contract; "
+            f"max loss ${option_details['max_loss_per_contract']:.0f}/contract; breakeven {option_details['breakeven']:.2f}."
+        )
+        st.caption(
+            f"📊 Expected move ≈ ±{option_details.get('expected_move', 0):.1f} points over {option_details.get('dte', dte)} DTE; "
+            f"short strike is {option_details.get('expected_move_status', 'UNKNOWN')} expected move "
+            f"({option_details.get('expected_move_multiple', 0):.2f}x EM). Approx POP {option_details.get('approx_pop', 0):.0%}; touch risk {option_details.get('approx_probability_touch', 0):.0%}."
+        )
+        if option_details.get('expected_move_status') == 'INSIDE':
+            st.warning("⚠️ Short strike is inside the expected move. That is lower-quality for income selling unless intentional and tightly managed.")
+        if option_details.get('event_risk_48h'):
+            st.warning("⚠️ Major event within 48h. Defined-risk only; consider waiting until after the event volatility clears.")
+        if option_details.get('hold_through_event'):
+            st.error("🛑 Holding through a major event materially increases gap/volatility risk. Reduce size or stand aside.")
+        if option_details['credit_pct_width'] < 0.20:
+            st.warning("⚠️ Credit is under 20% of spread width. Premium may be too thin for the defined risk.")
+        elif option_details['credit_pct_width'] >= 0.25:
+            st.success("✅ Credit efficiency meets the preferred 25%+ of width threshold.")
+    if is_csp and option_details.get("errors"):
+        for _err in option_details["errors"]:
+            st.error(f"❌ Cash-secured put input error: {_err}")
+    if is_csp and not option_details.get("errors"):
+        st.warning(
+            f"💵 CSP cash-secured exposure is approximately ${option_details['cash_secured_risk_per_contract']:.0f} per contract. "
+            "This is not the same as a defined-risk vertical spread."
+        )
 
     col_setup1, col_setup2, col_setup3 = st.columns(3)
 
@@ -1505,8 +1876,10 @@ Risk:    ${total_trade_risk:.2f}
 Reward:  ${gross_reward:.2f}
 R/R:     {rr:.2f}
         """)
-        if "Income" in strategy:
-            st.caption(f"💡 Each contract = 100 shares. Premium = ${premium:.2f}/share = ${premium*100:.2f}/contract")
+        if is_vertical:
+            st.caption("💡 Contracts are rounded down so max theoretical loss stays inside your risk budget and portfolio-risk cap.")
+        elif is_csp:
+            st.caption(f"💡 Each contract = 100 shares. Premium = ${premium:.2f}/share = ${premium*100:.2f}/contract; assignment exposure must be cash-secured.")
         else:
             st.caption(f"💡 Size calculated using {position_sizing_method}. Risk = max loss if stopped out.")
 
@@ -1525,16 +1898,48 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
     st.subheader("🚦 The Ultimate Verdict (IWT + Institutional Filters)")
     st.caption("💡 Combines IWT score with 13 institutional penalty filters")
 
-    score_rr = 2 if rr >= 3 or ("Income" in strategy and rr > 0.1) else 1 if rr >= 2 else 0
+    if is_vertical:
+        # For short verticals, raw reward/risk is usually below 1.0. Score credit efficiency
+        # instead of forcing stock-style 3:1 reward/risk. Preferred: credit >=25% of width.
+        credit_eff = option_details.get("credit_pct_width", 0)
+        score_rr = 2 if credit_eff >= 0.25 else 1 if credit_eff >= 0.20 else 0
+    elif is_csp:
+        score_rr = 2 if rr >= 0.25 else 1 if rr >= 0.10 else 0
+    else:
+        score_rr = 2 if rr >= 3 else 1 if rr >= 2 else 0
     total_score = fresh + time_z + speed + score_rr
 
     penalties = []
-    warsh_penalty = False
+    fed_penalty = False
+
+    _pdt_now = pdt_guidance(capital, account_type, day_trades_used, planned_same_day_exit)
+    if planned_same_day_exit and not _pdt_now["can_day_trade"]:
+        total_score -= 3
+        penalties.append("Trade Budget (-3): no same-day exit capacity left under small-account day-trade limits")
+    elif planned_same_day_exit and isinstance(_pdt_now.get("remaining"), int) and _pdt_now["remaining"] <= 1 and total_score < 7:
+        total_score -= 1
+        penalties.append("Trade Budget (-1): preserve last day trade for only A+ setups")
+
+    if is_vertical and dte > 7 and total_score < 7:
+        total_score -= 1
+        penalties.append("DTE Discipline (-1): >7 DTE requires stronger setup quality")
+    if is_vertical and option_details.get('expected_move_status') == 'INSIDE':
+        total_score -= 2
+        penalties.append("Expected Move (-2): short strike is inside expected move")
+    if is_vertical and option_details.get('approx_pop', 1) < 0.65:
+        total_score -= 1
+        penalties.append("POP (-1): probability of profit estimate below 65%")
+    if is_vertical and option_details.get('event_risk_48h'):
+        total_score -= 2
+        penalties.append("Event Risk (-2): major event within 48h")
+    if is_vertical and option_details.get('hold_through_event'):
+        total_score -= 2
+        penalties.append("Event Hold (-2): holding short premium through major event")
 
     if st.session_state.macro and st.session_state.macro['tnx_chg'] > 1.0 and ticker in GROWTH_TICKERS and "Long" in strategy:
         total_score -= 2
-        warsh_penalty = True
-        penalties.append("Warsh (-2): Yields rising >1% hurt growth stocks")
+        fed_penalty = True
+        penalties.append("Fed/Rates (-2): 10Y yield rising >1% pressures growth stocks")
 
     market_phase, _ = engine.get_market_hours_status()
     if market_phase in ["LUNCH", "PRE_MARKET", "AFTER_HOURS"]:
@@ -1619,7 +2024,11 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
 
         checks = []
         checks.append(("✅" if fresh == 2 else "⚠️" if fresh == 1 else "❌", f"Freshness: {['Stale (Weak)','Used (OK)','Fresh (Strong)'][fresh]}"))
-        checks.append(("✅" if score_rr == 2 else "⚠️" if score_rr == 1 else "❌", f"R/R: {rr:.2f} ({['Poor (<2)', 'Acceptable (2-3)', 'Excellent (3+)'][score_rr]})"))
+        if is_vertical:
+            _ce = option_details.get("credit_pct_width", 0)
+            checks.append(("✅" if score_rr == 2 else "⚠️" if score_rr == 1 else "❌", f"Credit Efficiency: {_ce:.0%} of width ({['Thin (<20%)', 'Acceptable (20-25%)', 'Preferred (25%+)'][score_rr]})"))
+        else:
+            checks.append(("✅" if score_rr == 2 else "⚠️" if score_rr == 1 else "❌", f"R/R: {rr:.2f} ({['Poor', 'Acceptable', 'Excellent'][score_rr]})"))
         checks.append(("✅" if abs(m['gap']) > 2 and m['rvol'] > 1.5 else "⚠️" if abs(m['gap']) > 2 else "➖", f"Gap: {m['gap']:.2f}%"))
         checks.append(("✅" if m['rvol'] > 1.2 else "⚠️", f"Volume: {m['rvol']:.1f}x"))
         checks.append(("✅" if m['adx'] > 25 else "⚠️", f"Trend Strength: ADX {m['adx']:.0f}"))
@@ -1648,7 +2057,10 @@ Entry: ${entry:.2f} | Stop: ${stop:.2f} | Target: ${target:.2f}
 R/R: {rr:.2f} | Size: {shares} {'contracts' if 'Income' in strategy else 'shares'}
 VIX Regime: {vix_regime if st.session_state.macro else 'N/A'}
 Passive Flow: {flow_strength}
-10Y Yield: {'RISING >1%' if warsh_penalty else 'STABLE'}
+10Y Yield: {'RISING >1%' if fed_penalty else 'STABLE'}
+Day Trade Plan: {'Same-day exit' if planned_same_day_exit else 'Swing/hold plan'} | PDT Framework: {pdt_framework} | Day trades used: {day_trades_used}/3
+Expected Move: {round(option_details.get('expected_move', 0), 2) if is_vertical else 'N/A'} | EM Status: {option_details.get('expected_move_status', 'N/A') if is_vertical else 'N/A'} | Approx POP: {round(option_details.get('approx_pop', 0)*100, 1) if is_vertical else 'N/A'}% | Event 48h: {option_details.get('event_risk_48h', False) if is_vertical else 'N/A'}
+Option Math: {('Vertical ' + spread_kind + ' spread | Short ' + str(short_strike) + ' | Long ' + str(long_strike) + ' | Credit ' + str(spread_credit) + ' | Max loss/contract $' + str(round(option_details.get('max_loss_per_contract', 0), 2))) if is_vertical else ('CSP | Premium ' + str(premium) + ' | Cash-secured exposure/contract $' + str(round(option_details.get('cash_secured_risk_per_contract', 0), 2))) if is_csp else 'N/A'}
     """
 
     st.code(ai_export.strip(), language='text')
@@ -1669,6 +2081,7 @@ Passive Flow: {flow_strength}
                     "ticker": ticker, "action": strategy, "entry": entry, "stop": stop, "target": target,
                     "shares": shares, "score": total_score, "risk": total_trade_risk,
                     "expected_reward": gross_reward, "net_reward": net_reward, "rr_ratio": rr,
+                    "credit_points": spread_credit if is_vertical else premium if is_csp else 0.0,
                     "slippage": slippage, "commissions": commissions, "status": "PAPER"
                 }
                 st.session_state.journal.append(trade_record)
@@ -1682,6 +2095,7 @@ Passive Flow: {flow_strength}
                     "ticker": ticker, "action": strategy, "entry": entry, "stop": stop, "target": target,
                     "shares": shares, "score": total_score, "risk": total_trade_risk,
                     "expected_reward": gross_reward, "net_reward": net_reward, "rr_ratio": rr,
+                    "credit_points": spread_credit if is_vertical else premium if is_csp else 0.0,
                     "slippage": slippage, "commissions": commissions, "status": "OPEN"
                 }
                 st.session_state.journal.append(trade_record)
@@ -1704,7 +2118,7 @@ if st.session_state.open_positions:
     st.dataframe(positions_df, use_container_width=True)
 
     st.markdown("**Close a Position:**")
-    st.caption("💡 Enter the actual exit price from your broker. System calculates real P&L.")
+    st.caption("💡 For stocks/CSP, enter underlying exit price. For SPX verticals, enter the closing debit/spread value in index points, e.g., 0.35.")
 
     col_close1, col_close2, col_close3 = st.columns(3)
 
@@ -1721,11 +2135,18 @@ if st.session_state.open_positions:
                     if pos['ticker'] == position_to_close:
                         if "Long" in pos['action']:
                             actual_pnl = (exit_price - pos['entry']) * pos['shares']
+                        elif "SPX Vertical" in pos['action']:
+                            # Conservative close-entry: user enters actual closing debit/credit-equivalent P&L manually
+                            # as Exit Price = remaining spread value/debit in index points.
+                            # P&L = initial credit - closing debit, each point worth $100 per contract.
+                            initial_credit_points = pos.get('credit_points', pos['expected_reward'] / max(pos['shares'] * 100, 1))
+                            closing_debit_points = exit_price
+                            actual_pnl = (initial_credit_points - closing_debit_points) * pos['shares'] * 100
                         elif "Income" in pos['action']:
-                            # For Income (short put): profit = premium kept if price > strike at close.
-                            # If assigned (price < strike), loss = (strike - exit_price) * shares - premium
+                            # Cash-secured put: profit = premium kept if price > strike at close.
+                            # If assigned / below strike, estimate intrinsic loss minus premium.
                             if exit_price >= pos['entry']:
-                                actual_pnl = pos['expected_reward']  # Put expired worthless, keep premium
+                                actual_pnl = pos['expected_reward']
                             else:
                                 assignment_loss = (pos['entry'] - exit_price) * pos['shares'] * 100
                                 actual_pnl = pos['expected_reward'] - assignment_loss
