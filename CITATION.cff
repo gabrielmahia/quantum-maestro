@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it using these metadata."
 type: software
-title: "EasyStockTrader"
-abstract: "Macro risk and stock analysis terminal for NSE and global markets"
+title: "EasyStockTrader — SPX Income Engine"
+abstract: "Defined-risk vertical credit spread planning terminal for SPX. Expected-move engine, POP/touch-risk approximation, event-risk scoring, Mon-Thu trade planner, and IWT verification scorecard. Educational simulation only."
 authors:
   - family-names: Mahia
     given-names: Gabriel
@@ -10,15 +10,22 @@ authors:
     orcid: ""
     affiliation: "aikungfu.dev"
 repository-code: "https://github.com/gabrielmahia/quantum-maestro"
-url: "https://aikungfu.dev"
+url: "https://easystocktrader.streamlit.app"
 license: "CC-BY-NC-ND-4.0"
-version: "1.0.0"
-date-released: "2026-01-01"
+version: "2.0.0"
+date-released: "2026-05-08"
 keywords:
+  - spx
+  - options-trading
+  - vertical-spreads
+  - income-trading
+  - expected-move
+  - probability-of-profit
+  - iwt
+  - streamlit
   - kenya
   - east-africa
-  - civic-tech
-  - decision-infrastructure
+  - fintech
 identifiers:
   - type: doi
     value: "10.34740/kaggle/dsv/15473045"
