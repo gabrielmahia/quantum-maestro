@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  lint-and-smoke:
+  lint-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,10 +17,15 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install ruff
+        run: |
+          pip install ruff pytest
+          pip install -r requirements.txt
 
-      - name: Lint
+      - name: Lint (ruff)
         run: ruff check app.py --select E,F,W --ignore E501,E402,E701,E722,F401,F841,W605
 
-      - name: Smoke test (AST parse)
-        run: python3 -c "import ast, sys; ast.parse(open('app.py').read()); print('app.py parses cleanly')"
+      - name: AST smoke test
+        run: python3 -c "import ast; ast.parse(open('app.py').read()); print('app.py parses cleanly')"
+
+      - name: Unit + smoke tests
+        run: pytest tests/ -v --tb=short
