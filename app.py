@@ -566,6 +566,243 @@ def kelly_and_ruin(win_rate, avg_win_R, avg_loss_R, trades_per_month=8):
 
 
 # =============================================================================
+# =============================================================================
+# LIVE OPTIONS INTELLIGENCE ENGINE
+# V5 (yfinance + BSM) → V5.1 (+ Tradier broker Greeks when token available)
+# =============================================================================
+
+def bsm_greeks(S, K, T, r, sigma, flag='p'):
+    """Exact Black-Scholes-Merton Greeks via scipy.stats.norm."""
+    from scipy.stats import norm as _norm
+    import math
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return None
+    d1 = (math.log(S/K) + (r + 0.5*sigma**2)*T) / (sigma*math.sqrt(T))
+    d2 = d1 - sigma*math.sqrt(T)
+    phi = _norm.pdf(d1); sqT = math.sqrt(T)
+    if flag == 'c':
+        price    = S*_norm.cdf(d1) - K*math.exp(-r*T)*_norm.cdf(d2)
+        delta    = _norm.cdf(d1)
+        theta    = (-(S*phi*sigma)/(2*sqT) - r*K*math.exp(-r*T)*_norm.cdf(d2))/365
+        prob_itm = _norm.cdf(d2)
+    else:
+        price    = K*math.exp(-r*T)*_norm.cdf(-d2) - S*_norm.cdf(-d1)
+        delta    = _norm.cdf(d1) - 1
+        theta    = (-(S*phi*sigma)/(2*sqT) + r*K*math.exp(-r*T)*_norm.cdf(-d2))/365
+        prob_itm = _norm.cdf(-d2)
+    gamma = phi/(S*sigma*sqT)
+    vega  = S*phi*sqT/100
+    return {"price":round(price,4), "delta":round(delta,4), "gamma":round(gamma,6),
+            "theta":round(theta,4), "vega":round(vega,4),
+            "iv_pct":round(sigma*100,2), "prob_itm":round(prob_itm,4),
+            "pop":round(1-abs(delta),4)}
+
+
+@st.cache_data(ttl=300)
+def live_options_greeks(ticker, dte_target=30, r_annual=0.045):
+    """
+    yfinance options chain + BSM Greeks (scipy). Free, no API key.
+    IV from real market bid/ask prices via yfinance.
+    Greeks: exact BSM from that IV.
+    IVR: 1-year realized vol range as proxy (best free approximation).
+    """
+    import math
+    from datetime import date, datetime
+    try:
+        t    = yf.Ticker(ticker)
+        hist = t.history(period="1y")
+        if hist.empty or len(hist) < 30:
+            return None
+        rets     = np.log(hist['Close']/hist['Close'].shift(1)).dropna()
+        rv_30d   = rets.rolling(30).std() * math.sqrt(252) * 100
+        rv_curr  = float(rv_30d.iloc[-1])
+        rv_high  = float(rv_30d.max())
+        rv_low   = float(rv_30d.min())
+        S        = float(hist['Close'].iloc[-1])
+        expiries = t.options
+        if not expiries:
+            return {"ticker":ticker, "S":S, "no_options":True}
+        today    = date.today()
+        best_exp = min(expiries, key=lambda e:
+            abs((datetime.strptime(e,'%Y-%m-%d').date()-today).days - dte_target))
+        dte      = (datetime.strptime(best_exp,'%Y-%m-%d').date()-today).days
+        T        = max(dte/365, 0.001)
+        chain    = t.option_chain(best_exp)
+        calls    = chain.calls[['strike','bid','ask','impliedVolatility','volume','openInterest']].dropna()
+        puts     = chain.puts[ ['strike','bid','ask','impliedVolatility','volume','openInterest']].dropna()
+        atm_c    = calls.iloc[(calls['strike']-S).abs().argsort()[:1]]
+        atm_p    = puts.iloc[(puts['strike']-S).abs().argsort()[:1]]
+        iv_c     = float(atm_c['impliedVolatility'].iloc[0])*100 if len(atm_c)>0 else rv_curr
+        iv_p     = float(atm_p['impliedVolatility'].iloc[0])*100 if len(atm_p)>0 else rv_curr
+        atm_iv   = (iv_c+iv_p)/2
+        ivr      = max(0,min(100,(atm_iv-rv_low)/(rv_high-rv_low)*100)) if rv_high!=rv_low else 50
+        rows = []
+        for flag, df in [('p',puts),('c',calls)]:
+            near = df[(df['strike']>=S*0.96) & (df['strike']<=S*1.04)].head(25)
+            for _, row in near.iterrows():
+                K = float(row['strike']); iv_dec = float(row['impliedVolatility'])
+                if iv_dec <= 0: continue
+                g = bsm_greeks(S, K, T, r_annual, iv_dec, flag)
+                if not g: continue
+                rows.append({"type":flag.upper(),"strike":K,"iv_pct":round(iv_dec*100,2),
+                    "bid":float(row.get('bid',0)),"ask":float(row.get('ask',0)),
+                    "delta":g['delta'],"gamma":g['gamma'],"theta_day":g['theta'],
+                    "vega_1pct":g['vega'],"pop":g['pop'],"prob_itm":g['prob_itm'],
+                    "oi":int(row.get('openInterest',0)),"source":"yfinance+BSM"})
+        return {"ticker":ticker,"S":S,"expiry":best_exp,"dte":dte,"T":T,
+                "atm_iv":round(atm_iv,2),"rv_current":round(rv_curr,2),
+                "rv_high":round(rv_high,2),"rv_low":round(rv_low,2),
+                "ivr_proxy":round(ivr,1),
+                "ivr_method":"1y realized vol range used as IV history proxy.",
+                "greeks_table":rows,
+                "source":"yfinance+BSM",
+                "source_label":"yfinance delayed IV + BSM exact formula (scipy)"}
+    except Exception as ex:
+        return {"error":str(ex)}
+
+
+# ── Tradier integration (upgrade path — active when TRADIER_TOKEN in secrets) ─
+
+def _tradier_headers():
+    """Return (headers, base_url) tuple, or (None, None) if not configured."""
+    try:
+        token = (st.secrets.get("TRADIER_TOKEN")
+                 or st.secrets.get("tradier", {}).get("token"))
+        if not token:
+            return None, None
+        env  = (st.secrets.get("TRADIER_ENV")
+                or st.secrets.get("tradier", {}).get("env","production")).lower()
+        base = ("https://sandbox.tradier.com" if env == "sandbox"
+                else "https://api.tradier.com")
+        return {"Authorization":f"Bearer {token}","Accept":"application/json"}, base
+    except Exception:
+        return None, None
+
+
+def _tradier_is_connected():
+    h, _ = _tradier_headers()
+    return h is not None
+
+
+@st.cache_data(ttl=60)
+def _tradier_quote(ticker):
+    headers, base = _tradier_headers()
+    if not headers: return None
+    try:
+        req = urllib.request.Request(
+            f"{base}/v1/markets/quotes?symbols={ticker}&greeks=false",
+            headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            d = json.loads(r.read())
+        q = d.get("quotes",{}).get("quote")
+        q = q if isinstance(q,dict) else (q[0] if isinstance(q,list) and q else {})
+        return float(q.get("last") or q.get("bid") or 0) or None
+    except Exception: return None
+
+
+@st.cache_data(ttl=60)
+def _tradier_expirations(ticker):
+    headers, base = _tradier_headers()
+    if not headers: return None
+    try:
+        req = urllib.request.Request(
+            f"{base}/v1/markets/options/expirations?symbol={ticker}&includeAllRoots=true",
+            headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            d = json.loads(r.read())
+        exps = d.get("expirations",{}).get("date")
+        return ([exps] if isinstance(exps,str) else exps) or []
+    except Exception: return None
+
+
+@st.cache_data(ttl=60)
+def _tradier_chain_greeks(ticker, expiration):
+    """
+    Fetch options chain with Tradier broker-computed Greeks.
+    Greeks come from Tradier's own vol surface model (smv_vol).
+    NOT BSM approximation — actual pricing engine output.
+    """
+    headers, base = _tradier_headers()
+    if not headers: return None
+    try:
+        req = urllib.request.Request(
+            f"{base}/v1/markets/options/chains?symbol={ticker}&expiration={expiration}&greeks=true",
+            headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.loads(r.read())
+        opts = d.get("options",{}).get("option",[])
+        if isinstance(opts,dict): opts=[opts]
+        rows = []
+        for o in opts:
+            g = o.get("greeks") or {}
+            if not g or g.get("delta") is None: continue
+            iv_val = g.get("smv_vol") or g.get("mid_iv") or 0
+            rows.append({
+                "type": "P" if o.get("option_type","").lower()=="put" else "C",
+                "strike": float(o.get("strike",0)),
+                "bid":  float(o.get("bid") or 0), "ask": float(o.get("ask") or 0),
+                "volume":int(o.get("volume") or 0),"oi":int(o.get("open_interest") or 0),
+                "iv_pct":   round(float(iv_val)*100,2),
+                "delta":    round(float(g.get("delta",0)),4),
+                "gamma":    round(float(g.get("gamma",0)),6),
+                "theta_day":round(float(g.get("theta",0)),4),
+                # Tradier vega is per 1pt move in vol — divide by 100 for per-1% convention
+                "vega_1pct":round(float(g.get("vega",0))/100,4),
+                "rho":      round(float(g.get("rho",0)),4),
+                "pop":      round(1-abs(float(g.get("delta",0.5))),3),
+                "prob_itm": round(abs(float(g.get("delta",0.5))),3),
+                "source":   "Tradier",
+            })
+        return rows or None
+    except Exception: return None
+
+
+@st.cache_data(ttl=60)
+def live_options_greeks_v2(ticker, dte_target=30, r_annual=0.045):
+    """
+    Unified options intelligence.
+    Tradier path: broker-computed Greeks (real-time), smv_vol IV surface.
+    Fallback path: yfinance delayed IV + BSM exact formula.
+    Data provenance labelled in every record.
+    """
+    import math
+    from datetime import date, datetime
+    headers, _ = _tradier_headers()
+
+    if headers:
+        S = _tradier_quote(ticker)
+        exps = _tradier_expirations(ticker)
+        if S and exps:
+            today = date.today()
+            best_exp = min(exps, key=lambda e: abs(
+                (datetime.strptime(e,"%Y-%m-%d").date()-today).days - dte_target))
+            dte  = (datetime.strptime(best_exp,"%Y-%m-%d").date()-today).days
+            rows = _tradier_chain_greeks(ticker, best_exp)
+            if rows:
+                df_r   = pd.DataFrame(rows)
+                atm    = df_r.iloc[(df_r["strike"]-S).abs().argsort()[:2]]
+                atm_iv = float(atm["iv_pct"].mean()) if len(atm)>0 else 0
+                try:
+                    hist2  = yf.Ticker(ticker).history(period="1y")
+                    rets2  = np.log(hist2["Close"]/hist2["Close"].shift(1)).dropna()
+                    rv2    = rets2.rolling(30).std()*math.sqrt(252)*100
+                    ivr2   = max(0,min(100,(atm_iv-float(rv2.min()))/(float(rv2.max())-float(rv2.min()))*100))
+                    rv_cur = round(float(rv2.iloc[-1]),2)
+                except Exception:
+                    ivr2=50.0; rv_cur=round(atm_iv*0.85,2)
+                near = df_r[(df_r["strike"]>=S*0.96)&(df_r["strike"]<=S*1.04)]
+                return {"ticker":ticker,"S":S,"expiry":best_exp,"dte":dte,
+                        "atm_iv":round(atm_iv,2),"ivr_proxy":round(ivr2,1),
+                        "rv_current":rv_cur,"greeks_table":near.to_dict("records"),
+                        "source":"Tradier",
+                        "source_label":"Tradier broker-computed Greeks (real-time, smv_vol surface)"}
+
+    result = live_options_greeks(ticker, dte_target=dte_target, r_annual=r_annual)
+    if result and not result.get("error"):
+        result["source"]       = "yfinance+BSM"
+        result["source_label"] = "yfinance delayed IV + BSM exact (scipy)"
+    return result
+
 # V4 — FULL INSTRUMENT SUITE · AUTO-DATA · BEGINNER-TO-PRO LANGUAGE
 # =============================================================================
 
@@ -1620,6 +1857,12 @@ engine = InstitutionalAnalyst()
 
 # --- 5. SIDEBAR (WITH V12 HELP NOTES) ---
 with st.sidebar:
+    _tdr_ok = _tradier_is_connected()
+    if _tdr_ok:
+        st.success("✅ Tradier connected — broker Greeks active")
+    else:
+        st.caption("📡 Greeks: yfinance+BSM (free). Add TRADIER_TOKEN to secrets for broker Greeks.")
+    st.divider()
     st.header("🎯 Your Experience Level")
     st.session_state.lang_level = st.selectbox(
         "How do you like explanations?",
@@ -2247,7 +2490,7 @@ if st.session_state.data is not None:
     if st.session_state.metrics:
         _r_rate = st.session_state.macro.get("tnx",4.5)/100 if st.session_state.macro else 0.045
         with st.spinner("Loading live options chain..."):
-            _opt = live_options_greeks(ticker, dte_target=30, r_annual=_r_rate)
+            _opt = live_options_greeks_v2(ticker, dte_target=30, r_annual=_r_rate)
         if _opt and not _opt.get("no_options") and not _opt.get("error"):
             _ivr_str = f"IVR~{_opt['ivr_proxy']:.0f}% | " if _opt.get('ivr_proxy') else ""
             with st.expander(
