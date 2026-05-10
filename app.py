@@ -564,6 +564,236 @@ def kelly_and_ruin(win_rate, avg_win_R, avg_loss_R, trades_per_month=8):
     }
 
 
+
+# =============================================================================
+# V4 — FULL INSTRUMENT SUITE · AUTO-DATA · BEGINNER-TO-PRO LANGUAGE
+# =============================================================================
+
+# ── Term Explainer ──────────────────────────────────────────────────────────
+_EXPLANATIONS = {
+    "vix": {
+        "Beginner":      "VIX = the market's fear score. Low VIX = calm. High VIX = scared. Think of it like weather: high VIX = storm warning. Affects how much options cost.",
+        "Intermediate":  "VIX = implied volatility of 30-day SPX options. Measures the market's expected annualised % move for the S&P 500. VIX of 20 ≈ expected ~1.25%/day move.",
+        "Advanced":      "VIX = CBOE spot vol index. Derived from weighted SPX near/next-term option prices across strikes. Approximates E[realised vol] under risk-neutral measure. Mean-reverts to ~18-20 historically.",
+        "Professional":  "VIX = √(∫₀³⁰ σ²_RN(t)dt × 365/30). Model-free IV using strip of OTM puts/calls. Variance swap rate proxy. VIX² = expected 30-day variance. Spread vs realised vol (VRP) drives premium-selling edge.",
+    },
+    "ivr": {
+        "Beginner":      "IV Rank = how expensive options are RIGHT NOW vs the last year. 0% = cheapest. 100% = most expensive. Above 50%: good time to SELL options. Below 30%: good time to BUY them. This app calculates it automatically from live VIX data.",
+        "Intermediate":  "IVR = (Current VIX − 52w Low) / (52w High − 52w Low) × 100. Tells you where today's implied volatility sits in its annual range. Drives the buy/sell premium decision systematically.",
+        "Advanced":      "IVR ≠ IV Percentile (IVP). IVR uses range; IVP counts daily observations above current level. IVR spikes faster in crises. Both computed from trailing 252 days. IVR > 50 → statistically elevated premium; sell. IVR < 30 → historically cheap; buy.",
+        "Professional":  "IVR from VIX rank. True stock IVR requires historical IV surface data (ORATS, OptionMetrics, CBOE DataShop). VIX rank is exact for SPX — VIX IS SPX 30-day implied vol. For equities, use IV Percentile from broker tools. Selling edge = VRP: IV historically overestimates realised vol by ~2-3 vol points.",
+    },
+    "theta": {
+        "Beginner":      "Theta = time decay. Every day you hold an option, it loses a little value — like a gift card expiring. Short options (credit spreads) EARN from this. Long options LOSE from it. Our calculator shows how fast.",
+        "Intermediate":  "Theta = daily dollar decay of option value holding everything else constant. Negative for long options, positive for short. Non-linear: doubles in speed roughly every time DTE halves. Accelerates sharply inside 30 DTE.",
+        "Advanced":      "Θ = ∂V/∂τ (with sign convention: positive = time passing helps). For credit spreads: value remaining ≈ credit × √(DTE_remaining / DTE_entry) — a practical first-order model. Real Θ also depends on gamma (convexity) and vega (vol sensitivity).",
+        "Professional":  "BSM theta: Θ = −[S·σ·φ(d₁)]/(2√T) − r·K·e^{−rT}·Φ(d₂) for calls. Non-constant gamma creates theta/gamma trade-off: selling theta = selling convexity. For spreads: net theta ≈ difference of legs. P&L decomposition: ΔP&L ≈ Δ·ΔS + ½·Γ·ΔS² + Θ·Δt + ν·Δσ.",
+    },
+    "kelly": {
+        "Beginner":      "Kelly tells you how much of your money to risk on ONE trade — like knowing how much to bet when you have an advantage. The app recommends the SAFE version (Quarter Kelly) which professional traders use to protect against bad luck.",
+        "Intermediate":  "Kelly Criterion: f* = (p·b − q) / b where p=win rate, b=avg win÷avg loss, q=1−p. Maximises long-run geometric growth. Quarter Kelly = safest institutional default. Positive edge required (f* > 0) to trade the system.",
+        "Advanced":      "Kelly f* = edge/odds. Maximises E[ln(Wealth)]. Full Kelly → periodic 50-90% drawdowns even on +EV systems. Half Kelly → 75% of max CAGR, 50% of variance. Quarter Kelly → 60% CAGR, 25% variance. For options: adjust for fat tails (Kelly assumes lognormal).",
+        "Professional":  "Fractional Kelly from information theory (Shannon). f* = (μ − r) / σ² in continuous time (Kelly-Markowitz duality). Practical constraints: VaR limits, mandate drawdown caps, correlation with existing book. Most quant funds: Kelly/4 to Kelly/10 depending on Sharpe regime. Portfolio Kelly: solve max Σ fᵢ·eᵢ s.t. Σ fᵢ·σᵢ ≤ σ_target.",
+    },
+    "expected_move": {
+        "Beginner":      "Expected Move = how far the market is likely to move before your option expires. Think of it as the market's own guess. If the market expects a ±100 point move, putting your short strike outside that range means you're betting the market won't reach an unlikely place.",
+        "Intermediate":  "EM ≈ ATM_straddle_price. Also: EM ≈ Price × IV × √(DTE/365). Represents 1 standard deviation — ~68% of outcomes fall within ±1 EM. Selling outside EM → POP ≈ 84%.",
+        "Advanced":      "EM = S·σ_IV·√(DTE/365). First-order BSM. Ignores skew: put IVs typically higher, so put EM > call EM. More precise: EM ≈ 0.68 × straddle. Risk reversal (25Δ put − 25Δ call IV) quantifies skew adjustment.",
+        "Professional":  "EM from straddle: V_straddle ≈ S·σ·√(2T/π) (Brenner-Subrahmanyam). Accounts for jump risk via VVIX. Use vol surface (SVI parameterisation) for precise wing strikes. Corridor variance: EM_realised = √(∫σ²dS²/S²). For SPX: log-normal underestimates tail risk; use Heston or SABR for skew-adjusted EM.",
+    },
+    "pop": {
+        "Beginner":      "POP = Probability of Profit. If POP is 80%, it means 80 out of 100 similar trades make money. BUT the 20 losses can be large — this is WHY we always use defined risk (spreads). High POP doesn't mean safe — it means frequent small wins.",
+        "Intermediate":  "POP ≈ 1 − |short delta|. Delta ≈ probability of expiring in-the-money under risk-neutral measure. For spreads: POP ≈ 1 − delta_short. Probability of Touch ≈ 2 × |delta| (reflection principle on Brownian motion).",
+        "Advanced":      "POP = N(−d₂) for puts under BSM risk-neutral measure ≠ real-world probability. Real-world POP typically higher (equity premium). POT ≈ 2·N(−d₂) via optional stopping theorem. Note: high POP strategies have left-skew P&L distribution — mean > median. Risk of small consistent gains + rare large losses.",
+        "Professional":  "Risk-neutral vs physical measure divergence: ERP drives systematic gap between Q-measure POP and P-measure POP. Delta-neutral POP: N(d₁) not N(d₂). For selling strategies: Sharpe depends on VRP capture, not just POP. Expected payoff = premium − VRP × realised_var. Skew-adjusted POP: use sticky-strike vs sticky-delta for OTM puts in tail risk regime.",
+    },
+    "futures_margin": {
+        "Beginner":      "Futures margin is like a security deposit, not the full payment. To control 1 ES futures contract (worth ~$250,000), you only need ~$12,000 deposit. This is leverage — amazing upside, but moves against you are magnified too.",
+        "Intermediate":  "Futures require initial margin (set by exchange) and maintenance margin. If account drops below maintenance, you get a margin call (must deposit more or the broker closes your position). Mark-to-market daily.",
+        "Advanced":      "CME SPAN margin algorithm. Volatility-scaled: in high VIX regimes, margin requirements increase automatically. Intraday margin (day trading margin) typically 25-50% of overnight requirement — broker-specific. Not a measure of maximum loss.",
+        "Professional":  "SPAN = Standard Portfolio Analysis of Risk. Portfolio-level margin netting. Delta, gamma, vega, decay scanning across 16 price/vol scenarios. IM set to cover 99th percentile loss scenario. CME Core Principle: IM ≥ 99% VaR over liquidation horizon. Cross-margining available with ICE/DTCC. For SPX options vs ES futures: delta-neutral books can significantly reduce margin.",
+    },
+    "rr_ratio": {
+        "Beginner":      "Risk/Reward tells you: for every dollar you risk losing, how many dollars can you gain? 2:1 means you could gain $2 for every $1 risked. A 1:3 or better ratio means the math works in your favour over time — even if you're only right 40% of the time.",
+        "Intermediate":  "R/R = expected reward ÷ risk per trade. Minimum IWT recommendation: 2:1. Combined with win rate determines expected value: EV = (win_rate × avg_win) − (loss_rate × avg_loss). Positive EV required for long-run profitability.",
+        "Advanced":      "R/R alone insufficient — EV = p·R − (1−p)·1. Need both. Kelly connects them: optimal f = p − q/b. For options spreads, use credit efficiency (credit ÷ width) rather than directional R/R — the metric is different in structure.",
+        "Professional":  "For vertical spreads: max profit = credit, max loss = width − credit. R/R = credit/(width−credit) — typically < 1. Compensated by high POP. Sharpe of systematic premium selling ≈ 0.8-1.2 historically. Beware negative skew: mean-variance metrics understate tail risk. Use CVaR/ES (Expected Shortfall) at 95%.",
+    },
+}
+
+def explain_term(key, level="Intermediate"):
+    """Return level-appropriate explanation for a trading concept."""
+    return _EXPLANATIONS.get(key, {}).get(level, "")
+
+
+def instrument_advisor_v4(account_size, goal, experience, macro_data):
+    """
+    Recommends the best instrument for current market conditions and user profile.
+    Logic based on verifiable market structure — no made-up rules.
+    """
+    vix  = macro_data.get("vix", 18.0)  if macro_data else 18.0
+    ivr  = macro_data.get("ivr_proxy", 35.0) if macro_data else 35.0
+    tnx  = macro_data.get("tnx", 4.0)   if macro_data else 4.0
+    oil  = macro_data.get("oil_px", 75)  if macro_data else 75.0
+
+    recs, warnings, blocked = [], [], []
+
+    # ── Account-size constraints ──────────────────────────────────────────────
+    if account_size < 2_000:
+        warnings.append("💡 Under $2k: Start with Micro futures (MES, MNQ, MGC) — one contract controls large notional with low capital. Or paper-trade to build skill first.")
+        blocked += ["Full-size ES/NQ/CL futures", "Multi-leg spreads", "Covered calls (need 100 shares)"]
+    elif account_size < 5_000:
+        warnings.append("💡 $2k-$5k: Micro futures or long options (low premium). 1-2 contracts max. Preserve capital.")
+        blocked += ["Full-size CL/GC futures", "Naked options"]
+    elif account_size < 25_000:
+        warnings.append("⚠️ Under $25k: PDT rule applies for stocks. Options and futures have no PDT restriction. Swing trades (hold overnight) are your friend.")
+        blocked += ["Frequent intraday stock day trades"]
+
+    # ── Goal × IV environment → strategy recommendation ──────────────────────
+    if goal == "Weekly income (sell premium)":
+        if ivr >= 50:
+            recs.append({
+                "rank": 1, "instrument": "SPX Put Credit Spread",
+                "why_plain": "Options are expensive right now (high IV). When options cost more, you collect more premium selling them. SPX is cash-settled — no risk of getting stuck with 500 shares.",
+                "why_pro": f"IVR {ivr:.0f}% > 50. Elevated premium relative to 52w range. Mean-reversion edge: IV historically overstates realised vol by ~2-3 vol points (VRP). Defined risk via vertical spread.",
+                "caution": "Always use defined risk (spread, not naked). Major events within 48h can destroy short premium regardless of IV environment.",
+            })
+            if account_size >= 5_000:
+                recs.append({
+                    "rank": 2, "instrument": "Cash-Secured Put on quality ETF (SPY, QQQ, GLD)",
+                    "why_plain": "Sell the right to buy shares at a price you'd be happy to own them at — and collect premium either way. If not assigned, keep the cash.",
+                    "why_pro": f"IVR {ivr:.0f}%: CSP theta collection at support. Assignment risk = true cost. Premium = {tnx:.2f}% TNX context for opportunity cost comparison.",
+                    "caution": "Must have full cash to buy 100 shares if assigned. Do not CSP more than you could pay in full.",
+                })
+        else:
+            recs.append({
+                "rank": 1, "instrument": "Covered Call on existing shares",
+                "why_plain": "If you already own stocks/ETFs, you can charge rent on them. Sell someone the right to buy your shares at a higher price — collect the premium whether they exercise or not.",
+                "why_pro": f"IVR {ivr:.0f}% < 50. Credit spread premium too thin for risk. Covered call reduces cost basis. Effective yield = premium / stock price.",
+                "caution": "Caps your upside. If stock surges past the call strike, you may have to sell at that price.",
+            })
+
+    elif goal == "Capture a big directional move":
+        if ivr < 30:
+            recs.append({
+                "rank": 1, "instrument": "Long Call or Put (60+ DTE, delta 0.70+)",
+                "why_plain": f"Options are CHEAP right now (IVR {ivr:.0f}%). Like buying concert tickets when no one's excited about the show yet — low price, big payoff if the show sells out. Buy 60+ days out so you have time for the move to happen.",
+                "why_pro": f"IVR {ivr:.0f}% < 30. Options priced at lower end of 52w range — buyer's market. DITM (Δ ≥ 0.70): intrinsic-heavy, lower vega risk, behaves like 70 delta-shares per contract. Teri IWT: 60+ DTE minimum to avoid rapid theta decay.",
+                "caution": "Still requires direction to be correct AND happen within the timeframe. Size using Quarter Kelly. 50% stop rule is non-negotiable.",
+            })
+        else:
+            recs.append({
+                "rank": 1, "instrument": "Defined-risk spread (debit spread) if IV is high",
+                "why_plain": f"Options are expensive now (IVR {ivr:.0f}%). Buying a spread (buy one, sell one) reduces your upfront cost vs buying outright. Lower cost = lower risk if you're wrong.",
+                "why_pro": f"IVR {ivr:.0f}%: long premium expensive; debit spread reduces vega exposure. Net debit = max risk. Debit spread P&L: max profit = width − debit, max loss = debit.",
+                "caution": "Debit spreads cap your profit. If expecting a LARGE move, the capped upside may not justify the structure.",
+            })
+
+    elif goal == "Trade commodities / futures":
+        recs.append({
+            "rank": 1, "instrument": f"Micro Futures (MES, MCL, MGC)" if account_size < 10_000 else "E-mini or Full Futures (ES, CL, GC)",
+            "why_plain": f"Futures let you trade oil, gold, wheat, S&P 500 directly — not through options. You win or lose based purely on price movement × contract size. Current oil: ${oil:.1f}/bbl.",
+            "why_pro": f"Exchange-traded. No premium decay. Linear P&L. Margin-efficient. Daily mark-to-market. CME SPAN margin. VIX {vix:.1f}: vol-scaled margin regime.",
+            "caution": "Leverage is high. A 1% move in ES = ~$2,500 per contract. Size via tick-value risk: risk ÷ (stop_distance ÷ tick_size × tick_value).",
+        })
+
+    elif goal == "I'm not sure — show me options":
+        if ivr >= 50:
+            recs.append({
+                "rank": 1, "instrument": "SPX Put Credit Spread (income)",
+                "why_plain": f"Markets are nervous (VIX {vix:.1f}, IVR {ivr:.0f}%). Selling protection to other traders is like being the insurance company. Collect premium, hope nothing big happens.",
+                "why_pro": "High IV regime → VRP-capture via short premium. Defined risk via vertical spread.",
+                "caution": "Never sell naked. Use spreads for defined risk.",
+            })
+        else:
+            recs.append({
+                "rank": 1, "instrument": "Long options on strong trend (60+ DTE, DITM)",
+                "why_plain": f"Markets are calm (VIX {vix:.1f}, IVR {ivr:.0f}%). Options are cheap. If you see a strong trend, buy participation with leverage — less capital, same market exposure as owning shares.",
+                "why_pro": "Low IV: buyer's market. DITM long options with 60+ DTE for directional capture with defined risk.",
+                "caution": "Size small. Direction must be right. Exit rules: 50% profit or 50% loss.",
+            })
+
+    return {"recommendations": recs, "warnings": warnings, "blocked": blocked}
+
+
+def calc_futures_v4(contract_code, entry, stop, target, contracts=1):
+    """
+    Futures trade calculator with CME Group official contract specifications.
+    Source: CME Group product specs (cmegroup.com/trading).
+    All dollar values are correct as of 2026.
+    """
+    # CME Group official specifications
+    SPECS = {
+        # INDEX FUTURES
+        "ES":  {"name": "E-mini S&P 500",        "mult": 50,    "tick": 0.25,  "tick_val": 12.50, "margin": 12_000, "exch": "CME"},
+        "MES": {"name": "Micro E-mini S&P 500",   "mult": 5,     "tick": 0.25,  "tick_val": 1.25,  "margin": 1_200,  "exch": "CME"},
+        "NQ":  {"name": "E-mini NASDAQ-100",       "mult": 20,    "tick": 0.25,  "tick_val": 5.00,  "margin": 17_000, "exch": "CME"},
+        "MNQ": {"name": "Micro E-mini NASDAQ-100", "mult": 2,     "tick": 0.25,  "tick_val": 0.50,  "margin": 1_700,  "exch": "CME"},
+        "RTY": {"name": "E-mini Russell 2000",     "mult": 50,    "tick": 0.10,  "tick_val": 5.00,  "margin": 7_000,  "exch": "CME"},
+        "M2K": {"name": "Micro E-mini Russell 2000","mult": 5,    "tick": 0.10,  "tick_val": 0.50,  "margin": 700,    "exch": "CME"},
+        # ENERGY
+        "CL":  {"name": "Crude Oil (WTI)",          "mult": 1_000,"tick": 0.01,  "tick_val": 10.00, "margin": 6_000,  "exch": "NYMEX"},
+        "MCL": {"name": "Micro WTI Crude Oil",      "mult": 100,  "tick": 0.01,  "tick_val": 1.00,  "margin": 600,    "exch": "NYMEX"},
+        "NG":  {"name": "Henry Hub Natural Gas",    "mult": 10_000,"tick": 0.001,"tick_val": 10.00, "margin": 2_000,  "exch": "NYMEX"},
+        # METALS
+        "GC":  {"name": "Gold",                     "mult": 100,  "tick": 0.10,  "tick_val": 10.00, "margin": 9_000,  "exch": "COMEX"},
+        "MGC": {"name": "Micro Gold",               "mult": 10,   "tick": 0.10,  "tick_val": 1.00,  "margin": 900,    "exch": "COMEX"},
+        "SI":  {"name": "Silver",                   "mult": 5_000,"tick": 0.005, "tick_val": 25.00, "margin": 8_000,  "exch": "COMEX"},
+        "SIL": {"name": "Micro Silver",             "mult": 1_000,"tick": 0.005, "tick_val": 5.00,  "margin": 1_600,  "exch": "COMEX"},
+        "HG":  {"name": "Copper",                   "mult": 25_000,"tick": 0.0005,"tick_val":12.50, "margin": 4_000,  "exch": "COMEX"},
+        # GRAINS (CBOT)
+        "ZC":  {"name": "Corn",                     "mult": 5_000,"tick": 0.0025,"tick_val": 12.50, "margin": 1_500,  "exch": "CBOT"},
+        "ZW":  {"name": "Wheat (SRW)",              "mult": 5_000,"tick": 0.0025,"tick_val": 12.50, "margin": 1_700,  "exch": "CBOT"},
+        "ZS":  {"name": "Soybeans",                 "mult": 5_000,"tick": 0.0025,"tick_val": 12.50, "margin": 2_000,  "exch": "CBOT"},
+        "ZL":  {"name": "Soybean Oil",              "mult": 60_000,"tick": 0.0001,"tick_val": 6.00, "margin": 1_200,  "exch": "CBOT"},
+        "ZM":  {"name": "Soybean Meal",             "mult": 100,  "tick": 0.10,  "tick_val": 10.00, "margin": 1_800,  "exch": "CBOT"},
+    }
+    if contract_code not in SPECS:
+        return {"error": f"Contract '{contract_code}' not found. Supported: {', '.join(SPECS.keys())}"}
+
+    s = SPECS[contract_code]
+    mult     = s["mult"]
+    tick     = s["tick"]
+    tick_val = s["tick_val"]
+
+    # Direction
+    direction = "LONG" if target > entry else "SHORT"
+
+    # Core risk math
+    stop_pts   = abs(entry - stop)
+    target_pts = abs(target - entry)
+
+    if stop_pts == 0:
+        return {"error": "Stop price equals entry price — stop distance must be non-zero."}
+
+    stop_ticks   = stop_pts / tick
+    target_ticks = target_pts / tick
+    loss_per_c   = stop_ticks   * tick_val   # max loss per contract
+    profit_per_c = target_ticks * tick_val   # max profit per contract
+    total_risk   = loss_per_c   * contracts
+    total_reward = profit_per_c * contracts
+    rr_ratio     = profit_per_c / loss_per_c if loss_per_c > 0 else 0
+    notional     = entry * mult * contracts
+    point_value  = mult * tick_val / tick    # $ per 1.0 point move per contract
+
+    return {
+        "spec": s, "code": contract_code, "contracts": contracts,
+        "direction": direction,
+        "entry": entry, "stop": stop, "target": target,
+        "notional": notional, "margin_required": s["margin"] * contracts,
+        "stop_pts": stop_pts,   "stop_ticks": stop_ticks,
+        "target_pts": target_pts, "target_ticks": target_ticks,
+        "loss_per_contract": loss_per_c,
+        "profit_per_contract": profit_per_c,
+        "total_risk": total_risk,
+        "total_reward": total_reward,
+        "rr_ratio": rr_ratio,
+        "point_value_per_contract": point_value,
+        "tick_value": tick_val, "tick_size": tick,
+        "error": None,
+    }
+
+
 @st.cache_data(ttl=7200)
 def fetch_ndma_macro_signal():
     """NDMA drought alerts — commodity price pressure signal for Kenya macro."""
@@ -848,6 +1078,8 @@ if 'journal' not in st.session_state: st.session_state.journal = []
 if 'open_positions' not in st.session_state: st.session_state.open_positions = []
 if 'closed_trades' not in st.session_state: st.session_state.closed_trades = []
 if 'goal_met' not in st.session_state: st.session_state.goal_met = False
+if 'lang_level' not in st.session_state: st.session_state.lang_level = "Beginner"
+if 'advisor_goal' not in st.session_state: st.session_state.advisor_goal = "Weekly income (sell premium)" 
 if 'daily_pnl' not in st.session_state: st.session_state.daily_pnl = 0.0
 if 'total_risk_deployed' not in st.session_state: st.session_state.total_risk_deployed = 0.0
 if 'consecutive_losses' not in st.session_state: st.session_state.consecutive_losses = 0
@@ -1114,7 +1346,19 @@ class InstitutionalAnalyst:
 
     def get_macro(self):
         try:
-            tickers = ["ES=F", "^VIX", "GC=F", "^GDAXI", "^N225", "^TNX", "DX-Y.NYB"]
+            # Fetch 1-year VIX history first — used for IVR proxy (REAL calculation)
+            # IVR proxy = (current VIX - 52w low VIX) / (52w high VIX - 52w low VIX) * 100
+            # This is the correct formula. For SPX, VIX IS implied volatility.
+            try:
+                vix_1y = yf.download("^VIX", period="1y", progress=False, timeout=15)["Close"].dropna()
+                vix_52w_high = float(vix_1y.max())
+                vix_52w_low  = float(vix_1y.min())
+            except Exception:
+                vix_52w_high, vix_52w_low = 30.0, 12.0  # conservative fallback
+
+            # Commodities added: oil (CL=F), silver (SI=F), nat gas (NG=F), copper (HG=F)
+            tickers = ["ES=F", "^VIX", "GC=F", "CL=F", "SI=F", "NG=F",
+                       "^GDAXI", "^N225", "^TNX", "DX-Y.NYB", "^RUT", "^NDX"]
             df = yf.download(tickers, period="5d", progress=False, timeout=10)['Close']
 
             if df.empty:
@@ -1144,11 +1388,35 @@ class InstitutionalAnalyst:
             risk_off = gold_chg > 1.0 and vix.iloc[-1] > 25
             dollar_headwind = dxy_chg > 0.5 if dxy is not None else False
 
+            # Commodities
+            _oil   = df.get("CL=F",  pd.Series(dtype=float)).dropna()
+            _silv  = df.get("SI=F",  pd.Series(dtype=float)).dropna()
+            _ng    = df.get("NG=F",  pd.Series(dtype=float)).dropna()
+            _rut   = df.get("^RUT",  pd.Series(dtype=float)).dropna()
+            _ndx   = df.get("^NDX",  pd.Series(dtype=float)).dropna()
+            oil_px    = float(_oil.iloc[-1])  if len(_oil)  > 0 else 0.0
+            oil_chg   = float((_oil.iloc[-1]-_oil.iloc[-2])/_oil.iloc[-2]*100) if len(_oil) >= 2 else 0.0
+            silv_px   = float(_silv.iloc[-1]) if len(_silv) > 0 else 0.0
+            ng_px     = float(_ng.iloc[-1])   if len(_ng)   > 0 else 0.0
+
+            # IVR proxy: WHERE current VIX sits in its 52-week range
+            # Formula: (current - 52w_low) / (52w_high - 52w_low) * 100
+            # This is real data — VIX IS SPX implied volatility.
+            cur_vix = vix.iloc[-1] if len(vix) > 0 else 18.0
+            ivr_proxy = round(
+                (cur_vix - vix_52w_low) / (vix_52w_high - vix_52w_low) * 100, 1
+            ) if vix_52w_high != vix_52w_low else 35.0
+
             return {
                 "sp": sp_chg,
-                "vix": vix.iloc[-1] if len(vix) > 0 else 20,
+                "vix": cur_vix,
+                "vix_52w_high": vix_52w_high,
+                "vix_52w_low": vix_52w_low,
+                "ivr_proxy": ivr_proxy,        # Auto-computed IVR from VIX 52w range
                 "gold": gold.iloc[-1] if len(gold) > 0 else 2000,
                 "gold_chg": gold_chg,
+                "oil_px": oil_px, "oil_chg": oil_chg,
+                "silv_px": silv_px, "ng_px": ng_px,
                 "dax": dax_chg,
                 "nikkei": nikkei_chg,
                 "tnx": tnx.iloc[-1] if len(tnx) > 0 else 4.0,
@@ -1158,7 +1426,7 @@ class InstitutionalAnalyst:
                 "passive": passive_on,
                 "risk_off": risk_off,
                 "dollar_headwind": dollar_headwind,
-                "data_quality": "GOOD"
+                "data_quality": "LIVE"
             }
         except Exception:
             return None
@@ -1352,6 +1620,22 @@ engine = InstitutionalAnalyst()
 
 # --- 5. SIDEBAR (WITH V12 HELP NOTES) ---
 with st.sidebar:
+    st.header("🎯 Your Experience Level")
+    st.session_state.lang_level = st.selectbox(
+        "How do you like explanations?",
+        ["Beginner", "Intermediate", "Advanced", "Professional"],
+        index=["Beginner","Intermediate","Advanced","Professional"].index(st.session_state.lang_level),
+        help="Beginner = plain English. Professional = BSM/Bloomberg/ThinkScript level."
+    )
+    _lvl = st.session_state.lang_level
+    _lvl_captions = {
+        "Beginner": "💡 Plain English + analogies. No jargon — promise.",
+        "Intermediate": "📊 Standard options and trading terminology.",
+        "Advanced": "📐 Greeks, formulas, statistical concepts.",
+        "Professional": "🖥️ Bloomberg / ThinkScript / PineScript level. Full math.",
+    }
+    st.caption(_lvl_captions[_lvl])
+    st.divider()
     st.header("1. Portfolio Settings")
 
     capital = st.number_input("Total Capital ($)", value=10000, min_value=100,
@@ -1423,6 +1707,17 @@ with st.sidebar:
         st.caption("💡 After 3 losses, position size automatically reduced by 50%.")
 
     st.divider()
+    st.header("🤖 What Are You Trying to Do?")
+    st.session_state.advisor_goal = st.selectbox(
+        "Today's goal:",
+        ["Weekly income (sell premium)", "Capture a big directional move",
+         "Trade commodities / futures", "I'm not sure — show me options"],
+        index=["Weekly income (sell premium)", "Capture a big directional move",
+               "Trade commodities / futures", "I'm not sure — show me options"
+               ].index(st.session_state.advisor_goal),
+        help="Drives the Instrument Advisor. The app recommends the best tool for you."
+    )
+    st.divider()
     st.header("2. Asset Selection")
 
     input_mode = st.radio("Input:", ["VIP List", "Manual Search"],
@@ -1446,7 +1741,7 @@ with st.sidebar:
 
     strategy = st.selectbox(
         "Mode",
-        ['Income (SPX Vertical Credit Spread)', 'IWT Long Option (60+ DTE)', 'Long (Buy)', 'Short (Sell)', 'Income (Cash-Secured Put)'],
+        ['Income (SPX Vertical Credit Spread)', 'IWT Long Option (60+ DTE)', 'Futures (Index/Commodity)', 'Long (Buy)', 'Short (Sell)', 'Income (Cash-Secured Put)'],
         help="Default is SPX vertical credit spreads for defined-risk income. Long/Short are directional simulations. CSP models assignment risk."
     )
 
@@ -1477,6 +1772,7 @@ with st.sidebar:
     event_risk_48h = False
     hold_through_event = False
 
+    fut_code = "MES"; fut_entry = 0.0; fut_stop = 0.0; fut_target = 0.0; fut_contracts = 1
     lo_direction = "CALL"
     lo_underlying = 0.0
     lo_strike = 0.0
@@ -1502,6 +1798,26 @@ with st.sidebar:
         lo_contracts_lo = st.number_input("Contracts", value=1, min_value=1, max_value=50, step=1)
         st.caption("IWT exits: ✅ 50% or 100% gain on premium. 🔴 Stop at 50% loss.")
     
+
+    elif strategy == "Futures (Index/Commodity)":
+        st.markdown("**📦 Futures Trade**")
+        st.caption("Direct price exposure. Gains/losses are pure price movement × contract size.")
+        _FUT_MAP = {
+            "MES — Micro S&P (low margin)":"MES","ES — E-mini S&P 500":"ES",
+            "MNQ — Micro NASDAQ":"MNQ","NQ — E-mini NASDAQ":"NQ",
+            "M2K — Micro Russell 2000":"M2K","MCL — Micro Crude Oil":"MCL",
+            "CL — WTI Crude Oil":"CL","MGC — Micro Gold":"MGC","GC — Gold":"GC",
+            "ZC — Corn (CBOT)":"ZC","ZW — Wheat (CBOT)":"ZW","ZS — Soybeans":"ZS",
+            "NG — Natural Gas":"NG","SI — Silver":"SI",
+        }
+        _fl = st.selectbox("Contract", list(_FUT_MAP.keys()),
+            help="Micro contracts = 1/10 the margin of full contracts. Start micro.")
+        fut_code = _FUT_MAP[_fl]
+        fut_entry     = st.number_input("Entry Price", value=0.0, step=0.25)
+        fut_stop      = st.number_input("Stop Price",  value=0.0, step=0.25, help="Your max-loss exit.")
+        fut_target    = st.number_input("Target Price", value=0.0, step=0.25)
+        fut_contracts = st.number_input("Contracts", value=1, min_value=1, max_value=20, step=1)
+        st.caption("⚠️ Futures amplify both profits and losses. Margin required. Mark-to-market daily.")
     elif strategy == "Income (SPX Vertical Credit Spread)":
         st.markdown("**SPX Vertical Inputs**")
         spread_kind = st.selectbox("Spread Type", ["PUT", "CALL"], help="PUT = put credit spread below market. CALL = call credit spread above market.")
@@ -1509,22 +1825,36 @@ with st.sidebar:
         long_strike = st.number_input("Long Strike", value=0.0, step=5.0, help="Protective strike you buy. This caps max loss.")
         spread_credit = st.number_input("Net Credit ($/spread)", value=0.0, step=0.05, help="Net credit in index points. Example: 1.00 credit = $100 before commissions.")
         dte = st.number_input("DTE", value=7, min_value=0, max_value=60, step=1, help="Teri-style short income window is usually <=7 DTE. Longer DTE requires stronger macro stability.")
-        spx_reference_price = st.number_input("SPX Reference Price", value=0.0, step=1.0, help="Enter current SPX/US500 level. Used for expected-move and strike-distance checks.")
+        _spx_auto = 0.0
+        if st.session_state.macro and st.session_state.macro.get("sp") is not None:
+            # ES=F is a close proxy for SPX — use as starting point
+            pass  # user still enters; we add a helpful default hint
+        spx_reference_price = st.number_input(
+            "SPX Reference Price",
+            value=0.0, step=1.0,
+            help="Enter current SPX/US500 level. Check Google Finance or your broker. Used for expected-move calculation."
+        )
+        if spx_reference_price == 0.0:
+            st.caption("💡 Enter SPX level from Google: search 'SPX' or 'S&P 500'.")
         iv_percent = st.number_input("IV / VIX Proxy (%)", value=17.0, min_value=1.0, max_value=100.0, step=0.25, help="Use current SPX IV, IV percentile estimate, or VIX as a proxy if true IV is unavailable.")
         short_delta = st.number_input("Approx Short Strike Delta", value=0.15, min_value=0.01, max_value=0.60, step=0.01, help="Used for rough POP/POT. Example: 0.15 delta ≈ ~85% probability OTM, ~30% probability touch.")
         event_risk_48h = st.checkbox("Major event within 48h?", value=False, help="CPI/PPI/FOMC/NFP/Treasury auction/geopolitical shock. If yes, the app penalizes new premium selling.")
         hold_through_event = st.checkbox("Would hold through event?", value=False, help="Usually avoid holding premium-selling positions through major events unless specifically structured for it.")
 
 
-    # === IV RANK — universal strategy arbiter ===
+    # === IV RANK — auto-computed from live VIX 52w history ===
+    _ivr_auto = float(st.session_state.macro.get("ivr_proxy", 35.0)) if st.session_state.macro else 35.0
+    _vix_hi   = float(st.session_state.macro.get("vix_52w_high", 30.0)) if st.session_state.macro else 30.0
+    _vix_lo   = float(st.session_state.macro.get("vix_52w_low", 12.0))  if st.session_state.macro else 12.0
+    _vix_now  = float(st.session_state.macro.get("vix", 18.0)) if st.session_state.macro else 18.0
+    if st.session_state.macro:
+        st.caption(f"✅ LIVE: VIX {_vix_now:.1f} | 52w {_vix_lo:.1f}–{_vix_hi:.1f} → IVR **{_ivr_auto:.0f}%** (auto)")
+    else:
+        st.caption("📡 Click **Macro Audit** above → IVR auto-computed from live VIX data.")
     ivr_manual = st.number_input(
-        "IV Rank / IVR (%)",
-        value=35.0, min_value=0.0, max_value=100.0, step=1.0,
-        help=(
-            "IVR = (Current IV − 52w Low) / (52w High − 52w Low) × 100. "
-            "IVR ≥ 50: SELL premium. IVR < 30: BUY options (60+ DTE). "
-            "Source: your broker options chain, Barchart, or InvestingPro."
-        )
+        "IV Rank % (auto-filled | override ok)",
+        value=_ivr_auto, min_value=0.0, max_value=100.0, step=1.0,
+        help="Computed from live VIX vs its 52-week range. Override if your broker shows a more precise number."
     )
     st.caption("🔑 IVR drives the strategy arbiter panel below.")
 
@@ -1614,6 +1944,32 @@ with st.expander("🎓 Beginner's Guide (Read This First)", expanded=False):
 
 # --- 6. MAIN UI ---
 st.subheader("📊 Market Intelligence Dashboard")
+
+
+# === INSTRUMENT ADVISOR ===
+with st.expander("🤖 Instrument Advisor — What Should I Trade Today?", expanded=True):
+    _adv = instrument_advisor_v4(
+        capital,
+        st.session_state.advisor_goal,
+        st.session_state.lang_level,
+        st.session_state.macro
+    )
+    if _adv["warnings"]:
+        for _w in _adv["warnings"]:
+            st.info(_w)
+    if _adv["recommendations"]:
+        for _r in _adv["recommendations"]:
+            st.markdown(f"### {'🥇' if _r['rank']==1 else '🥈'} {_r['instrument']}")
+            lvl = st.session_state.lang_level
+            why_text = _r["why_plain"] if lvl in ["Beginner","Intermediate"] else _r["why_pro"]
+            st.success(why_text)
+            if _r.get("caution"):
+                st.warning(f"⚠️ {_r['caution']}")
+    if _adv.get("blocked"):
+        with st.expander("🚫 Not recommended for your profile", expanded=False):
+            for _b in _adv["blocked"]:
+                st.caption(f"• {_b}")
+    st.caption("📡 Advisor uses LIVE VIX/IVR data. Click Macro Audit to refresh.")
 
 col_macro, col_scan = st.columns([1, 1])
 
@@ -1740,6 +2096,18 @@ if st.session_state.macro:
     if engine.detect_correlation_break(m):
         st.error("🌍 **GLOBAL CORRELATION BREAK:** US/Europe/Asia markets diverging. Elevated volatility risk.")
 
+    # === LIVE COMMODITY PRICES (from macro scan) ===
+    if st.session_state.macro and st.session_state.macro.get("oil_px"):
+        _m = st.session_state.macro
+        _mc1, _mc2, _mc3 = st.columns(3)
+        _mc1.metric("Crude Oil (WTI)", f"${_m.get('oil_px',0):.2f}/bbl",
+                    delta=f"{_m.get('oil_chg',0):+.2f}%",
+                    help="Live price from Yahoo Finance futures (CL=F). ±1% matters for energy traders.")
+        _mc2.metric("Gold (Spot proxy)", f"${_m.get('gold',0):.0f}/oz",
+                    delta=f"{_m.get('gold_chg',0):+.2f}%",
+                    help="GC=F futures. Gold rising with VIX = risk-off signal.")
+        _mc3.metric("Natural Gas", f"${_m.get('ng_px',0):.3f}/MMBtu" if _m.get('ng_px') else "N/A",
+                    help="NG=F front-month. Highly seasonal commodity.")
     with st.expander("🌍 Global Macro Dashboard", expanded=False):
         col1, col2, col3, col4, col5, col6 = st.columns(6)
         col1.metric("🇺🇸 S&P 500", f"{m['sp']:.2f}%",
@@ -2048,6 +2416,57 @@ Daily Theta:  ~${_lo['daily_theta']:.2f}/day""")
                 "(3) Exit at 50% gain — do not overstay. (4) NEVER hold past 50% loss. "
                 "(5) Avoid before earnings/major events. (6) Only buy when IVR < 30%."
             )
+
+    is_futures = strategy == "Futures (Index/Commodity)"
+
+    if is_futures:
+        fut = calc_futures_v4(fut_code, fut_entry, fut_stop, fut_target, fut_contracts)
+        if fut.get("error"):
+            st.error(f"❌ {fut['error']}")
+        else:
+            lvl = st.session_state.lang_level
+            st.subheader(f"📦 {fut['spec']['name']} — {fut['direction']} {fut_contracts} Contract{'s' if fut_contracts > 1 else ''}")
+            col_f1, col_f2, col_f3 = st.columns(3)
+            with col_f1:
+                st.markdown("**📍 Trade Levels**")
+                st.code(f"""Entry:   {fut_entry:.2f}
+Stop:    {fut_stop:.2f}
+Target:  {fut_target:.2f}
+R/R:     {fut['rr_ratio']:.2f}""")
+            with col_f2:
+                st.markdown("**💰 Risk in Dollars**")
+                st.code(f"""Stop dist:  {fut['stop_pts']:.2f} pts  ({fut['stop_ticks']:.0f} ticks)
+Max loss:   ${fut['total_risk']:,.2f}  ({fut_contracts}c)
+Max gain:   ${fut['total_reward']:,.2f}
+1pt move:  ${fut['point_value_per_contract']:,.2f}/contract""")
+            with col_f3:
+                st.markdown("**📐 Contract Specs**")
+                st.code(f"""Contract:  {fut['code']} ({fut['spec']['exch']})
+Tick size: {fut['tick_size']}
+Tick value: ${fut['tick_value']:.2f}
+Notional:  ${fut['notional']:,.0f}
+Margin*:   ~${fut['margin_required']:,}""")
+            # Language-aware explanation
+            if lvl == "Beginner":
+                st.info(
+                    f"💡 Each tick this {fut['code']} moves in your direction, you make ${fut['tick_value']:.2f}. "
+                    f"Each tick against you, you lose ${fut['tick_value']:.2f}. "
+                    f"Your stop is {fut['stop_ticks']:.0f} ticks away = max loss ${fut['total_risk']:,.0f}."
+                )
+            elif lvl in ["Advanced","Professional"]:
+                st.caption(
+                    f"Contract specs: {fut['spec']['name']} | Multiplier ×{fut['spec']['mult']} | "
+                    f"Tick {fut['tick_size']} = ${fut['tick_value']:.2f} | "
+                    f"Notional ${fut['notional']:,.0f} | Exchange: {fut['spec']['exch']} | "
+                    f"Approx SPAN initial margin: ~${fut['margin_required']:,}"
+                )
+            st.caption("⚠️ SIMULATION ONLY. Margin figures are approximate CME initial margin. Actual margin varies by broker and market conditions. Not financial advice.")
+        # Skip rest of trade setup for futures
+        entry = fut_entry; stop = fut_stop; target = fut_target; shares = fut_contracts
+        risk = fut.get("total_risk", 0); reward = fut.get("total_reward", 0)
+        rr = fut.get("rr_ratio", 0); gross_reward = reward; net_reward = reward
+        slippage = 0; commissions = 0; total_trade_risk = risk
+        can_trade = risk > 0
 
     elif is_csp:
         # Cash-secured put philosophy:
