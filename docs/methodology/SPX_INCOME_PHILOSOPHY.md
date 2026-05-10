@@ -181,3 +181,79 @@ All outputs from this engine are **educational simulations**. No trade is execut
 *Document version: 2.0.0 — 2026-05-08*  
 *Author: Gabriel Mahia — contact@aikungfu.dev*  
 *License: CC BY-NC-ND 4.0*
+
+---
+
+## V3 Addition: The Two-Weapon Framework
+
+### When to Sell vs When to Buy
+
+The single most important decision in options trading is whether the current environment
+favours selling premium or buying it. V3 codifies this with the IV Rank Arbiter:
+
+**High IV (IVR ≥ 50%) → Sell Premium**
+Premium is historically expensive. Mean reversion is the seller's friend.
+- Sell credit spreads (SPX puts or calls, outside expected move)
+- Collect cash-secured puts on quality names at support
+- Sell covered calls against existing positions for income
+- The seller's statistical edge: IV tends to overstate realised volatility by ~2-3 VIX points on average
+
+**Low IV (IVR < 30%) → Buy Options (60+ DTE, DITM)**
+Premium is historically cheap. Directional leverage is inexpensive.
+- Buy DITM calls (delta 0.70+) on confirmed uptrends at pullback to support
+- Buy DITM puts (delta 0.70+) on confirmed downtrends at retests of resistance
+- 60+ DTE minimum: gives the trade time to develop without being consumed by theta
+- DITM preferred: delta 0.70 means $0.70 move per $1 underlying move → acts like stock
+
+### Teri Ijeoma's 60 DTE Rule — The Full Reasoning
+
+Teri teaches buying options at least 60 days out because:
+
+1. **Theta decay is non-linear** — the final 30 DTE is where most time value is destroyed.
+   Buying 60+ DTE means you're in the gentler part of the theta decay curve.
+
+2. **The trade needs time to work** — significant directional moves don't happen in one day.
+   60+ DTE gives the underlying time to make the move you're positioning for.
+
+3. **DITM options have lower time value as a percentage** — a deep-in-the-money option is
+   mostly intrinsic value. Less of your premium is "renting the position" through time decay.
+
+4. **Mechanical exit rules work better with more time** — 50% profit target and 50% stop
+   can be executed without panic when there's ample DTE remaining.
+
+### Kelly Criterion — Why Quant Desks Use Quarter Kelly
+
+The Kelly Criterion maximises the **long-run geometric growth rate** of a portfolio.
+However, full Kelly implies betting a large fraction of capital on each trade,
+which produces severe drawdowns that are psychologically and practically difficult to sustain.
+
+Empirical practice across institutional quant desks:
+- **Full Kelly**: theoretically optimal but produces -50% to -70% drawdowns regularly
+- **Half Kelly**: 75% of optimal growth, ~50% of the drawdown — the institutional compromise
+- **Quarter Kelly**: 60% of optimal growth, ~25% of the drawdown — most conservative firms default here
+- **1/8 Kelly or less**: used by highly risk-constrained funds (pension, endowment mandates)
+
+For retail traders with limited capital, Quarter Kelly is the recommended default.
+The priority is **survival** (avoiding ruin) over optimising the geometric growth rate.
+
+### Trade Management Philosophy
+
+The highest-alpha activity in systematic options trading is **management**, not entry.
+Most traders over-optimise entries and under-think management. Key rules:
+
+**Credit spreads (50% rule):**
+The last 50% of a credit spread's maximum profit carries disproportionate risk.
+A spread sold for $1.00 that's now worth $0.50 has captured its best risk-adjusted gain.
+Closing at 50% is not "leaving money on the table" — it's capital redeployment.
+
+**Long options (IWT 50%/50% rule):**
+- If the trade gains 50%, scale out. Let the rest run with a stop.
+- If the trade loses 50% of premium, exit. This is a hard rule, not a guideline.
+  Options can go to zero. The discipline to cut at 50% is the difference between
+  a setback and a permanent loss of capital.
+
+**Gamma risk:**
+Options gamma (the rate of change of delta) increases exponentially in the final 21-30 DTE.
+For short premium positions, this means small moves in the underlying cause large P&L swings.
+This is why closing or reducing short premium positions before 21 DTE is a systematised discipline,
+not an optional preference.
