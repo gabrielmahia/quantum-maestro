@@ -381,6 +381,189 @@ def rank_trade_days(vix_regime, passive_window, event_days, preferred_days, day_
     return results
 
 
+
+
+# =============================================================================
+# V3 — IWT FULL PLAYBOOK + HIGH-QUALITY ALGORITHM ENHANCEMENTS
+# =============================================================================
+
+def calc_long_option_iwt(underlying_price, strike, premium_paid, direction, delta, dte, contracts=1):
+    """IWT Long Options: 60+ DTE, DITM preferred, 50-100% profit target, 50% stop."""
+    if premium_paid <= 0 or contracts <= 0:
+        return {"error": "Premium and contracts must be positive."}
+    import math
+    cost_per_contract = premium_paid * 100
+    cost_total = cost_per_contract * contracts
+    dte_ok = dte >= 60
+    dte_grade = (f"✅ {dte} DTE — IWT compliant (60+ minimum)" if dte_ok
+                 else f"⚠️ {dte} DTE — below IWT 60 DTE minimum. Time decay risk is elevated.")
+    if delta >= 0.70:
+        delta_grade, delta_label = "✅ DITM — acts like stock with leverage. IWT preferred.", "Deep ITM"
+    elif delta >= 0.50:
+        delta_grade, delta_label = "🟡 ATM — balanced theta/gamma. Acceptable for strong setups.", "At The Money"
+    elif delta >= 0.30:
+        delta_grade, delta_label = "🟠 OTM — needs large, fast move to profit.", "Out of The Money"
+    else:
+        delta_grade, delta_label = "🔴 Far OTM — lottery ticket. IWT does not teach this.", "Far OTM"
+    target_50_val = cost_total * 0.50
+    target_100_val = cost_total * 1.00
+    target_50_price = premium_paid * 1.50
+    target_100_price = premium_paid * 2.00
+    stop_loss_total = cost_total * 0.50
+    stop_price = premium_paid * 0.50
+    shares_equiv = 100 * contracts * delta
+    stock_cost_equiv = underlying_price * shares_equiv
+    leverage = stock_cost_equiv / cost_total if cost_total > 0 else 0
+    if direction == "CALL":
+        breakeven = strike + premium_paid
+        intrinsic = max(0.0, underlying_price - strike)
+    else:
+        breakeven = strike - premium_paid
+        intrinsic = max(0.0, strike - underlying_price)
+    time_val = max(0.0, premium_paid - intrinsic)
+    daily_theta = time_val * 100 * contracts / dte if dte > 0 else 0
+    theta_note = ("Theta burns fastest in final 30 DTE — monitor weekly; roll or exit before 30 DTE."
+                  if dte <= 45 else "Theta is mild this far from expiry. Weekly monitoring is sufficient.")
+    return {
+        "cost_total": cost_total, "cost_per_contract": cost_per_contract,
+        "dte_ok": dte_ok, "dte_grade": dte_grade,
+        "delta_grade": delta_grade, "delta_label": delta_label,
+        "target_50_val": target_50_val, "target_100_val": target_100_val,
+        "target_50_price": target_50_price, "target_100_price": target_100_price,
+        "stop_loss_total": stop_loss_total, "stop_price": stop_price,
+        "leverage_ratio": leverage, "shares_equiv": shares_equiv,
+        "breakeven": breakeven, "intrinsic": intrinsic,
+        "time_val": time_val, "time_val_pct": time_val / premium_paid if premium_paid > 0 else 0,
+        "daily_theta": daily_theta, "theta_note": theta_note, "error": None,
+    }
+
+
+def classify_iv_environment(ivr, vix_level):
+    """IV Rank arbiter. High IVR (50+) = sell premium. Low IVR (<30) = buy options 60+ DTE."""
+    if ivr >= 50:
+        return {"regime": "HIGH IV — SELLER'S MARKET", "recommendation": "SELL PREMIUM", "grade": "A",
+                "badge": "🟢",
+                "rationale": ("IV is elevated vs its 52-week range. Options are expensive. This is the optimal "
+                              "environment for credit spreads, CSPs, and covered calls. Premium sellers have a "
+                              "statistical edge when IV is high and mean-reverts."),
+                "strategies": ["SPX put credit spread (OTM, outside EM)",
+                                "SPX call credit spread (OTM, above EM)",
+                                "Cash-secured put on quality names at support",
+                                "Covered call for income on existing positions"],
+                "avoid": "Avoid buying long options — premium is expensive; poor risk/reward for buyers.",
+                "vix_overlay": ("VIX < 15: extreme complacency. Credit spreads attractive." if vix_level < 15
+                                else "VIX 15-20: normal. Standard premium-selling applies." if vix_level < 20
+                                else "VIX 20-30: elevated. Reduce size; prefer spreads." if vix_level < 30
+                                else "VIX 30+: crisis. Do not sell new premium. Stand aside.")}
+    elif ivr >= 30:
+        return {"regime": "MODERATE IV — SELECTIVE", "recommendation": "SELECTIVE — REQUIRE A+ SETUP",
+                "grade": "B", "badge": "🟡",
+                "rationale": ("IV is in the middle of its recent range. Neither strongly cheap nor expensive. "
+                              "Require higher setup quality. Watch IV direction: rising → lean buyers; falling → lean sellers."),
+                "strategies": ["Credit spreads only on high-conviction directional setups",
+                                "Long options (60+ DTE, DITM) on confirmed strong trends",
+                                "Avoid new premium in rapidly rising IV environments"],
+                "avoid": "Avoid mediocre setups at moderate IV — wait for better conditions.",
+                "vix_overlay": ("VIX < 15: complacency supports selling." if vix_level < 15
+                                else "VIX 15-20: standard conditions." if vix_level < 20
+                                else "VIX 20-30: elevated — reduce size." if vix_level < 30
+                                else "VIX 30+: stand aside.")}
+    else:
+        return {"regime": "LOW IV — BUYER'S MARKET", "recommendation": "BUY OPTIONS (60+ DTE)",
+                "grade": "C", "badge": "🔵",
+                "rationale": ("IV is near 52-week lows. Options are cheap relative to history. This favors "
+                              "option buyers — leverage is inexpensive. Selling premium here is unattractive "
+                              "because credit collected is thin and IV expansion from lows hurts short premium."),
+                "strategies": ["Long calls (60+ DTE, delta 0.70+) on confirmed uptrends at support",
+                                "Long puts (60+ DTE, delta 0.70+) on confirmed downtrends at resistance"],
+                "avoid": "Avoid selling credit spreads — thin premium does not compensate for tail risk.",
+                "vix_overlay": ("VIX < 15: extreme low IV. 60+ DTE long options on trends." if vix_level < 15
+                                else "VIX 15-20: low-moderate IV. Buyer's edge." if vix_level < 20
+                                else "VIX 20-30: consider buying protection." if vix_level < 30
+                                else "VIX 30+: do not sell. Buy defined-risk protection.")}
+
+
+def theta_decay_profile(credit_received_per_contract, dte_at_entry, dte_remaining):
+    """Theta decay approximation for credit spread. Management trigger: 50% profit = close."""
+    import math
+    if dte_at_entry <= 0 or credit_received_per_contract <= 0:
+        return {}
+    dte_remaining = max(0, dte_remaining)
+    frac = math.sqrt(dte_remaining / dte_at_entry) if dte_at_entry > 0 else 0
+    val_remaining = credit_received_per_contract * 100 * frac
+    val_decayed = credit_received_per_contract * 100 * (1 - frac)
+    pct = (1 - frac) * 100
+    daily_theta = val_remaining / dte_remaining if dte_remaining > 0 else val_remaining
+    mgmt = ("✅ CLOSE — 50% max profit captured. TastyTrade rule: take the win." if pct >= 50
+            else "🟡 APPROACHING — ~40% profit. Prepare to close." if pct >= 40
+            else "🕐 HOLD — let theta work. No action needed yet.")
+    return {"value_remaining": round(val_remaining, 2), "value_decayed": round(val_decayed, 2),
+            "pct_profit_captured": round(pct, 1), "daily_theta_approx": round(daily_theta, 2),
+            "management_signal": mgmt}
+
+
+def trade_management_engine(structure, entry_value, current_value, dte_remaining, dte_at_entry=None):
+    """Systematic trade management: TastyTrade 50% rule + IWT profit/stop + gamma-risk rules."""
+    actions, primary = [], "HOLD"
+    if structure == "CREDIT_SPREAD":
+        pct_profit = (entry_value - current_value) / entry_value if entry_value > 0 else 0
+        if pct_profit >= 0.50:
+            primary = "✅ CLOSE — TAKE PROFIT"
+            actions.append("50% max profit captured. TastyTrade rule: close. The remaining premium isn't worth gamma risk.")
+        if current_value >= entry_value * 2.0:
+            primary = "🔴 CLOSE — LOSS MANAGEMENT"
+            actions.append("Spread doubled in cost. Hard stop: close to preserve capital. Do not hold for recovery.")
+        if dte_remaining is not None and dte_remaining <= 7 and pct_profit < 0.50:
+            primary = primary if primary != "HOLD" else "⚠️ CLOSE — GAMMA RISK"
+            actions.append("< 7 DTE: gamma expansion makes short premium dangerous. Close unless nearly worthless (< 20% of credit).")
+        if dte_remaining is not None and dte_remaining <= 21 and 0.25 <= pct_profit < 0.50:
+            primary = primary if primary != "HOLD" else "🟡 CONSIDER CLOSING"
+            actions.append("< 21 DTE and 25%+ profit. The final profit increment carries disproportionate gamma risk.")
+        if not actions:
+            actions.append("No trigger met. Let theta work. Next check: 50% profit, 21 DTE, or spread doubles — whichever first.")
+    elif structure == "LONG_OPTION":
+        gain_pct = (current_value - entry_value) / entry_value if entry_value > 0 else 0
+        if gain_pct >= 1.00:
+            primary = "✅ CLOSE — 100% TARGET HIT"
+            actions.append("100% gain on premium. IWT full target. Exit completely and re-deploy in next A+ setup.")
+        elif gain_pct >= 0.50:
+            primary = "✅ SCALE OUT"
+            actions.append("50% gain on premium. IWT scale-out: close 50-75% now. Trail remainder with 50% stop on remaining.")
+        if gain_pct <= -0.50:
+            primary = primary if primary != "HOLD" else "🔴 CLOSE — IWT STOP HIT"
+            actions.append("50% of premium lost. IWT hard stop: NEVER hold below 50% of purchase price. Exit — time and delta are working against you.")
+        if dte_remaining is not None and dte_remaining <= 30 and gain_pct < 0.20:
+            primary = primary if primary != "HOLD" else "🟠 CLOSE OR ROLL"
+            actions.append("< 30 DTE with < 20% gain. Time decay accelerates sharply. Roll to later expiry or close to limit theta bleed.")
+        if not actions:
+            actions.append("No trigger. Position inside profit/stop range. Monitor delta and DTE weekly. Next review: 30 DTE or ±25% on premium.")
+    return {"primary": primary, "actions": actions}
+
+
+def kelly_and_ruin(win_rate, avg_win_R, avg_loss_R, trades_per_month=8):
+    """Kelly Criterion + risk-of-ruin. Institutional standard: use Quarter Kelly for actual sizing."""
+    import math
+    p = max(0.01, min(0.99, win_rate))
+    q = 1 - p
+    b = avg_win_R / avg_loss_R if avg_loss_R > 0 else 0.01
+    kelly = (p * b - q) / b if b > 0 else 0
+    edge = p * avg_win_R - q * avg_loss_R
+    variance = p * q * (avg_win_R + avg_loss_R) ** 2
+    z = 2 * edge / max(variance, 0.0001)
+    ruin = max(0.0, min(1.0, math.exp(-z))) if edge > 0 else 1.0
+    note = ("Negative edge — this system loses money on average. Do not trade mechanically." if edge <= 0
+            else "Positive edge. Risk of ruin uses a 50% drawdown as the ruin threshold.")
+    return {
+        "kelly_pct": round(kelly * 100, 2), "half_kelly_pct": round(kelly / 2 * 100, 2),
+        "quarter_kelly_pct": round(kelly / 4 * 100, 2),
+        "edge_per_trade_pct": round(edge * 100, 2),
+        "expected_monthly_pct": round(edge * trades_per_month * 100, 2),
+        "ruin_probability_pct": round(ruin * 100, 1),
+        "recommended_size_pct": round(max(0, kelly / 4 * 100), 2),
+        "note": note,
+    }
+
+
 @st.cache_data(ttl=7200)
 def fetch_ndma_macro_signal():
     """NDMA drought alerts — commodity price pressure signal for Kenya macro."""
@@ -1263,7 +1446,7 @@ with st.sidebar:
 
     strategy = st.selectbox(
         "Mode",
-        ['Income (SPX Vertical Credit Spread)', 'Long (Buy)', 'Short (Sell)', 'Income (Cash-Secured Put)'],
+        ['Income (SPX Vertical Credit Spread)', 'IWT Long Option (60+ DTE)', 'Long (Buy)', 'Short (Sell)', 'Income (Cash-Secured Put)'],
         help="Default is SPX vertical credit spreads for defined-risk income. Long/Short are directional simulations. CSP models assignment risk."
     )
 
@@ -1293,11 +1476,32 @@ with st.sidebar:
     short_delta = 0.15
     event_risk_48h = False
     hold_through_event = False
+
+    lo_direction = "CALL"
+    lo_underlying = 0.0
+    lo_strike = 0.0
+    lo_premium = 0.0
+    lo_delta = 0.75
+    lo_dte = 90
+    lo_contracts_lo = 1
     if strategy == "Income (Cash-Secured Put)":
         premium = st.number_input(
             "Put Premium ($/share)", value=0.0, step=0.05,
             help="Per-share premium received. $2.50 = $250 per contract. CSP risk is assignment/cash-secured risk, not just a chart stop."
         )
+
+    elif strategy == "IWT Long Option (60+ DTE)":
+        st.markdown("**📈 IWT Long Options — 60+ DTE**")
+        st.caption("Teri Ijeoma: buy options 60+ DTE, DITM (delta 0.70+), for significant directional moves.")
+        lo_direction = st.selectbox("Direction", ["CALL", "PUT"], help="CALL: bullish. PUT: bearish.")
+        lo_underlying = st.number_input("Underlying Price ($)", value=0.0, step=1.0)
+        lo_strike = st.number_input("Strike Price", value=0.0, step=1.0, help="DITM calls: below current price. DITM puts: above.")
+        lo_premium = st.number_input("Premium Paid ($/share)", value=0.0, step=0.05, help="$5.00 = $500 per contract.")
+        lo_delta = st.number_input("Option Delta", value=0.75, min_value=0.10, max_value=0.99, step=0.01, help="Target 0.70-0.85 for DITM (IWT preferred).")
+        lo_dte = st.number_input("DTE (Days to Expiry)", value=90, min_value=1, max_value=400, step=1, help="IWT minimum: 60 DTE. Preferred: 90-120 DTE.")
+        lo_contracts_lo = st.number_input("Contracts", value=1, min_value=1, max_value=50, step=1)
+        st.caption("IWT exits: ✅ 50% or 100% gain on premium. 🔴 Stop at 50% loss.")
+    
     elif strategy == "Income (SPX Vertical Credit Spread)":
         st.markdown("**SPX Vertical Inputs**")
         spread_kind = st.selectbox("Spread Type", ["PUT", "CALL"], help="PUT = put credit spread below market. CALL = call credit spread above market.")
@@ -1310,6 +1514,19 @@ with st.sidebar:
         short_delta = st.number_input("Approx Short Strike Delta", value=0.15, min_value=0.01, max_value=0.60, step=0.01, help="Used for rough POP/POT. Example: 0.15 delta ≈ ~85% probability OTM, ~30% probability touch.")
         event_risk_48h = st.checkbox("Major event within 48h?", value=False, help="CPI/PPI/FOMC/NFP/Treasury auction/geopolitical shock. If yes, the app penalizes new premium selling.")
         hold_through_event = st.checkbox("Would hold through event?", value=False, help="Usually avoid holding premium-selling positions through major events unless specifically structured for it.")
+
+
+    # === IV RANK — universal strategy arbiter ===
+    ivr_manual = st.number_input(
+        "IV Rank / IVR (%)",
+        value=35.0, min_value=0.0, max_value=100.0, step=1.0,
+        help=(
+            "IVR = (Current IV − 52w Low) / (52w High − 52w Low) × 100. "
+            "IVR ≥ 50: SELL premium. IVR < 30: BUY options (60+ DTE). "
+            "Source: your broker options chain, Barchart, or InvestingPro."
+        )
+    )
+    st.caption("🔑 IVR drives the strategy arbiter panel below.")
 
     st.divider()
     st.header("4. IWT Scorecard")
@@ -1399,6 +1616,29 @@ with st.expander("🎓 Beginner's Guide (Read This First)", expanded=False):
 st.subheader("📊 Market Intelligence Dashboard")
 
 col_macro, col_scan = st.columns([1, 1])
+
+
+# === IV ENVIRONMENT ARBITER — master strategy selector ===
+with st.expander("🧠 IV Arbiter — BUY or SELL Options Today?", expanded=True):
+    st.caption("High IV → Sell premium. Low IV → Buy 60+ DTE options. Let the market tell you which weapon to use.")
+    _vix_now = st.session_state.macro['vix'] if st.session_state.macro else 18.0
+    _ivenv = classify_iv_environment(ivr_manual, _vix_now)
+    col_iv1, col_iv2 = st.columns([1, 2])
+    with col_iv1:
+        st.markdown(f"### {_ivenv['badge']} {_ivenv['regime']}")
+        st.metric("IVR", f"{ivr_manual:.0f}%", delta=f"Grade: {_ivenv['grade']}")
+        st.markdown(f"**→ {_ivenv['recommendation']}**")
+    with col_iv2:
+        st.info(_ivenv['rationale'])
+        st.markdown("**Best strategies now:**")
+        for _s in _ivenv['strategies']:
+            st.markdown(f"• {_s}")
+        if _ivenv.get('avoid'):
+            st.warning(f"🚫 {_ivenv['avoid']}")
+    st.caption(f"📡 VIX context: {_ivenv['vix_overlay']}")
+    st.caption("⚠️ SIMULATION: IVR requires manual input from broker / Barchart / InvestingPro.")
+
+
 
 with col_macro:
     if st.button("🌍 Macro Audit", use_container_width=True,
@@ -1763,6 +2003,51 @@ if st.session_state.data is not None:
             reward = v["max_profit_per_contract"]
             shares = contracts  # UI label switches to contracts below
             option_details = v
+
+
+    elif strategy == "IWT Long Option (60+ DTE)":
+        _lo = calc_long_option_iwt(
+            lo_underlying, lo_strike, lo_premium,
+            lo_direction, lo_delta, lo_dte, lo_contracts_lo
+        )
+        if _lo.get("error"):
+            st.error(f"❌ {_lo['error']}")
+        else:
+            st.subheader(f"📈 IWT Long {lo_direction} — {lo_dte} DTE")
+            st.caption("Teri Ijeoma: 60+ DTE, DITM, 50-100% profit target, 50% stop rule.")
+            if not _lo["dte_ok"]:
+                st.error(_lo["dte_grade"])
+            else:
+                st.success(_lo["dte_grade"])
+            st.info(_lo["delta_grade"])
+            col_lo1, col_lo2, col_lo3 = st.columns(3)
+            with col_lo1:
+                st.markdown("**💰 Position Cost & Leverage**")
+                st.code(f"""Total Cost:   ${_lo['cost_total']:.2f}
+Per Contract: ${_lo['cost_per_contract']:.2f}
+Delta:        {lo_delta:.2f} ({_lo['delta_label']})
+Leverage:     {_lo['leverage_ratio']:.1f}x vs stock
+Equiv Shares: {_lo['shares_equiv']:.0f}""")
+            with col_lo2:
+                st.markdown("**🎯 IWT Profit Targets**")
+                st.code(f"""50% Target:   ${_lo['target_50_val']:.2f}
+              @ ${_lo['target_50_price']:.2f}/share
+100% Target:  ${_lo['target_100_val']:.2f}
+              @ ${_lo['target_100_price']:.2f}/share
+Breakeven:    ${_lo['breakeven']:.2f} at expiry""")
+            with col_lo3:
+                st.markdown("**🛑 IWT Hard Stop**")
+                st.code(f"""Stop Value:   ${_lo['stop_loss_total']:.2f}
+Stop Price:   ${_lo['stop_price']:.2f}/share
+Intrinsic:    ${_lo['intrinsic']:.2f}
+Time Value:   ${_lo['time_val']:.2f} ({_lo['time_val_pct']:.0%})
+Daily Theta:  ~${_lo['daily_theta']:.2f}/day""")
+            st.warning(f"⏰ {_lo['theta_note']}")
+            st.info(
+                "📌 IWT Long Options Rules: (1) Min 60 DTE. (2) DITM delta 0.70+. "
+                "(3) Exit at 50% gain — do not overstay. (4) NEVER hold past 50% loss. "
+                "(5) Avoid before earnings/major events. (6) Only buy when IVR < 30%."
+            )
 
     elif is_csp:
         # Cash-secured put philosophy:
@@ -2251,6 +2536,87 @@ if st.session_state.closed_trades:
     with st.expander("📋 Complete Trade History", expanded=False):
         history_df = closed_df[['timestamp', 'ticker', 'action', 'entry', 'exit_price', 'actual_pnl', 'score', 'slippage', 'commissions']]
         st.dataframe(history_df, use_container_width=True)
+
+
+
+# === TRADE MANAGEMENT ENGINE ===
+st.divider()
+with st.expander("🔧 Trade Management Engine", expanded=False):
+    st.caption(
+        "Systematic rules for managing open positions. "
+        "TastyTrade 50% rule + IWT profit/stop discipline + gamma management."
+    )
+    _tm_struct = st.selectbox(
+        "Position Type",
+        ["CREDIT_SPREAD", "LONG_OPTION"],
+        format_func=lambda x: "Credit Spread (short premium)" if x == "CREDIT_SPREAD" else "Long Option (bought premium)"
+    )
+    _col_tm1, _col_tm2 = st.columns(2)
+    with _col_tm1:
+        if _tm_struct == "CREDIT_SPREAD":
+            _tm_entry = st.number_input("Credit Received ($, e.g. 1.50 credit = 150)", value=0.0, step=5.0)
+            _tm_curr  = st.number_input("Current Cost to Close ($)", value=0.0, step=5.0)
+            _tm_dte_r = st.number_input("DTE Remaining", value=14, min_value=0, max_value=90, step=1)
+            _tm_dte_e = st.number_input("DTE at Entry", value=30, min_value=1, max_value=90, step=1)
+        else:
+            _tm_entry = st.number_input("Premium Paid ($ total per position, e.g. $500)", value=0.0, step=10.0)
+            _tm_curr  = st.number_input("Current Market Value ($)", value=0.0, step=10.0)
+            _tm_dte_r = st.number_input("DTE Remaining", value=45, min_value=0, max_value=400, step=1)
+            _tm_dte_e = None
+    with _col_tm2:
+        if _tm_entry > 0:
+            _tme = trade_management_engine(_tm_struct, _tm_entry, _tm_curr, _tm_dte_r, _tm_dte_e)
+            st.markdown(f"### {_tme['primary']}")
+            for _td in _tme['actions']:
+                st.markdown(f"• {_td}")
+            if _tm_struct == "CREDIT_SPREAD" and _tm_dte_e and _tm_dte_e > 0:
+                _theta = theta_decay_profile(_tm_entry / 100, _tm_dte_e, _tm_dte_r)
+                if _theta:
+                    st.markdown("---")
+                    st.caption(
+                        f"Theta tracker — profit captured: ~{_theta['pct_profit_captured']:.1f}% | "
+                        f"value remaining: ~${_theta['value_remaining']:.0f}/contract | "
+                        f"daily decay: ~${_theta['daily_theta_approx']:.2f}/day"
+                    )
+                    st.caption(_theta['management_signal'])
+        else:
+            st.info("Enter position values to get management decision.")
+
+# === KELLY CRITERION + RISK-OF-RUIN ===
+with st.expander("🎲 Kelly Criterion & Risk-of-Ruin", expanded=False):
+    st.caption(
+        "Institutional position sizing science. "
+        "Full Kelly maximises long-run growth but produces severe drawdowns. "
+        "Most quant desks use Quarter Kelly or less."
+    )
+    _ck1, _ck2 = st.columns(2)
+    with _ck1:
+        _k_win = st.slider("Win Rate (%)", 30, 85, 60, step=1) / 100.0
+        _k_avgwin  = st.number_input("Avg Win (% of 1R, e.g. 50 = 50%)", value=50.0, step=5.0) / 100.0
+        _k_avgloss = st.number_input("Avg Loss (% of 1R, e.g. 100 = full max loss)", value=100.0, step=5.0) / 100.0
+        _k_monthly = st.number_input("Trades / Month", value=8, min_value=1, max_value=50, step=1)
+    with _ck2:
+        if _k_avgwin > 0 and _k_avgloss > 0:
+            _kr = kelly_and_ruin(_k_win, _k_avgwin, _k_avgloss, _k_monthly)
+            st.code(
+                f"Full Kelly:      {_kr['kelly_pct']:.1f}% per trade\n"
+                f"Half Kelly:      {_kr['half_kelly_pct']:.1f}% per trade\n"
+                f"Quarter Kelly:   {_kr['quarter_kelly_pct']:.1f}% (recommended)\n"
+                f"\n"
+                f"Edge per Trade:  {_kr['edge_per_trade_pct']:.1f}% of 1R\n"
+                f"Monthly Return:  {_kr['expected_monthly_pct']:.1f}% of 1R\n"
+                f"Risk of Ruin:    {_kr['ruin_probability_pct']:.1f}%"
+            )
+            if _kr['edge_per_trade_pct'] > 0:
+                st.success(f"✅ Positive edge. Recommended size: **{_kr['recommended_size_pct']:.1f}% of capital** (Quarter Kelly).")
+            else:
+                st.error("🔴 Negative edge — do not trade this system mechanically.")
+            st.caption(_kr['note'])
+            st.caption(
+                "💡 Quarter Kelly preserves ~75% of optimal long-run growth with ~50% of the drawdown. "
+                "Half Kelly is the institutional compromise. Full Kelly is rarely used outside academia."
+            )
+
 
 # JOURNAL EXPORT
 if st.session_state.journal:
