@@ -7,7 +7,7 @@ Simulation only — does not execute trades or connect to a broker. For educatio
 [![Live Data](https://img.shields.io/badge/Live%20Data-Yahoo%20Finance%20%C2%B7%20open.er-api.com%20%C2%B7%20NDMA%20%C2%B7%20World%20Bank-00b4d8)](#features)
 [![License](https://img.shields.io/badge/license-CC%20BY--NC--ND%204.0-red)](LICENSE)
 [![Status](https://img.shields.io/badge/status-Simulation%20Only-orange)](#disclaimer)
-[![Version](https://img.shields.io/badge/version-v2.0.0--spx--income-blue)](#changelog)
+[![Version](https://img.shields.io/badge/version-v3.0.0--iwt--playbook-blue)](#changelog)
 
 > **EasyStockTrader** — SPX cash-settled defined-risk income, Teri Ijeoma-style discipline.
 
@@ -98,6 +98,15 @@ A disclaimer screen appears on launch — accept to proceed. All market data is 
 ---
 
 ## Changelog
+
+### v3.0.0 — IWT Full Playbook (2026-05-10)
+- **Two-weapon framework**: IV Rank Arbiter routes to selling or buying based on IV environment
+- **IWT Long Options (60+ DTE)**: new strategy mode — DITM enforcement, 50%/100% targets, 50% hard stop
+- **IV Rank sidebar input** (IVR%) drives arbiter for all strategies
+- **Trade Management Engine**: systematic rules for credit spreads and long options
+- **Theta decay tracker**: integrated theta profile for open credit spread management
+- **Kelly Criterion + Risk-of-Ruin**: Full, Half, Quarter Kelly with ruin probability
+- AST clean (2,667 lines) | New function logic: 4/4 suites passing
 
 ### v2.0.0 — SPX Income Engine (2026-05-08)
 - SPX verticals set as **default strategy mode**
