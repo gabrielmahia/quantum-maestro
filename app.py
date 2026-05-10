@@ -2242,6 +2242,88 @@ if st.session_state.data is not None:
 
     # CHART
     st.divider()
+
+    # ── LIVE OPTIONS GREEKS ─────────────────────────────────────────────────
+    if st.session_state.metrics:
+        _r_rate = st.session_state.macro.get("tnx",4.5)/100 if st.session_state.macro else 0.045
+        with st.spinner("Loading live options chain..."):
+            _opt = live_options_greeks(ticker, dte_target=30, r_annual=_r_rate)
+        if _opt and not _opt.get("no_options") and not _opt.get("error"):
+            _ivr_str = f"IVR~{_opt['ivr_proxy']:.0f}% | " if _opt.get('ivr_proxy') else ""
+            with st.expander(
+                f"📊 Live Options Greeks — {ticker} | ATM IV {_opt['atm_iv']:.1f}% | {_ivr_str}Sell zone" if _opt.get('ivr_proxy',0)>=50 else
+                f"📊 Live Options Greeks — {ticker} | ATM IV {_opt['atm_iv']:.1f}% | {_ivr_str}Buy zone" if _opt.get('ivr_proxy',0)<30 else
+                f"📊 Live Options Greeks — {ticker} | ATM IV {_opt['atm_iv']:.1f}% | {_ivr_str}Selective",
+                expanded=False
+            ):
+                _lvl = st.session_state.lang_level
+                _oc1, _oc2, _oc3, _oc4 = st.columns(4)
+                _oc1.metric("ATM IV", f"{_opt['atm_iv']:.1f}%")
+                _oc2.metric("IVR (proxy)", f"{_opt['ivr_proxy']:.0f}%",
+                    delta="SELL" if _opt['ivr_proxy']>=50 else "BUY 60+DTE" if _opt['ivr_proxy']<30 else "Selective")
+                _oc3.metric("Realized Vol 30d", f"{_opt['rv_current']:.1f}%")
+                _oc4.metric("Chain Expiry", _opt['expiry'], delta=f"{_opt['dte']} DTE")
+
+                if _lvl == "Beginner":
+                    import math as _m
+                    _daily_move_pct = _opt['atm_iv']/100/math.sqrt(252)*100
+                    st.info(
+                        f"💡 ATM IV {_opt['atm_iv']:.1f}% means the market expects "
+                        f"roughly ±{_daily_move_pct:.1f}% daily moves. "
+                        f"**Delta**: how much the option price moves per $1 stock move. "
+                        f"**Theta**: dollars lost (if you OWN the option) or gained (if you SOLD it) each day. "
+                        f"**POP**: the chance this option expires worthless — high POP = sellers win more often (but their losses can be bigger)."
+                    )
+                elif _lvl in ["Advanced","Professional"]:
+                    st.caption(
+                        f"VRP = IV − RV = {_opt['atm_iv']-_opt['rv_current']:+.1f}pp. "
+                        f"Greeks: exact BSM (scipy.stats.norm). "
+                        f"IVR proxy: (ATM_IV − RV_52wLow) / (RV_52wHigh − RV_52wLow). "
+                        f"r = {_r_rate*100:.2f}% (^TNX). Single expiry snapshot — no vol surface."
+                    )
+
+                if _opt.get("greeks_table"):
+                    _gdf = pd.DataFrame(_opt["greeks_table"])
+                    _puts  = _gdf[_gdf["type"]=="P"].sort_values("strike",ascending=False)
+                    _calls = _gdf[_gdf["type"]=="C"].sort_values("strike")
+                    _col_disp = ["strike","iv_pct","delta","gamma","theta_day","vega_1pct","pop","oi"]
+                    _col_names = ["Strike","IV%","Delta","Gamma","Theta/d","Vega/1%","POP","OI"]
+                    _fmt = {"IV%":"{:.1f}","Delta":"{:.3f}","Gamma":"{:.5f}",
+                            "Theta/d":"{:.3f}","Vega/1%":"{:.3f}","POP":"{:.0%}","OI":"{:,.0f}"}
+                    _cp1, _cp2 = st.columns(2)
+                    with _cp1:
+                        st.markdown(f"**Puts — {ticker}** ({_opt['expiry']})")
+                        _pd2 = _puts[_col_disp].head(12).copy(); _pd2.columns = _col_names
+                        st.dataframe(_pd2.style.format(_fmt), use_container_width=True, height=280)
+                    with _cp2:
+                        st.markdown(f"**Calls — {ticker}** ({_opt['expiry']})")
+                        _cd2 = _calls[_col_disp].head(12).copy(); _cd2.columns = _col_names
+                        st.dataframe(_cd2.style.format(_fmt), use_container_width=True, height=280)
+
+                    st.markdown("**⚡ Quick-Fill → Spread Calculator (OTM Puts, POP ≥ 65%):**")
+                    _otm = _puts[_puts["pop"]>=0.65][["strike","iv_pct","delta","pop","oi"]].head(5)
+                    for _, _or in _otm.iterrows():
+                        _qc1,_qc2 = st.columns([4,1])
+                        _qc1.caption(
+                            f"PUT {_or['strike']:.0f} | IV {_or['iv_pct']:.1f}% | "
+                            f"Δ {_or['delta']:.3f} | POP {_or['pop']:.0%} | OI {int(_or['oi']):,}"
+                        )
+                        if _qc2.button(f"Use →", key=f"qf_{ticker}_{_or['strike']:.0f}"):
+                            st.session_state["_af_strike"] = float(_or['strike'])
+                            st.session_state["_af_delta"]  = abs(float(_or['delta']))
+                            st.session_state["_af_iv"]     = float(_or['iv_pct'])
+                            st.success(f"✅ Strike {_or['strike']:.0f} queued. Switch to Vertical Spread mode and re-scan.")
+
+                st.caption(
+                    "📡 IV: yfinance delayed market bid/ask (real). "
+                    "Greeks: BSM exact formula, scipy.stats.norm. "
+                    "IVR: 1y realized vol proxy (not true IV rank — true IVR needs paid historical IV data). "
+                    "For live streaming Greeks, connect a broker API (IBKR, Tastytrade, Schwab)."
+                )
+        elif _opt and _opt.get("no_options"):
+            st.caption(f"ℹ️ {ticker} has no listed options. Try SPY, QQQ, AAPL, GLD, or any major optionable stock/ETF.")
+
+
     st.subheader("📊 Technical Chart (Last 60 Days)")
     st.caption("💡 Blue=SMA20, Orange=SMA50, Red=SMA200, Gray=Bollinger Bands, Green/Red lines=Support/Resistance")
 
