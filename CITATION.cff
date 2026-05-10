@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it using these metadata."
 type: software
-title: "EasyStockTrader — Full Instrument Suite"
-abstract: "Complete IWT options playbook + multi-instrument trading terminal. Auto-computed IV Rank from live VIX data. Instrument advisor. Futures calculator (ES/MES/NQ/CL/GC/ZC/ZW/ZS/NG). Beginner-to-professional language engine (4 levels). SPX vertical credit spreads, long options 60+ DTE, Kelly criterion, trade management engine. Educational simulation only."
+title: "EasyStockTrader — SPX Income Engine"
+abstract: "Defined-risk vertical credit spread planning terminal for SPX. Expected-move engine, POP/touch-risk approximation, event-risk scoring, Mon-Thu trade planner, and IWT verification scorecard. Educational simulation only."
 authors:
   - family-names: Mahia
     given-names: Gabriel
@@ -12,27 +12,20 @@ authors:
 repository-code: "https://github.com/gabrielmahia/quantum-maestro"
 url: "https://easystocktrader.streamlit.app"
 license: "CC-BY-NC-ND-4.0"
-version: "4.0.0"
-date-released: "2026-05-10"
+version: "2.0.0"
+date-released: "2026-05-08"
 keywords:
   - spx
   - options-trading
   - vertical-spreads
   - income-trading
-  - long-options
-  - iv-rank
   - expected-move
-  - kelly-criterion
-  - theta-decay
-  - trade-management
-  - futures
-  - commodities
+  - probability-of-profit
   - iwt
   - streamlit
   - kenya
   - east-africa
   - fintech
-  - python
 identifiers:
   - type: doi
     value: "10.34740/kaggle/dsv/15473045"
