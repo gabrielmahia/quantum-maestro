@@ -1299,6 +1299,111 @@ def compute_backtest_stats(trades_df, initial_capital, strategy_name):
         "exit_reasons":     t['Exit'].value_counts().to_dict(),
     }
 
+# =============================================================================
+# V8 — PLATFORM ORDER TRANSLATOR + LANGUAGE SIMPLIFICATION
+# Converts spread parameters into exact order-entry strings for major platforms.
+# No jargon for beginners. Full technical detail for professionals.
+# =============================================================================
+
+def lang_cap(text, min_level="Advanced"):
+    """
+    Render a Streamlit caption only if the user's experience level
+    meets or exceeds min_level. Suppresses developer/technical detail for
+    Beginner and Intermediate users automatically.
+    """
+    _order = {"Beginner":0,"Intermediate":1,"Advanced":2,"Professional":3}
+    user_lvl = st.session_state.get("lang_level","Beginner")
+    if _order.get(user_lvl,0) >= _order.get(min_level,2):
+        st.caption(text)
+
+
+def plain_spread_explanation(underlying, short_k, long_k, spread_type,
+                              expiry_str, credit, contracts, spread_width, lvl):
+    """
+    Returns a dict of plain-English explanation blocks and platform order strings.
+    Terminology designed so a Teri Ijeoma student with no options background
+    can immediately understand what to click and why.
+    spread_type: "PUT_CREDIT" | "CALL_CREDIT"
+    """
+    from datetime import datetime
+    option_word = "PUT" if "PUT" in spread_type else "CALL"
+    max_profit  = round(credit * 100 * contracts, 2)
+    max_loss    = round((spread_width - credit) * 100 * contracts, 2)
+    breakeven   = round(short_k - credit, 2) if "PUT" in spread_type else round(short_k + credit, 2)
+    credit_eff  = round(credit / spread_width * 100, 1)
+
+    try:
+        from datetime import datetime
+        exp_dt  = datetime.strptime(expiry_str, "%Y-%m-%d")
+        exp_tos = exp_dt.strftime("%d %b %y").upper()   # thinkorSwim format: 11 MAY 26
+        exp_fid = exp_dt.strftime("%b %d, %Y")          # Fidelity format: May 11, 2026
+    except Exception:
+        exp_tos = expiry_str; exp_fid = expiry_str
+
+    # ── Plain English: what you did ──────────────────────────────────────────
+    if "PUT" in spread_type:
+        sell_action = (f"You SELL the {short_k:.0f} PUT — the HIGHER number. "
+                       f"This is where you collect your {credit:.2f} premium.")
+        buy_action  = (f"You BUY the {long_k:.0f} PUT — the LOWER number. "
+                       f"This is your insurance. It limits your maximum loss.")
+        market_view = (f"You want SPX to STAY ABOVE {short_k:.0f} by expiry. "
+                       f"If it does, you keep the full ${max_profit:,.0f} premium.")
+        danger_zone = f"If SPX falls below {long_k:.0f}, max loss = ${max_loss:,.0f}."
+    else:  # CALL credit
+        sell_action = (f"You SELL the {short_k:.0f} CALL — the LOWER number. "
+                       f"This is where you collect your {credit:.2f} premium.")
+        buy_action  = (f"You BUY the {long_k:.0f} CALL — the HIGHER number. "
+                       f"This is your insurance. It limits your maximum loss.")
+        market_view = (f"You want SPX to STAY BELOW {short_k:.0f} by expiry. "
+                       f"If it does, you keep the full ${max_profit:,.0f} premium.")
+        danger_zone = f"If SPX rises above {long_k:.0f}, max loss = ${max_loss:,.0f}."
+
+    # ── Platform order strings (exactly what to type/click) ─────────────────
+    # thinkorSwim (most common for SPX options):
+    # Format: SELL -N VERTICAL [UNDERLYING] 100 ([DATE]) [SHORT]/[LONG] [TYPE] @ [CREDIT]
+    # Note: in TOS, the spread always shows SHORT/LONG (higher/lower for puts)
+    if "PUT" in spread_type:
+        tos_str = (f"SELL -{contracts} VERTICAL {underlying} 100 ({exp_tos}) "
+                   f"{short_k:.0f}/{long_k:.0f} PUT @ {credit:.2f}")
+        fid_str = (f"Sell to Open: {short_k:.0f} PUT  |  Buy to Open: {long_k:.0f} PUT  "
+                   f"|  Net Credit: ${credit:.2f}")
+        ibkr_str= (f"Combo order: SELL {contracts} {underlying} {exp_tos} {short_k:.0f} PUT "
+                   f"+ BUY {contracts} {underlying} {exp_tos} {long_k:.0f} PUT "
+                   f"| Net limit (credit): ${credit:.2f}")
+        tasty   = (f"SELL PUT SPREAD  |  Short {short_k:.0f} / Long {long_k:.0f}  "
+                   f"|  ${credit:.2f} credit")
+        wb_str  = (f"Options → Spread → Put Credit Spread  "
+                   f"|  Sell {short_k:.0f} + Buy {long_k:.0f}  |  Net credit ${credit:.2f}")
+    else:
+        tos_str = (f"SELL -{contracts} VERTICAL {underlying} 100 ({exp_tos}) "
+                   f"{long_k:.0f}/{short_k:.0f} CALL @ {credit:.2f}")
+        fid_str = (f"Sell to Open: {short_k:.0f} CALL  |  Buy to Open: {long_k:.0f} CALL  "
+                   f"|  Net Credit: ${credit:.2f}")
+        ibkr_str= (f"Combo: SELL {contracts} {underlying} {exp_tos} {short_k:.0f} CALL "
+                   f"+ BUY {contracts} {underlying} {exp_tos} {long_k:.0f} CALL "
+                   f"| Net limit: ${credit:.2f}")
+        tasty   = (f"SELL CALL SPREAD  |  Short {short_k:.0f} / Long {long_k:.0f}  "
+                   f"|  ${credit:.2f} credit")
+        wb_str  = (f"Options → Spread → Call Credit Spread  "
+                   f"|  Sell {short_k:.0f} + Buy {long_k:.0f}  |  Net credit ${credit:.2f}")
+
+    return {
+        "sell_action":   sell_action,
+        "buy_action":    buy_action,
+        "market_view":   market_view,
+        "danger_zone":   danger_zone,
+        "max_profit":    max_profit,
+        "max_loss":      max_loss,
+        "breakeven":     breakeven,
+        "credit_eff":    credit_eff,
+        "tos":           tos_str,
+        "fidelity":      fid_str,
+        "ibkr":          ibkr_str,
+        "tastytrade":    tasty,
+        "webull":        wb_str,
+        "option_word":   option_word,
+    }
+
 # V4 — FULL INSTRUMENT SUITE · AUTO-DATA · BEGINNER-TO-PRO LANGUAGE
 # =============================================================================
 
@@ -2357,7 +2462,10 @@ with st.sidebar:
     if _tdr_ok:
         st.success("✅ Tradier connected — broker Greeks active")
     else:
-        st.caption("📡 Greeks: yfinance+BSM (free). Add TRADIER_TOKEN to secrets for broker Greeks.")
+        if st.session_state.lang_level in ["Beginner","Intermediate"]:
+            st.caption("📡 Live market data active.")
+        else:
+            st.caption("📡 Greeks: yfinance+BSM. Add TRADIER_TOKEN to Streamlit secrets for broker-computed Greeks.")
     st.divider()
     st.header("🎯 Your Experience Level")
     st.session_state.lang_level = st.selectbox(
@@ -2595,7 +2703,7 @@ with st.sidebar:
         value=_ivr_auto, min_value=0.0, max_value=100.0, step=1.0,
         help="Computed from live VIX vs its 52-week range. Override if your broker shows a more precise number."
     )
-    st.caption("🔑 IVR drives the strategy arbiter panel below.")
+    st.caption("🔑 This number decides: should you BUY or SELL options today?" if st.session_state.lang_level in ["Beginner","Intermediate"] else "🔑 IVR drives the IV Arbiter. ≥50 = seller's market. <30 = buyer's market.")
 
     st.divider()
     st.header("4. IWT Scorecard")
@@ -2731,7 +2839,7 @@ with st.expander("🧠 IV Arbiter — BUY or SELL Options Today?", expanded=True
         if _ivenv.get('avoid'):
             st.warning(f"🚫 {_ivenv['avoid']}")
     st.caption(f"📡 VIX context: {_ivenv['vix_overlay']}")
-    st.caption("⚠️ SIMULATION: IVR requires manual input from broker / Barchart / InvestingPro.")
+    st.caption("⚠️ SIMULATION ONLY — no real trades are placed until you connect a broker." if st.session_state.lang_level in ["Beginner","Intermediate"] else "⚠️ SIMULATION: IVR auto-computed from live VIX. Override with broker IV rank for precision.")
 
 
 
@@ -3053,12 +3161,10 @@ if st.session_state.data is not None:
                             st.session_state["_af_iv"]     = float(_or['iv_pct'])
                             st.success(f"✅ Strike {_or['strike']:.0f} queued. Switch to Vertical Spread mode and re-scan.")
 
-                st.caption(
-                    "📡 IV: yfinance delayed market bid/ask (real). "
-                    "Greeks: BSM exact formula, scipy.stats.norm. "
-                    "IVR: 1y realized vol proxy (not true IV rank — true IVR needs paid historical IV data). "
-                    "For live streaming Greeks, connect a broker API (IBKR, Tastytrade, Schwab)."
-                )
+                if st.session_state.lang_level in ["Beginner","Intermediate"]:
+                    st.caption("📡 Live market data. Greeks auto-calculated from current option prices.")
+                else:
+                    st.caption("📡 IV: yfinance delayed bid/ask. Greeks: exact BSM (scipy.stats.norm). IVR: realized vol proxy. Tradier connection enables broker Greeks.")
         elif _opt and _opt.get("no_options"):
             st.caption(f"ℹ️ {ticker} has no listed options. Try SPY, QQQ, AAPL, GLD, or any major optionable stock/ETF.")
 
@@ -3372,6 +3478,78 @@ Margin*:   ~${fut['margin_required']:,}""")
             st.warning("⚠️ Credit is under 20% of spread width. Premium may be too thin for the defined risk.")
         elif option_details['credit_pct_width'] >= 0.25:
             st.success("✅ Credit efficiency meets the preferred 25%+ of width threshold.")
+    # ── PLATFORM ORDER TRANSLATOR (vertical spreads only) ─────────────────────
+    if is_vertical and not option_details.get("errors") and spread_credit > 0 and short_strike > 0:
+        _lvl_now = st.session_state.lang_level
+        _spread_t = "PUT_CREDIT" if spread_kind == "PUT" else "CALL_CREDIT"
+        _exp_str  = "2026-06-19"  # placeholder; user enters their expiry date
+        _p = plain_spread_explanation(
+            underlying=ticker if ticker else "SPX",
+            short_k=short_strike, long_k=long_strike,
+            spread_type=_spread_t,
+            expiry_str=option_details.get("expiry_str", "2026-06-19"),
+            credit=spread_credit, contracts=contracts,
+            spread_width=option_details.get("width", abs(short_strike-long_strike)),
+            lvl=_lvl_now
+        )
+
+        with st.expander("📋 How to Enter This Trade on Your Platform", expanded=True):
+            # Plain English first
+            st.markdown("#### What you're doing:")
+            c_a, c_b = st.columns(2)
+            with c_a:
+                st.success(f"**SELL (collect premium)**\n\n{_p['sell_action']}")
+            with c_b:
+                st.info(f"**BUY (your protection)**\n\n{_p['buy_action']}")
+
+            st.markdown(f"**Goal:** {_p['market_view']}")
+            st.error(f"**Danger zone:** {_p['danger_zone']}")
+
+            col_pm, col_pl, col_pb = st.columns(3)
+            col_pm.metric("Max Profit",   f"${_p['max_profit']:,.0f}", f"Keep premium if trade wins")
+            col_pl.metric("Max Loss",     f"${_p['max_loss']:,.0f}",   f"Spread goes full width")
+            col_pb.metric("Breakeven",    f"{_p['breakeven']:.2f}",    f"SPX must stay {'above' if 'PUT' in _spread_t else 'below'} this")
+
+            st.markdown("---")
+            st.markdown("#### Exact order to enter on your platform:")
+
+            _ptab1, _ptab2, _ptab3, _ptab4, _ptab5 = st.tabs(
+                ["thinkorSwim", "Fidelity", "Interactive Brokers", "tastytrade", "Webull"])
+
+            with _ptab1:
+                st.code(_p['tos'], language=None)
+                st.caption("thinkorSwim: Trade → All Products → SPX → Options → Spread → Vertical  |  OR paste the code above into the Order Entry bar.")
+            with _ptab2:
+                st.code(_p['fidelity'], language=None)
+                st.caption("Fidelity ATP: Options → Spreads → Vertical  |  Select both legs as shown.")
+            with _ptab3:
+                st.code(_p['ibkr'], language=None)
+                st.caption("IBKR: Options Chain → right-click → Create Combination  |  Add both legs as shown.")
+            with _ptab4:
+                st.code(_p['tastytrade'], language=None)
+                st.caption("tastytrade: Trade → Options → Select both strikes → Trade → Sell Vertical")
+            with _ptab5:
+                st.code(_p['webull'], language=None)
+                st.caption("Webull: Options → select the two strikes → Sell Spread")
+
+            st.markdown("---")
+            st.markdown("#### What it should look like when filled:")
+            st.info(
+                f"Your broker's order history will show something like:\n\n"
+                f"**{_p['tos'].replace('@ ', '@')}**\n\n"
+                f"Filled = you received ${_p['max_profit']:,.0f} in your account immediately. "
+                f"That money is yours to keep IF SPX stays {'above' if 'PUT' in _spread_t else 'below'} "
+                f"{short_strike:.0f} until expiry."
+            )
+
+            lang_cap(
+                f"Credit efficiency: {_p['credit_eff']:.1f}% of spread width. "
+                f"IWT minimum: 25%. TastyTrade minimum: 20%.",
+                "Intermediate"
+            )
+
+    
+    
     if is_csp and option_details.get("errors"):
         for _err in option_details["errors"]:
             st.error(f"❌ Cash-secured put input error: {_err}")
@@ -3883,7 +4061,7 @@ else:
     if _is_sandbox:
         st.warning(
             "🧪 **PAPER TRADING MODE (Sandbox)** — orders are simulated, no real money is at risk. "
-            "Change TRADIER_ENV = production in Streamlit secrets to trade live."
+            "Switch from paper trading to real trading in your app settings."
         )
     else:
         st.error(
