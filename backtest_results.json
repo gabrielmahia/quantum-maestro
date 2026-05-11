@@ -1,0 +1,68 @@
+{
+  "generated_at": "2026-05-11",
+  "period_start": "2025-05-08",
+  "period_end": "2026-05-08",
+  "trading_days": 252,
+  "spy_start": 558.66,
+  "spy_end": 737.62,
+  "spy_1y_return": 32.03,
+  "vix_avg": 18.26,
+  "vix_min": 13.47,
+  "vix_max": 31.05,
+  "strategies": {
+    "Buy&Hold SPY": {
+      "final_capital": 32455.28,
+      "total_return_pct": 29.82,
+      "sharpe": 1.95,
+      "max_drawdown_pct": -8.88
+    },
+    "Credit Spreads": {
+      "final_capital": 25314.38,
+      "total_return_pct": 1.26,
+      "sharpe": -4.58,
+      "max_drawdown_pct": -0.39,
+      "trades": 16,
+      "win_rate": 0.69,
+      "avg_winner": 47.42,
+      "avg_loser": -28.72
+    },
+    "IWT Long Calls": {
+      "final_capital": 25000.0,
+      "total_return_pct": 0.0,
+      "sharpe": 0.0,
+      "max_drawdown_pct": 0.0,
+      "note": "No entries triggered in this period \u2014 IVR condition rarely met"
+    },
+    "Trend Following": {
+      "final_capital": 25467.73,
+      "total_return_pct": 1.87,
+      "sharpe": -2.0,
+      "max_drawdown_pct": 0.0
+    },
+    "Combined (1/3)": {
+      "final_capital": 25260.7,
+      "total_return_pct": 1.04,
+      "sharpe": -6.96,
+      "max_drawdown_pct": -0.13
+    }
+  },
+  "market_context": {
+    "regime": "Strong bull year (SPY +32%). VIX ranged 13-31. IVR averaged 25% (low IV buyer's market).",
+    "key_event": "April 2025 tariff shock: VIX spiked to 31, SPY briefly dropped before massive recovery.",
+    "implication": "Low IV throughout most of year meant IWT income strategies had fewer quality entry signals. Long directional positioning (buy-and-hold) was optimal in this environment."
+  },
+  "honest_findings": {
+    "buy_and_hold_dominated": true,
+    "why": "SPY +32% is exceptional (avg year ~8-10%). All active strategies use position sizing that limits exposure, protecting downside but capping upside vs pure buy-and-hold.",
+    "income_strategy_context": "Credit spreads produced 69% win rate with controlled drawdown (-0.4%). In a normal year (8-10% SPY), income vs buy-and-hold comparison would be much closer.",
+    "position_sizing_impact": "Conservative Kelly/2-5% risk limits intentionally protect capital. Not designed to beat exceptional bull years."
+  },
+  "data_provenance": {
+    "spy_prices": "yfinance (Yahoo Finance) \u2014 real delayed prices",
+    "vix": "yfinance \u2014 real CBOE VIX history",
+    "tnx": "yfinance \u2014 real 10Y Treasury yield",
+    "options_pnl": "SYNTHETIC \u2014 BSM with real historical VIX as IV proxy. Not actual market option prices. Actual fills would differ due to bid/ask spread, volatility skew, and term structure.",
+    "equity_pnl": "REAL \u2014 actual price changes with $0.01/share slippage",
+    "disclaimer": "Past backtest results do not guarantee future performance. This is for educational purposes only."
+  }
+}
