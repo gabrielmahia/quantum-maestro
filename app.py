@@ -2666,27 +2666,220 @@ with st.sidebar:
         fut_contracts = st.number_input("Contracts", value=1, min_value=1, max_value=20, step=1)
         st.caption("⚠️ Futures amplify both profits and losses. Margin required. Mark-to-market daily.")
     elif strategy == "Income (SPX Vertical Credit Spread)":
-        st.markdown("**SPX Vertical Inputs**")
-        spread_kind = st.selectbox("Spread Type", ["PUT", "CALL"], help="PUT = put credit spread below market. CALL = call credit spread above market.")
-        short_strike = st.number_input("Short Strike", value=0.0, step=5.0, help="Strike you sell. This receives premium and defines the main risk point.")
-        long_strike = st.number_input("Long Strike", value=0.0, step=5.0, help="Protective strike you buy. This caps max loss.")
-        spread_credit = st.number_input("Net Credit ($/spread)", value=0.0, step=0.05, help="Net credit in index points. Example: 1.00 credit = $100 before commissions.")
-        dte = st.number_input("DTE", value=7, min_value=0, max_value=60, step=1, help="Teri-style short income window is usually <=7 DTE. Longer DTE requires stronger macro stability.")
-        _spx_auto = 0.0
-        if st.session_state.macro and st.session_state.macro.get("sp") is not None:
-            # ES=F is a close proxy for SPX — use as starting point
-            pass  # user still enters; we add a helpful default hint
-        spx_reference_price = st.number_input(
-            "SPX Reference Price",
-            value=0.0, step=1.0,
-            help="Enter current SPX/US500 level. Check Google Finance or your broker. Used for expected-move calculation."
+        _lvl_v = st.session_state.lang_level
+        
+        # ── CHEAT SHEET (always visible, collapses for pros) ─────────────────
+        if _lvl_v in ["Beginner", "Intermediate"]:
+            st.markdown("**📖 Quick Guide — How to fill this in**")
+            st.info(
+                "**Example: you sold the 7395/7390 PUT spread**\n\n"
+                "• **7395** = the PUT you SOLD (higher number → enter this as your SELL strike)\n"
+                "• **7390** = the PUT you BOUGHT for protection (lower number → enter this as your BUY strike)\n"
+                "• **0.50** = the credit you collected (enter this as your Net Credit)\n\n"
+                "📌 Simple rule: HIGHER number = what you sold. LOWER number = your protection."
+            )
+
+        # ── Step 1: Spread direction ───────────────────────────────────────────
+        st.markdown("**① Spread direction**")
+        spread_kind = st.selectbox(
+            "Are you selling puts or calls?",
+            ["PUT", "CALL"],
+            help=(
+                "PUT spread: market stays flat or rises — you profit. "
+                "CALL spread: market stays flat or falls — you profit. "
+                "Most IWT income trades use PUT spreads."
+            ),
+            format_func=lambda x: (
+                "PUT spread (market stays above your sell strike)" if x=="PUT"
+                else "CALL spread (market stays below your sell strike)"
+            )
         )
-        if spx_reference_price == 0.0:
-            st.caption("💡 Enter SPX level from Google: search 'SPX' or 'S&P 500'.")
-        iv_percent = st.number_input("IV / VIX Proxy (%)", value=17.0, min_value=1.0, max_value=100.0, step=0.25, help="Use current SPX IV, IV percentile estimate, or VIX as a proxy if true IV is unavailable.")
-        short_delta = st.number_input("Approx Short Strike Delta", value=0.15, min_value=0.01, max_value=0.60, step=0.01, help="Used for rough POP/POT. Example: 0.15 delta ≈ ~85% probability OTM, ~30% probability touch.")
-        event_risk_48h = st.checkbox("Major event within 48h?", value=False, help="CPI/PPI/FOMC/NFP/Treasury auction/geopolitical shock. If yes, the app penalizes new premium selling.")
-        hold_through_event = st.checkbox("Would hold through event?", value=False, help="Usually avoid holding premium-selling positions through major events unless specifically structured for it.")
+
+        # ── Step 2: When does it expire? ──────────────────────────────────────
+        st.markdown("**② When does it expire?**")
+        dte = st.number_input(
+            "Days until expiry (DTE)",
+            value=7, min_value=0, max_value=60, step=1,
+            help=(
+                "0 DTE = today's expiry (very high risk, advanced traders only). "
+                "7 DTE = next weekly expiry (most common for IWT-style income). "
+                "30 DTE = standard for TastyTrade-style premium selling."
+            )
+        )
+        if dte == 0:
+            st.warning("⚠️ 0 DTE = extreme gamma risk. Positions can move from profit to full loss in minutes. For experienced traders only.")
+        elif dte < 7:
+            st.caption("⚡ Very short DTE. Monitor position closely — move fast.")
+        
+        # ── Step 3: Where is SPX now? (auto-fill from Macro Audit) ───────────
+        st.markdown("**③ What is SPX at right now?**")
+        # Auto-populate from macro scan (ES=F tracks SPX within ~1 point)
+        _macro_spx = 0.0
+        if st.session_state.macro:
+            # Use ES futures as SPX proxy (standard professional approach)
+            _es_pct = st.session_state.macro.get("sp", 0)  # sp = daily % change on ES
+            # We don't store the absolute level — prompt user but show VIX context
+            _macro_spx = st.session_state.get("_last_spx_entered", 0.0)
+        
+        spx_reference_price = st.number_input(
+            "SPX / S&P 500 level right now" + (" (from Macro Audit)" if _macro_spx > 0 else ""),
+            value=float(st.session_state.get("_last_spx_entered", 0.0)),
+            step=1.0,
+            help="Look up 'SPX' on Google, Yahoo Finance, or your broker. It's the current level of the S&P 500 index."
+        )
+        if spx_reference_price > 0:
+            st.session_state["_last_spx_entered"] = spx_reference_price
+
+        iv_percent = st.number_input(
+            "VIX right now (%)" if _lvl_v in ["Beginner","Intermediate"] else "IV / VIX Proxy (%)",
+            value=float(st.session_state.macro.get("vix", 17.0)) if st.session_state.macro else 17.0,
+            min_value=1.0, max_value=100.0, step=0.25,
+            help=(
+                "VIX is the market's fear gauge. Check cnbc.com/quotes/VIX or Google 'VIX today'. "
+                "Higher VIX = bigger expected moves = more premium collected."
+                if _lvl_v in ["Beginner","Intermediate"] else
+                "VIX as IV proxy. For SPX/SPY, VIX = 30-day implied vol by construction."
+            )
+        )
+
+        # ── Step 4: Suggested strikes (auto-computed from inputs) ─────────────
+        _show_suggestion = spx_reference_price > 0 and iv_percent > 0 and dte > 0
+        _sug_short = 0.0; _sug_long = 0.0; _sug_credit = 0.0; _sug_em = 0.0
+        if _show_suggestion:
+            import math as _m
+            _sug_em    = spx_reference_price * (iv_percent/100) * _m.sqrt(dte/365)
+            _spread_w  = 25   # standard SPX width
+            _sug_short = round((spx_reference_price - _sug_em*0.75)/_spread_w)*_spread_w if spread_kind=="PUT" else round((spx_reference_price + _sug_em*0.75)/_spread_w)*_spread_w
+            _sug_long  = _sug_short - _spread_w if spread_kind=="PUT" else _sug_short + _spread_w
+            # BSM credit estimate
+            try:
+                from scipy.stats import norm as _n
+                _r = float(st.session_state.macro.get("tnx",4.5)/100) if st.session_state.macro else 0.045
+                _T = dte/365; _IV = iv_percent/100; _S = spx_reference_price
+                def _bsm_p(S,K,T,r,sig):
+                    if T<=0: return max(0,K-S)
+                    d1=(_m.log(S/K)+(r+0.5*sig**2)*T)/(sig*_m.sqrt(T)); d2=d1-sig*_m.sqrt(T)
+                    return K*_m.exp(-r*T)*_n.cdf(-d2)-S*_n.cdf(-d1)
+                _ps = _bsm_p(_S,_sug_short,_T,_r,_IV)
+                _pl = _bsm_p(_S,_sug_long,_T,_r,_IV)
+                _sug_credit = max(0, _ps - _pl)
+            except: _sug_credit = 0
+
+            st.markdown("**④ Suggested strikes (based on what you entered):**")
+            _eff = _sug_credit/_spread_w*100 if _spread_w>0 else 0
+            _eff_label = "✅ Good" if _eff>=20 else "⚠️ Thin"
+            if spread_kind == "PUT":
+                st.success(
+                    f"Expected move: ±{_sug_em:.0f} points over {dte} DTE\n\n"
+                    f"**SELL (higher #):** {_sug_short:.0f}  ←  the PUT you collect premium from\n"
+                    f"**BUY protection (lower #):** {_sug_long:.0f}  ←  your safety net\n"
+                    f"Estimated credit: ~${_sug_credit:.2f}/point = ~${_sug_credit*100:.0f}/contract  {_eff_label}"
+                )
+            else:
+                st.success(
+                    f"Expected move: ±{_sug_em:.0f} points over {dte} DTE\n\n"
+                    f"**SELL (lower #):** {_sug_short:.0f}  ←  the CALL you collect premium from\n"
+                    f"**BUY protection (higher #):** {_sug_long:.0f}  ←  your safety net\n"
+                    f"Estimated credit: ~${_sug_credit:.2f}/point = ~${_sug_credit*100:.0f}/contract  {_eff_label}"
+                )
+
+        # ── Step 5: Enter your actual strikes ─────────────────────────────────
+        st.markdown("**⑤ Enter the strikes you are using:**")
+        if _lvl_v in ["Beginner","Intermediate"]:
+            st.caption("Use the suggested strikes above, or enter strikes from your broker's option chain.")
+
+        _short_default = float(_sug_short) if _sug_short > 0 else 0.0
+        _long_default  = float(_sug_long)  if _sug_long  > 0 else 0.0
+
+        if spread_kind == "PUT":
+            short_strike = st.number_input(
+                "PUT you SELL — the HIGHER number (e.g. 7395)",
+                value=_short_default, step=5.0,
+                help="In your broker: this is the 'Sell to Open' leg. Higher strike = further from danger in a PUT spread."
+            )
+            long_strike = st.number_input(
+                "PUT you BUY for protection — the LOWER number (e.g. 7390)",
+                value=_long_default, step=5.0,
+                help="In your broker: this is the 'Buy to Open' leg. This limits your maximum possible loss."
+            )
+        else:  # CALL
+            short_strike = st.number_input(
+                "CALL you SELL — the LOWER number",
+                value=_short_default, step=5.0,
+                help="In your broker: 'Sell to Open'. For a CALL spread, you sell the lower call strike."
+            )
+            long_strike = st.number_input(
+                "CALL you BUY for protection — the HIGHER number",
+                value=_long_default, step=5.0,
+                help="In your broker: 'Buy to Open'. This caps your loss if the market surges."
+            )
+
+        if short_strike > 0 and long_strike > 0:
+            _sw = abs(short_strike - long_strike)
+            _label = ("✅ Makes sense" 
+                      if (spread_kind=="PUT" and short_strike > long_strike) or
+                         (spread_kind=="CALL" and short_strike < long_strike)
+                      else "⚠️ Check: for a PUT spread, the SELL number should be HIGHER than the BUY number")
+            st.caption(f"Spread width: {_sw:.0f} points = ${_sw*100:.0f} max width per contract. {_label}")
+
+        # ── Step 6: Credit received ─────────────────────────────────────────
+        st.markdown("**⑥ Credit you collected (or are targeting):**")
+        _credit_default = float(_sug_credit) if _sug_credit > 0 else 0.0
+        spread_credit = st.number_input(
+            "Net credit per share (e.g. 0.50 = $50 per contract)" 
+            if _lvl_v in ["Beginner","Intermediate"] else "Net Credit ($/spread)",
+            value=_credit_default, step=0.05,
+            help=(
+                "This is the money you receive immediately when you sell the spread. "
+                "$0.50 credit × 100 = $50 in your account right now. "
+                "Check your broker's option chain for the current mid-price."
+                if _lvl_v in ["Beginner","Intermediate"] else
+                "Net credit in index points. $1.00 = $100/contract. Use mid-price (bid+ask)/2."
+            )
+        )
+
+        if spread_credit > 0 and short_strike > 0:
+            _w = abs(short_strike-long_strike)
+            if _w > 0:
+                _eff2 = spread_credit/_w*100
+                if _eff2 < 15:
+                    st.error(f"🔴 Credit ({_eff2:.1f}% of width) is very thin. You're risking ${_w*100:.0f} to make ${spread_credit*100:.0f}. Consider a wider spread or different strikes.")
+                elif _eff2 < 20:
+                    st.warning(f"⚠️ Credit ({_eff2:.1f}% of width) is below the 20% IWT minimum. Try to collect at least ${_w*0.20:.2f} per share.")
+                else:
+                    st.success(f"✅ Credit ({_eff2:.1f}% of width). Max profit ${spread_credit*100:.0f} | Max loss ${(_w-spread_credit)*100:.0f} per contract.")
+
+        # ── Remaining inputs ─────────────────────────────────────────────────
+        short_delta = st.number_input(
+            "Delta of the strike you sold (from your broker)" if _lvl_v in ["Beginner","Intermediate"] else "Approx Short Strike Delta",
+            value=0.15, min_value=0.01, max_value=0.60, step=0.01,
+            help=(
+                "Delta is shown on your broker's option chain. Look at the strike you sold. "
+                "A delta of 0.15 means the option has about 15% chance of expiring in the money (and about 85% chance of expiring worthless — profit for you)."
+                if _lvl_v in ["Beginner","Intermediate"] else
+                "Short strike delta. POP ≈ 1 − |delta|. POT ≈ 2 × |delta|."
+            )
+        )
+        event_risk_48h = st.checkbox(
+            "⚠️ Big news event in the next 2 days?" if _lvl_v in ["Beginner","Intermediate"] else "Major event within 48h?",
+            value=False,
+            help=(
+                "Examples: Fed interest rate decision, jobs report (NFP), inflation data (CPI). "
+                "These can cause large sudden moves that hurt your spread. When in doubt, wait until after."
+                if _lvl_v in ["Beginner","Intermediate"] else
+                "CPI/PPI/FOMC/NFP/Treasury auction. App penalizes new premium entry near catalysts."
+            )
+        )
+        hold_through_event = st.checkbox(
+            "Are you planning to hold through that event?" if _lvl_v in ["Beginner","Intermediate"] else "Would hold through event?",
+            value=False,
+            help=(
+                "Holding a spread through a news event is risky — the market can gap far in one direction. "
+                "IWT teaches: when unsure, close before the event or don't open it."
+                if _lvl_v in ["Beginner","Intermediate"] else
+                "Holding short premium through catalysts materially increases tail risk."
+            )
+        )
 
 
     # === IV RANK — auto-computed from live VIX 52w history ===
