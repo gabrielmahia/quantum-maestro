@@ -803,6 +803,281 @@ def live_options_greeks_v2(ticker, dte_target=30, r_annual=0.045):
         result["source_label"] = "yfinance delayed IV + BSM exact (scipy)"
     return result
 
+# =============================================================================
+# TRADING ENGINE — V6
+# Tradier brokerage API integration for actual trade execution.
+# Instruments: US Stocks, ETFs, Options (single + multi-leg spreads).
+# Philosophy: IWT discipline → analysis FIRST, execute only when permitted.
+# Safety: two-step confirm, max-loss display, PDT check, IWT gate.
+# Note: Futures/Forex require a separate broker (see RESOURCES.md).
+# =============================================================================
+
+import urllib.request, urllib.parse, json
+
+# ── Account management ──────────────────────────────────────────────────────
+
+@st.cache_data(ttl=30)
+def tdr_get_account_id():
+    """Get primary Tradier account number from user profile."""
+    headers, base = _tradier_headers()
+    if not headers: return None
+    try:
+        req = urllib.request.Request(f"{base}/v1/user/profile", headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            d = json.loads(r.read())
+        accts = d.get("profile", {}).get("account", [])
+        if isinstance(accts, dict): accts = [accts]
+        # Prefer margin account; fall back to first
+        for a in accts:
+            if a.get("classification") in ["individual", "margin", "traditional_ira"]:
+                return a.get("account_number")
+        return accts[0].get("account_number") if accts else None
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=30)
+def tdr_get_balances(account_id):
+    """Account cash, equity, and buying power."""
+    headers, base = _tradier_headers()
+    if not headers or not account_id: return None
+    try:
+        req = urllib.request.Request(
+            f"{base}/v1/accounts/{account_id}/balances", headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            d = json.loads(r.read())
+        b = d.get("balances", {})
+        return {
+            "total_equity":    float(b.get("total_equity", 0)),
+            "cash":            float(b.get("cash", {}).get("cash_available", 0)
+                                     if isinstance(b.get("cash"), dict)
+                                     else b.get("total_cash", 0)),
+            "option_bp":       float(b.get("option_buying_power", 0)),
+            "stock_bp":        float(b.get("stock_buying_power", 0)),
+            "day_trade_bp":    float(b.get("day_trading_buying_power", 0)),
+            "pdt_status":      bool(b.get("pattern_day_trader", False)),
+            "account_type":    b.get("account_type", "unknown"),
+        }
+    except Exception: return None
+
+
+@st.cache_data(ttl=30)
+def tdr_get_positions(account_id):
+    """Open positions."""
+    headers, base = _tradier_headers()
+    if not headers or not account_id: return []
+    try:
+        req = urllib.request.Request(
+            f"{base}/v1/accounts/{account_id}/positions", headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            d = json.loads(r.read())
+        pos = d.get("positions", {}).get("position", [])
+        if isinstance(pos, dict): pos = [pos]
+        return pos or []
+    except Exception: return []
+
+
+@st.cache_data(ttl=15)
+def tdr_get_orders(account_id):
+    """Recent orders (last 30 days)."""
+    headers, base = _tradier_headers()
+    if not headers or not account_id: return []
+    try:
+        req = urllib.request.Request(
+            f"{base}/v1/accounts/{account_id}/orders", headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            d = json.loads(r.read())
+        ords = d.get("orders", {}).get("order", [])
+        if isinstance(ords, dict): ords = [ords]
+        return ords or []
+    except Exception: return []
+
+
+# ── Order building utilities ────────────────────────────────────────────────
+
+def build_option_symbol(underlying: str, expiry_str: str,
+                        option_type: str, strike: float) -> str:
+    """
+    Build OCC-standard option symbol for Tradier.
+    underlying: "SPY", "AAPL", "SPX"
+    expiry_str: "2026-06-19" (YYYY-MM-DD)
+    option_type: "CALL" or "PUT"
+    strike: 730.0 or 5300.0
+    Returns: e.g. "SPY260619P00730000"
+    """
+    from datetime import datetime
+    exp = datetime.strptime(expiry_str, "%Y-%m-%d")
+    exp_code  = exp.strftime("%y%m%d")              # YYMMDD
+    type_char = "C" if option_type.upper()[0] == "C" else "P"
+    strike_int = round(strike * 1000)               # dollars → milli-dollars
+    return f"{underlying.upper()}{exp_code}{type_char}{strike_int:08d}"
+
+
+def _tdr_post(endpoint: str, form_data: dict) -> dict:
+    """
+    POST form-encoded data to Tradier.
+    Tradier trading endpoints use application/x-www-form-urlencoded.
+    Returns parsed JSON response.
+    """
+    headers, base = _tradier_headers()
+    if not headers:
+        return {"error": "Tradier not configured"}
+    payload = urllib.parse.urlencode(form_data).encode()
+    req = urllib.request.Request(
+        f"{base}{endpoint}", data=payload, method="POST",
+        headers={**headers, "Content-Type": "application/x-www-form-urlencoded"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        try:    return json.loads(body)
+        except: return {"error": f"HTTP {e.code}: {body[:200]}"}
+    except Exception as ex:
+        return {"error": str(ex)}
+
+
+# ── Order execution functions ───────────────────────────────────────────────
+
+def tdr_place_equity_order(
+    account_id: str,
+    symbol: str,
+    side: str,           # "buy" | "sell"
+    quantity: int,
+    order_type: str,     # "market" | "limit" | "stop" | "stop_limit"
+    limit_price: float = None,
+    stop_price: float  = None,
+    duration: str      = "day",
+    tag: str           = "EasyStockTrader",
+) -> dict:
+    """Place a stock/ETF order. Returns Tradier order response."""
+    params = {
+        "class":    "equity",
+        "symbol":   symbol.upper(),
+        "side":     side,
+        "quantity": str(int(quantity)),
+        "type":     order_type,
+        "duration": duration,
+        "tag":      tag,
+    }
+    if order_type in ("limit", "stop_limit") and limit_price is not None:
+        params["price"] = f"{limit_price:.2f}"
+    if order_type in ("stop", "stop_limit") and stop_price is not None:
+        params["stop"] = f"{stop_price:.2f}"
+    return _tdr_post(f"/v1/accounts/{account_id}/orders", params)
+
+
+def tdr_place_option_order(
+    account_id: str,
+    option_symbol: str,  # OCC format e.g. "SPY260619P00730000"
+    side: str,           # "buy_to_open" | "sell_to_open" | "buy_to_close" | "sell_to_close"
+    quantity: int,
+    order_type: str,     # "market" | "limit"
+    limit_price: float = None,
+    duration: str      = "day",
+    tag: str           = "EasyStockTrader",
+) -> dict:
+    """Place a single-leg options order."""
+    params = {
+        "class":         "option",
+        "symbol":        option_symbol[:3].rstrip(),   # root symbol
+        "option_symbol": option_symbol,
+        "side":          side,
+        "quantity":      str(int(quantity)),
+        "type":          order_type,
+        "duration":      duration,
+        "tag":           tag,
+    }
+    if order_type == "limit" and limit_price is not None:
+        params["price"] = f"{limit_price:.2f}"
+    return _tdr_post(f"/v1/accounts/{account_id}/orders", params)
+
+
+def tdr_place_spread_order(
+    account_id: str,
+    underlying: str,
+    legs: list,           # [{"symbol":occ_sym, "side":side, "qty":int}, ...]
+    net_price: float,     # credit positive, debit negative
+    order_type: str = "limit",
+    duration: str   = "day",
+    tag: str        = "EasyStockTrader",
+) -> dict:
+    """
+    Place a multi-leg options order (vertical spread, etc.).
+    Credit spreads: net_price > 0 (you're receiving money).
+    Debit spreads:  net_price < 0 (you're paying money).
+    Tradier always receives 'price' as absolute value with sign implied by sides.
+    """
+    params = {
+        "class":    "multileg",
+        "symbol":   underlying.upper(),
+        "type":     order_type,
+        "duration": duration,
+        "price":    f"{abs(net_price):.2f}",
+        "tag":      tag,
+    }
+    for i, leg in enumerate(legs):
+        params[f"legs[{i}][option_symbol]"] = leg["symbol"]
+        params[f"legs[{i}][side]"]          = leg["side"]
+        params[f"legs[{i}][quantity]"]      = str(int(leg["qty"]))
+    return _tdr_post(f"/v1/accounts/{account_id}/orders", params)
+
+
+def tdr_cancel_order(account_id: str, order_id: str) -> dict:
+    """Cancel an open order."""
+    headers, base = _tradier_headers()
+    if not headers: return {"error": "Tradier not configured"}
+    req = urllib.request.Request(
+        f"{base}/v1/accounts/{account_id}/orders/{order_id}",
+        method="DELETE", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read())
+    except Exception as ex:
+        return {"error": str(ex)}
+
+
+# ── Trade safety checks ─────────────────────────────────────────────────────
+
+def trade_safety_check(balances, max_loss, qty, pdt_impact=False) -> dict:
+    """
+    Pre-trade safety gate. Returns dict with pass/fail for each check.
+    All checks are advisory (warnings) — user can override with explicit confirm.
+    """
+    if not balances:
+        return {"error": "Cannot load account balances. Check Tradier connection."}
+
+    checks = []
+
+    # 1. Buying power
+    bp = balances.get("option_bp") or balances.get("cash") or 0
+    risk_pct_of_bp = (max_loss / bp * 100) if bp > 0 else 100
+    checks.append({
+        "name":   "Buying power",
+        "pass":   max_loss <= bp,
+        "detail": f"Max loss ${max_loss:,.0f} vs buying power ${bp:,.0f} ({risk_pct_of_bp:.1f}%)"
+    })
+
+    # 2. Risk-per-trade (Kelly discipline: don't risk > 5% of equity on one trade)
+    equity = balances.get("total_equity", bp)
+    equity_risk_pct = (max_loss / equity * 100) if equity > 0 else 100
+    checks.append({
+        "name":   "Position size (Kelly)",
+        "pass":   equity_risk_pct <= 5,
+        "detail": f"This trade risks {equity_risk_pct:.1f}% of total equity. IWT/Kelly discipline: max 2-5% per trade."
+    })
+
+    # 3. PDT warning
+    if pdt_impact and balances.get("pdt_status") is False and equity < 25000:
+        checks.append({
+            "name":   "PDT (Pattern Day Trader)",
+            "pass":   False,
+            "detail": "Account < $25k. This may count as a day trade if opened and closed same day."
+        })
+
+    return {"checks": checks, "all_pass": all(c["pass"] for c in checks)}
+
 # V4 — FULL INSTRUMENT SUITE · AUTO-DATA · BEGINNER-TO-PRO LANGUAGE
 # =============================================================================
 
@@ -3361,6 +3636,495 @@ with st.expander("🎲 Kelly Criterion & Risk-of-Ruin", expanded=False):
                 "Half Kelly is the institutional compromise. Full Kelly is rarely used outside academia."
             )
 
+
+# =============================================================================
+# LIVE TRADING — Account · Order Builder · Confirm · Execute
+# Tradier brokerage integration.
+# Every order requires two explicit steps: Preview → Confirm.
+# Futures/Forex require a separate broker (see TRADIER_SETUP.md).
+# =============================================================================
+
+st.divider()
+st.header("📤 Execute Trade")
+_lvl = st.session_state.lang_level
+
+if not _tradier_is_connected():
+    st.info(
+        "🔗 **Connect Tradier to enable live trading.** "
+        "See **TRADIER_SETUP.md** in the repo for the two-minute setup. "
+        "Once connected, this section lets you place real orders directly from the analysis above."
+    )
+else:
+    _env_label = (st.secrets.get("TRADIER_ENV") or
+                  st.secrets.get("tradier", {}).get("env", "production")).lower()
+    _is_sandbox = _env_label == "sandbox"
+
+    if _is_sandbox:
+        st.warning(
+            "🧪 **PAPER TRADING MODE (Sandbox)** — orders are simulated, no real money is at risk. "
+            "Change TRADIER_ENV = production in Streamlit secrets to trade live."
+        )
+    else:
+        st.error(
+            "⚡ **LIVE TRADING MODE** — orders execute in your REAL Tradier account with REAL money. "
+            "Every click costs money if filled. There are no take-backs after a filled order."
+        )
+
+    # ── Account dashboard ────────────────────────────────────────────────────
+    _acct_id = tdr_get_account_id()
+    _bal     = tdr_get_balances(_acct_id) if _acct_id else None
+
+    if _bal:
+        col_b1, col_b2, col_b3, col_b4 = st.columns(4)
+        col_b1.metric("Total Equity",    f"${_bal['total_equity']:,.2f}")
+        col_b2.metric("Options BP",      f"${_bal['option_bp']:,.2f}",
+                      help="Buying power available for options trades.")
+        col_b3.metric("Stock BP",        f"${_bal['stock_bp']:,.2f}")
+        col_b4.metric("PDT Flag",
+                      "⚠️ PDT" if _bal["pdt_status"] else "✅ No PDT",
+                      help="Pattern Day Trader flag — if flagged, intraday round-trips are restricted.")
+
+        if _bal["pdt_status"]:
+            st.warning(
+                "⚠️ **Pattern Day Trader (PDT) flag active.** "
+                "Your account is flagged for exceeding 3 intraday round-trips in a 5-day window. "
+                "Restrictions apply until equity reaches $25,000."
+            )
+
+    # Positions summary
+    with st.expander("📋 Current Positions & Open Orders", expanded=False):
+        _positions = tdr_get_positions(_acct_id) if _acct_id else []
+        _orders    = tdr_get_orders(_acct_id)    if _acct_id else []
+
+        if _positions:
+            st.markdown("**Open Positions:**")
+            _pos_rows = []
+            for p in _positions:
+                _pos_rows.append({
+                    "Symbol": p.get("symbol",""),
+                    "Qty":    p.get("quantity",""),
+                    "Cost":   f"${float(p.get('cost_basis',0)):.2f}",
+                    "Value":  f"${float(p.get('market_value',0)):.2f}",
+                    "P&L":    f"${float(p.get('gain_loss',0)):+.2f}",
+                })
+            st.dataframe(pd.DataFrame(_pos_rows), use_container_width=True)
+        else:
+            st.caption("No open positions.")
+
+        if _orders:
+            st.markdown("**Recent Orders:**")
+            _ord_rows = []
+            for o in _orders[:15]:
+                _ord_rows.append({
+                    "ID":     str(o.get("id","")),
+                    "Symbol": o.get("symbol",""),
+                    "Type":   o.get("class",""),
+                    "Side":   o.get("side",""),
+                    "Qty":    o.get("quantity",""),
+                    "Status": o.get("status",""),
+                    "Price":  f"${float(o.get('price',0) or 0):.2f}" if o.get("price") else "MKT",
+                })
+            st.dataframe(pd.DataFrame(_ord_rows), use_container_width=True)
+
+            # Cancel button for open orders
+            _open_ords = [o for o in _orders if o.get("status") in ("open","pending")]
+            if _open_ords:
+                _cancel_id = st.selectbox(
+                    "Cancel order:",
+                    ["— select —"] + [f"{o['id']} | {o.get('symbol','')} {o.get('side','')} {o.get('quantity','')}" for o in _open_ords]
+                )
+                if _cancel_id != "— select —":
+                    _oid = _cancel_id.split(" | ")[0]
+                    if st.button("🗑️ Cancel this order", type="secondary"):
+                        _cr = tdr_cancel_order(_acct_id, _oid)
+                        if _cr.get("order", {}).get("status") == "ok" or _cr.get("order"):
+                            st.success(f"✅ Order {_oid} cancelled.")
+                            st.cache_data.clear()
+                        else:
+                            st.error(f"Cancel failed: {_cr}")
+        else:
+            st.caption("No recent orders.")
+
+    st.divider()
+
+    # ── Order builder ─────────────────────────────────────────────────────────
+    st.subheader("🏗️ Build Your Order")
+
+    _order_class = st.selectbox(
+        "What are you trading?",
+        ["SPX/SPY Vertical Credit Spread  (income — sell premium)",
+         "IWT Long Option — 60+ DTE  (directional — buy premium)",
+         "Single Stock or ETF  (long or short)",
+         "Close / Exit an existing position"],
+        help=(
+            "Stocks and ETFs: buy or sell shares directly. "
+            "Options: defined-risk contracts. "
+            "Futures require a separate broker (IBKR, NinjaTrader, thinkorSwim)."
+        )
+    )
+
+    _order_result = None
+    _max_loss_order = 0
+    _order_preview  = {}
+
+    # ════════════════════════════════════════════════════════════════════════
+    # PATH 1: Vertical Credit Spread
+    # ════════════════════════════════════════════════════════════════════════
+    if "Vertical Credit Spread" in _order_class:
+        st.markdown("### 📊 SPX/SPY Vertical Credit Spread")
+        if _lvl == "Beginner":
+            st.info(
+                "💡 You're selling a put spread. You collect premium upfront. "
+                "Your max profit is that premium. Your max loss is the spread width minus premium. "
+                "You need the market to stay ABOVE your short strike at expiration."
+            )
+
+        _vs_col1, _vs_col2 = st.columns(2)
+        with _vs_col1:
+            _vs_under = st.text_input("Underlying (SPY for small accounts, SPX for $50k+)", value="SPY")
+            _vs_type  = st.radio("Spread type", ["Put Credit Spread", "Call Credit Spread"], horizontal=True)
+            _vs_expiry= st.date_input("Expiration date")
+            _vs_short = st.number_input("Short strike (the one you SELL)", value=0.0, step=0.5)
+            _vs_long  = st.number_input("Long strike (the one you BUY for protection)", value=0.0, step=0.5)
+        with _vs_col2:
+            _vs_credit = st.number_input("Net credit per share ($)", value=0.0, step=0.05,
+                help="Mid-price of the spread. (Short bid + Long ask) / 2. Enter as positive number.")
+            _vs_qty    = st.number_input("Contracts", value=1, min_value=1, max_value=50, step=1)
+            _vs_otype  = "PUT" if "Put" in _vs_type else "CALL"
+
+        if _vs_short > 0 and _vs_long > 0 and _vs_credit > 0 and _vs_expiry:
+            _width         = abs(_vs_short - _vs_long)
+            _max_profit    = _vs_credit * 100 * _vs_qty
+            _max_loss_order= (_width - _vs_credit) * 100 * _vs_qty
+            _breakeven     = (_vs_short - _vs_credit if _vs_otype=="PUT" else _vs_short + _vs_credit)
+            _credit_eff    = _vs_credit / _width if _width > 0 else 0
+
+            st.code(
+                f"Spread:      {_vs_under} ${_vs_short:.2f}/{_vs_long:.2f} {_vs_otype} "
+                + _vs_expiry.strftime("%b %d %Y")
+                + f"\nContracts:   {_vs_qty}"
+                + f"\nCredit:      ${_vs_credit:.2f}/share = ${_max_profit:,.2f} total"
+                + f"\nMax loss:    ${_max_loss_order:,.2f} (if spread goes full width)"
+                + f"\nBreakeven:   ${_breakeven:.2f}"
+                + f"\nCredit eff:  {_credit_eff:.0%} of width "
+                + ("✅ Good" if _credit_eff >= 0.25 else "⚠️ Thin — below 25%")
+            )
+
+            _short_sym = build_option_symbol(_vs_under, _vs_expiry.strftime("%Y-%m-%d"), _vs_otype, _vs_short)
+            _long_sym  = build_option_symbol(_vs_under, _vs_expiry.strftime("%Y-%m-%d"), _vs_otype, _vs_long)
+
+            _order_preview = {
+                "class": "spread",
+                "underlying": _vs_under,
+                "legs": [
+                    {"symbol": _short_sym, "side": "sell_to_open", "qty": _vs_qty},
+                    {"symbol": _long_sym,  "side": "buy_to_open",  "qty": _vs_qty},
+                ],
+                "net_price": _vs_credit,
+                "description": (
+                    f"SELL {_vs_qty}x {_vs_under} {_vs_otype} {_vs_short} / "
+                    f"BUY {_vs_qty}x {_vs_under} {_vs_otype} {_vs_long} "
+                    f"exp {_vs_expiry.strftime('%Y-%m-%d')} for ${_vs_credit:.2f} credit"
+                ),
+                "max_profit": _max_profit,
+                "max_loss":   _max_loss_order,
+            }
+
+    # ════════════════════════════════════════════════════════════════════════
+    # PATH 2: IWT Long Option (60+ DTE)
+    # ════════════════════════════════════════════════════════════════════════
+    elif "IWT Long Option" in _order_class:
+        st.markdown("### 📈 IWT Long Option — 60+ DTE")
+        if _lvl == "Beginner":
+            st.info(
+                "💡 You're BUYING an option — paying premium upfront. "
+                "Your max loss is exactly what you pay (the premium). "
+                "Your max gain is unlimited (for calls) or down to zero (for puts). "
+                "IWT rule: minimum 60 days to expiry. Target delta 0.70+."
+            )
+
+        _lo_col1, _lo_col2 = st.columns(2)
+        with _lo_col1:
+            _lo_under  = st.text_input("Underlying (SPY, AAPL, QQQ, GLD...)", value="SPY")
+            _lo_dir    = st.radio("Direction", ["CALL (bullish)", "PUT (bearish)"], horizontal=True)
+            _lo_expiry = st.date_input("Expiration (min 60 days out)", key="lo_exp")
+            _lo_strike = st.number_input("Strike price (choose DITM: delta 0.70+)", value=0.0, step=0.5)
+        with _lo_col2:
+            _lo_premium = st.number_input("Premium per share ($)", value=0.0, step=0.05,
+                help="Cost of one option contract. $5.00 = $500 per contract.")
+            _lo_qty     = st.number_input("Contracts", value=1, min_value=1, max_value=20, step=1)
+
+        from datetime import date as _date
+        _lo_dte = (_lo_expiry - _date.today()).days if _lo_expiry else 0
+
+        if _lo_premium > 0 and _lo_strike > 0 and _lo_expiry:
+            _lo_total_cost  = _lo_premium * 100 * _lo_qty
+            _lo_stop_value  = _lo_total_cost * 0.50   # IWT 50% stop
+            _lo_target_50   = _lo_total_cost * 0.50   # IWT 50% profit target
+            _lo_target_100  = _lo_total_cost * 1.00
+
+            _lo_otype = "CALL" if "CALL" in _lo_dir else "PUT"
+            _dte_ok   = _lo_dte >= 60
+
+            if not _dte_ok:
+                st.error(f"⚠️ {_lo_dte} DTE is below IWT's 60-day minimum. Theta decay will hurt you faster.")
+            else:
+                st.success(f"✅ {_lo_dte} DTE — IWT compliant")
+
+            st.code(
+                f"Buy {_lo_qty}x {_lo_under} {_lo_otype} ${_lo_strike:.2f} "
+                + "exp " + _lo_expiry.strftime("%b %d %Y")
+                + f"\nPremium:      ${_lo_premium:.2f}/share = ${_lo_total_cost:,.2f} total"
+                + f"\nIWT stop:     ${_lo_stop_value:,.2f} (50% loss — hard rule)"
+                + f"\n50%% target:   ${_lo_target_50:,.2f} gain"
+                + f"\n100%% target:  ${_lo_target_100:,.2f} gain"
+            )
+
+            _max_loss_order = _lo_total_cost
+            _lo_sym = build_option_symbol(_lo_under, _lo_expiry.strftime("%Y-%m-%d"), _lo_otype, _lo_strike)
+
+            _order_preview = {
+                "class":       "option",
+                "option_symbol": _lo_sym,
+                "side":        "buy_to_open",
+                "qty":         _lo_qty,
+                "net_price":   _lo_premium,
+                "description": (
+                    f"BUY {_lo_qty}x {_lo_under} {_lo_otype} {_lo_strike} "
+                    f"exp {_lo_expiry.strftime('%Y-%m-%d')} @ ${_lo_premium:.2f}"
+                ),
+                "max_profit":  float("inf"),
+                "max_loss":    _max_loss_order,
+            }
+
+    # ════════════════════════════════════════════════════════════════════════
+    # PATH 3: Stock or ETF
+    # ════════════════════════════════════════════════════════════════════════
+    elif "Stock or ETF" in _order_class:
+        st.markdown("### 📦 Stock / ETF Order")
+        if _lvl == "Beginner":
+            st.info(
+                "💡 Buying shares = owning a piece of the company. "
+                "Your max loss = the full amount you invest (if it goes to zero). "
+                "Always use a stop-loss order to limit your downside."
+            )
+
+        _eq_col1, _eq_col2 = st.columns(2)
+        with _eq_col1:
+            _eq_sym   = st.text_input("Symbol (SPY, AAPL, GLD...)", value="SPY")
+            _eq_side  = st.radio("Action", ["Buy (long)", "Sell short"], horizontal=True)
+            _eq_qty   = st.number_input("Shares", value=1, min_value=1, max_value=10000, step=1)
+        with _eq_col2:
+            _eq_otype = st.radio("Order type", ["Limit (recommended)", "Market"], horizontal=True)
+            _eq_limit = st.number_input("Limit price ($)", value=0.0, step=0.01) if "Limit" in _eq_otype else None
+            _eq_stop  = st.number_input("Stop-loss price ($)", value=0.0, step=0.01,
+                help="Optional: set a stop to cap your loss. Leave 0 to skip.")
+            _eq_dur   = st.radio("Duration", ["Day", "GTC"], horizontal=True)
+
+        if _eq_limit and _eq_limit > 0 and _eq_stop and _eq_stop > 0:
+            _eq_actual_side = "buy" if "Buy" in _eq_side else "sell"
+            _eq_risk = abs(_eq_limit - _eq_stop) * _eq_qty if _eq_stop > 0 else _eq_limit * _eq_qty
+            _max_loss_order = _eq_risk
+
+            st.code(
+                f"{'BUY' if 'buy' in _eq_actual_side else 'SELL'} {_eq_qty} {_eq_sym} "
+                + f"@ limit ${_eq_limit:.2f}"
+                + f"\nStop-loss:  ${_eq_stop:.2f}"
+                + f"\nMax risk:   ${_eq_risk:,.2f}"
+            )
+
+            _order_preview = {
+                "class":       "equity",
+                "symbol":      _eq_sym,
+                "side":        _eq_actual_side,
+                "qty":         _eq_qty,
+                "order_type":  "limit" if "Limit" in _eq_otype else "market",
+                "limit_price": _eq_limit,
+                "stop_price":  _eq_stop if _eq_stop > 0 else None,
+                "duration":    _eq_dur.lower(),
+                "description": (
+                    f"{'BUY' if 'buy' in _eq_actual_side else 'SELL'} {_eq_qty}x {_eq_sym} "
+                    f"limit ${_eq_limit:.2f} stop ${_eq_stop:.2f} {_eq_dur}"
+                ),
+                "max_profit": None,
+                "max_loss":   _max_loss_order,
+            }
+
+    # ════════════════════════════════════════════════════════════════════════
+    # PATH 4: Close existing position
+    # ════════════════════════════════════════════════════════════════════════
+    else:
+        st.markdown("### 🚪 Close / Exit Position")
+        _positions_close = tdr_get_positions(_acct_id) if _acct_id else []
+        if not _positions_close:
+            st.info("No open positions found. Positions appear here after your first trade.")
+        else:
+            _pos_labels = {
+                f"{p.get('symbol','')} | Qty: {p.get('quantity','')} | P&L: ${float(p.get('gain_loss',0)):+.2f}": p
+                for p in _positions_close
+            }
+            _sel_pos_label = st.selectbox("Select position to close", list(_pos_labels.keys()))
+            _sel_pos = _pos_labels[_sel_pos_label]
+            _close_qty = st.number_input("Quantity to close",
+                min_value=1, max_value=abs(int(_sel_pos.get("quantity",1))),
+                value=abs(int(_sel_pos.get("quantity",1))))
+            _close_type = st.radio("Close order type", ["Limit", "Market"], horizontal=True)
+            _close_price = st.number_input("Limit price ($)", value=0.0, step=0.01) if _close_type == "Limit" else None
+
+            _sym = _sel_pos.get("symbol","")
+            # Determine close side
+            _pos_qty = int(_sel_pos.get("quantity", 0))
+            _is_option_pos = len(_sym) > 10
+            if _is_option_pos:
+                _close_side = "sell_to_close" if _pos_qty > 0 else "buy_to_close"
+            else:
+                _close_side = "sell" if _pos_qty > 0 else "buy"
+
+            _order_preview = {
+                "class":       "option" if _is_option_pos else "equity",
+                "symbol":      _sym,
+                "option_symbol": _sym if _is_option_pos else None,
+                "side":        _close_side,
+                "qty":         _close_qty,
+                "order_type":  "limit" if _close_type == "Limit" else "market",
+                "limit_price": _close_price,
+                "description": f"CLOSE {_close_qty}x {_sym} @ {'$'+str(_close_price) if _close_price else 'market'}",
+                "max_profit":  None,
+                "max_loss":    0,
+            }
+            _max_loss_order = 0
+
+    # ════════════════════════════════════════════════════════════════════════
+    # CONFIRM AND EXECUTE (all paths converge here)
+    # ════════════════════════════════════════════════════════════════════════
+    if _order_preview:
+        st.divider()
+        st.subheader("⚠️ Order Preview — Review Before Submitting")
+
+        _safety = trade_safety_check(_bal, _max_loss_order, _order_preview.get("qty",1)) if _bal else {"checks":[],"all_pass":False}
+
+        st.markdown(f"**Order:** `{_order_preview['description']}`")
+
+        if _order_preview.get("max_loss"):
+            st.error(
+                f"🔴 **Maximum possible loss on this trade: "
+                f"${_order_preview['max_loss']:,.2f}**"
+                + (f" | Max profit: ${_order_preview['max_profit']:,.2f}" if _order_preview.get("max_profit") and _order_preview["max_profit"] != float("inf") else "")
+            )
+
+        # Safety check results
+        if _safety.get("checks"):
+            for chk in _safety["checks"]:
+                icon = "✅" if chk["pass"] else "⚠️"
+                st.caption(f"{icon} {chk['name']}: {chk['detail']}")
+
+        _instrument_note = ""
+        if "Futures" in _order_class or "futures" in _order_class.lower():
+            st.warning("⚠️ Futures are NOT supported via Tradier. Use Interactive Brokers, NinjaTrader, or thinkorSwim.")
+
+        # Beginner plain-English summary
+        if _lvl == "Beginner":
+            _plain = f"""
+What you're about to do: {_order_preview['description']}
+
+The most you can lose: ${_order_preview.get('max_loss',0):,.2f}
+
+{"The most you can make: $"+f"{_order_preview['max_profit']:,.2f}" if _order_preview.get('max_profit') and _order_preview['max_profit'] != float('inf') else "Maximum gain: unlimited (options can grow if the stock moves far)"}
+
+{"✅ This is a paper trade — no real money." if _is_sandbox else "⚡ This is a REAL trade with REAL money."}
+"""
+            st.info(_plain)
+
+        # Two-step confirmation
+        _confirm1 = st.checkbox(
+            "✅ I have reviewed this order and the risk/reward above",
+            value=False
+        )
+        _confirm2 = st.checkbox(
+            f"{'🧪 I understand this is a paper trade (sandbox)' if _is_sandbox else '💸 I understand this will use REAL money from my Tradier account'}",
+            value=False
+        )
+
+        _can_submit = _confirm1 and _confirm2
+
+        if st.button(
+            f"{'🧪 Place Paper Order' if _is_sandbox else '💸 Place Live Order'}",
+            disabled=not _can_submit,
+            type="primary" if _can_submit else "secondary",
+            use_container_width=True
+        ):
+            _result = None
+            with st.spinner("Sending order to Tradier..."):
+                oc = _order_preview.get("class")
+                if oc == "spread":
+                    _result = tdr_place_spread_order(
+                        _acct_id,
+                        _order_preview["underlying"],
+                        _order_preview["legs"],
+                        _order_preview["net_price"],
+                    )
+                elif oc == "option":
+                    _result = tdr_place_option_order(
+                        _acct_id,
+                        _order_preview["option_symbol"],
+                        _order_preview["side"],
+                        _order_preview["qty"],
+                        "limit",
+                        _order_preview["net_price"],
+                    )
+                elif oc == "equity":
+                    _result = tdr_place_equity_order(
+                        _acct_id,
+                        _order_preview["symbol"],
+                        _order_preview["side"],
+                        _order_preview["qty"],
+                        _order_preview.get("order_type","limit"),
+                        _order_preview.get("limit_price"),
+                        _order_preview.get("stop_price"),
+                        _order_preview.get("duration","day"),
+                    )
+
+            if _result:
+                _ord = _result.get("order", {})
+                if _ord.get("status") == "ok":
+                    st.success(
+                        f"✅ Order submitted! ID: **{_ord.get('id','')}** | "
+                        f"Status: {_ord.get('status','')} | "
+                        f"{'Paper trade — no real money used.' if _is_sandbox else 'Live order sent to market.'}"
+                    )
+                    st.cache_data.clear()  # Force positions/orders refresh
+                else:
+                    err = _result.get("errors", {}).get("error", str(_result))
+                    st.error(f"❌ Order failed: {err}")
+                    if _lvl == "Beginner":
+                        st.info(
+                            "Common reasons: invalid symbol, market closed, insufficient buying power, "
+                            "or the option symbol format doesn't match an active contract. "
+                            "Double-check your strike and expiration date."
+                        )
+            else:
+                st.error("No response from Tradier. Check your connection.")
+
+        if not _can_submit:
+            st.caption("Check both boxes above to enable the order button.")
+
+    # Futures note (always visible at bottom of trading section)
+    with st.expander("📦 Futures & Forex Trading (different broker required)", expanded=False):
+        st.markdown("""
+Tradier supports US equities and equity options only.
+
+**For futures (ES, NQ, CL, GC, ZC, etc.)** use one of these brokers:
+| Broker | Instruments | API | Notes |
+|--------|------------|-----|-------|
+| [Interactive Brokers](https://ibkr.com) | Everything | ibapi (Python) | Best coverage, complex setup |
+| [NinjaTrader](https://ninjatrader.com) | Futures | NinjaScript / REST | Free for sim, $50/mo live |
+| [Schwab thinkorSwim](https://tdameritrade.com) | Equities + futures | REST API | Good for existing Schwab accounts |
+| [Tastytrade](https://tastytrade.com) | Options + futures | REST API | Best UX for options/futures combo |
+
+The **Futures Calculator** in this app (Futures mode in strategy selector) already computes your exact tick-value risk for all 14 contracts. Use that output to size your trade before placing in one of the brokers above.
+
+**For Forex** — Interactive Brokers, Oanda (oanda.com), or FXCM.
+""")
 
 # JOURNAL EXPORT
 if st.session_state.journal:
