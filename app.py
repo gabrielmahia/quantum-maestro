@@ -2483,34 +2483,79 @@ with st.sidebar:
     }
     st.caption(_lvl_captions[_lvl])
     st.divider()
-    st.header("1. Portfolio Settings")
+    st.header("1. Your Account")
 
-    capital = st.number_input("Total Capital ($)", value=10000, min_value=100,
-                             help="Your total account size. Example: $10,000 means you have ten thousand dollars.")
-    risk_per_trade = st.number_input("Risk per Trade ($)", value=100, min_value=10,
-                                     help="Maximum $ you're willing to lose on a single trade. Recommended: 1-2% of capital.")
-    max_portfolio_risk = st.number_input("Max Portfolio Risk (%)", value=6.0, min_value=1.0, max_value=20.0, step=0.5,
-                                         help="Maximum total risk across ALL open positions combined. Recommended: 5-10%.")
+    _lp = st.session_state.lang_level
+    if _lp in ["Beginner","Intermediate"]:
+        st.caption("Fill in your actual account details so the app sizes trades correctly for you.")
+
+    capital = st.number_input(
+        "How much money is in your trading account? ($)",
+        value=10000, min_value=100,
+        help="Your total account size right now. If you have $10,000 set aside for trading, enter 10000."
+    )
+    # Smart 1% default for risk
+    _default_risk = max(50, int(capital * 0.01))
+    risk_per_trade = st.number_input(
+        "Most you'll risk on ONE trade ($)",
+        value=_default_risk, min_value=10,
+        help=(
+            f"IWT rule: risk only 1% per trade (${_default_risk:.0f} on your ${capital:,.0f} account). "
+            "This means if the trade goes wrong, you lose at most this amount."
+            if _lp in ["Beginner","Intermediate"] else
+            "Max $ risk per trade. Recommended: 1-2% of capital. Used for Kelly/position sizing."
+        )
+    )
+    max_portfolio_risk = st.number_input(
+        "Total risk allowed across ALL open trades (%)",
+        value=6.0, min_value=1.0, max_value=20.0, step=0.5,
+        help=(
+            "If you have 3 trades open, their combined risk shouldn't exceed this %. "
+            "Example: 6% of $10,000 = $600 max total risk at any time."
+            if _lp in ["Beginner","Intermediate"] else
+            "Portfolio heat cap. Max total risk across all concurrent positions."
+        )
+    )
 
     daily_goal = capital * 0.01
-    st.caption(f"🎯 Daily Goal (1%): **${daily_goal:.2f}**")
-    st.caption("💡 Discipline rule: stop when you hit your daily goal.")
+    st.success(f"🎯 Your 1% daily goal: **${daily_goal:,.2f}**  — stop trading once you hit this!")
 
-    pdt_framework = st.selectbox(
-        "Day-Trade Rule Framework",
-        ["Legacy PDT", "New Intraday Margin", "Broker Unknown / Conservative"],
-        help="Legacy PDT is safest until your broker confirms migration. New intraday margin may remove fixed PDT counts but still uses broker risk controls."
-    )
+    st.divider()
     account_type = st.selectbox(
-        "Account Type",
-        ["Margin < $25k", "Margin ≥ $25k", "Cash Account", "IRA / Limited Margin"],
-        help="Used for conservative trade-budget guidance. Broker rules vary; verify with your broker."
+        "What kind of account is this?",
+        ["Margin < $25k (PDT rules apply)", "Margin ≥ $25k (no PDT limit)", "Cash Account", "IRA / Retirement Account"],
+        help=(
+            "Under $25,000? You can only make 3 same-day buy+sell trades every 5 business days (PDT rule). "
+            "Over $25,000? No restrictions. Cash accounts: no margin, no PDT issue."
+            if _lp in ["Beginner","Intermediate"] else
+            "Account classification for PDT/margin guidance."
+        ),
+        format_func=lambda x: x.replace("(PDT rules apply)","⚠️").replace("(no PDT limit)","✅")
     )
-    day_trades_used = st.number_input(
-        "Day Trades Used (rolling 5 business days)",
-        value=int(st.session_state.day_trades_used), min_value=0, max_value=3, step=1,
-        help="Under legacy PDT discipline, keep this under 4 in 5 business days for small margin accounts."
-    )
+    pdt_framework = ("Legacy PDT" if "<" in account_type else
+                     "New Intraday Margin" if "≥" in account_type else "Broker Unknown / Conservative")
+
+    if "<$25k" in account_type or "< $25k" in account_type:
+        day_trades_used = st.number_input(
+            "Day trades already used this week (0-3)",
+            value=int(st.session_state.day_trades_used), min_value=0, max_value=3, step=1,
+            help=(
+                "A 'day trade' = opening AND closing the same position on the same day. "
+                "You only get 3 in any 5-day window. Track this carefully."
+                if _lp in ["Beginner","Intermediate"] else
+                "Rolling 5-day day-trade count for legacy PDT tracking."
+            )
+        )
+        _remaining = 3 - int(day_trades_used)
+        if _remaining == 0:
+            st.error("🔴 No day trades left this week. Hold positions overnight or wait.")
+        elif _remaining == 1:
+            st.warning(f"⚠️ {_remaining} day trade left. Use it on your best setup only.")
+        else:
+            st.caption(f"✅ {_remaining} day trades remaining this week.")
+    else:
+        day_trades_used = 0
+        st.caption("✅ No day-trade limit on your account type.")
     st.session_state.day_trades_used = int(day_trades_used)
     planned_same_day_exit = st.checkbox(
         "Planned same-day exit?", value=False,
@@ -2554,24 +2599,50 @@ with st.sidebar:
         st.caption("💡 After 3 losses, position size automatically reduced by 50%.")
 
     st.divider()
-    st.header("🤖 What Are You Trying to Do?")
+    st.header("🤖 What Do You Want to Do Today?")
+    _lg = st.session_state.lang_level
+    if _lg in ["Beginner","Intermediate"]:
+        st.caption("This tells the app what to recommend. Pick the one closest to your goal.")
+    _goal_opts = [
+        "Weekly income (sell premium)",
+        "Capture a big directional move",
+        "Trade commodities / futures",
+        "I'm not sure — show me options",
+    ]
+    _goal_labels = {
+        "Weekly income (sell premium)":
+            "💰 Earn weekly income — sell options and collect credit",
+        "Capture a big directional move":
+            "🚀 Ride a big move — buy options for leverage on a trend",
+        "Trade commodities / futures":
+            "🛢️ Trade futures — oil, gold, corn, S&P micro-contracts",
+        "I'm not sure — show me options":
+            "🤷 Not sure yet — show me what makes sense today",
+    }
     st.session_state.advisor_goal = st.selectbox(
-        "Today's goal:",
-        ["Weekly income (sell premium)", "Capture a big directional move",
-         "Trade commodities / futures", "I'm not sure — show me options"],
-        index=["Weekly income (sell premium)", "Capture a big directional move",
-               "Trade commodities / futures", "I'm not sure — show me options"
-               ].index(st.session_state.advisor_goal),
-        help="Drives the Instrument Advisor. The app recommends the best tool for you."
+        "Today's goal:" if _lg in ["Advanced","Professional"] else "What are you trying to accomplish?",
+        _goal_opts,
+        index=_goal_opts.index(st.session_state.advisor_goal),
+        format_func=lambda x: _goal_labels[x] if _lg in ["Beginner","Intermediate"] else x,
+        help="Drives the Instrument Advisor and strategy defaults. The app tailors everything to this goal."
     )
     st.divider()
-    st.header("2. Asset Selection")
-
-    input_mode = st.radio("Input:", ["VIP List", "Manual Search"],
-                         help="VIP List = Pre-vetted high-liquidity stocks (US + Kenya). Manual = Enter any ticker.")
-
+    st.header("2. What Are You Trading?")
+    _la = st.session_state.lang_level
+    input_mode = st.radio(
+        "Choose a stock/ETF:" if _la in ["Beginner","Intermediate"] else "Input:",
+        ["VIP List", "Manual Search"],
+        help=(
+            "VIP List = curated high-liquidity US stocks (safer for beginners). "
+            "Manual = enter any ticker symbol you want to analyse."
+        )
+    )
     if input_mode == "VIP List":
-        ticker = st.selectbox("Ticker", ALL_TICKERS, help="High-liquidity stocks from US (Nasdaq/NYSE) and Kenya (NSE) exchanges.")
+        ticker = st.selectbox(
+            "Pick from popular stocks & ETFs" if _la in ["Beginner","Intermediate"] else "Ticker",
+            ALL_TICKERS,
+            help="Curated list of high-liquidity US stocks (Nasdaq/NYSE). Start here if unsure what to trade."
+        )
         if ticker.endswith(".NR"):
             st.warning(
                 "⚠️ **NSE tickers (.NR) are not available via Yahoo Finance** — "
@@ -2584,16 +2655,45 @@ with st.sidebar:
         ticker = st.text_input("Ticker", "NVDA", help="Enter any stock symbol (e.g., AAPL, TSLA, GME).").upper()
 
     st.divider()
-    st.header("3. Strategy & Execution")
-
+    st.header("3. How Will You Trade?")
+    _ls = st.session_state.lang_level
+    _strat_opts = ['Income (SPX Vertical Credit Spread)', 'IWT Long Option (60+ DTE)',
+                   'Futures (Index/Commodity)', 'Long (Buy)', 'Short (Sell)', 'Income (Cash-Secured Put)']
+    _strat_labels = {
+        'Income (SPX Vertical Credit Spread)': "💰 Sell a vertical spread — collect weekly income (SPX)",
+        'IWT Long Option (60+ DTE)':           "🚀 Buy a DITM option — ride a big directional move (IWT)",
+        'Futures (Index/Commodity)':           "🛢️ Trade futures — oil, gold, S&P micro-contracts",
+        'Long (Buy)':                          "📈 Buy shares — profit when stock rises",
+        'Short (Sell)':                        "📉 Sell short — profit when stock falls",
+        'Income (Cash-Secured Put)':           "💵 Sell a cash-secured put — get paid to wait for a stock",
+    }
     strategy = st.selectbox(
-        "Mode",
-        ['Income (SPX Vertical Credit Spread)', 'IWT Long Option (60+ DTE)', 'Futures (Index/Commodity)', 'Long (Buy)', 'Short (Sell)', 'Income (Cash-Secured Put)'],
-        help="Default is SPX vertical credit spreads for defined-risk income. Long/Short are directional simulations. CSP models assignment risk."
+        "How do you want to trade?" if _ls in ["Beginner","Intermediate"] else "Mode",
+        _strat_opts,
+        format_func=lambda x: _strat_labels[x] if _ls in ["Beginner","Intermediate"] else x,
+        help=(
+            "Not sure? If you want steady income → pick 'Sell a vertical spread'. "
+            "If you think a stock is about to move big → pick 'Buy a DITM option'. "
+            "The Instrument Advisor above will also guide you."
+            if _ls in ["Beginner","Intermediate"] else
+            "Determines which inputs and calculators appear below."
+        )
     )
 
-    entry_mode = st.radio("Entry", ["Auto-Limit (Zone)", "Market (Now)", "Manual Override"],
-                         help="Auto-Limit: Wait for price to reach zone. Market: Enter immediately. Manual: Test custom price.")
+    entry_mode = st.radio(
+        "When do you want to enter?" if _ls in ["Beginner","Intermediate"] else "Entry",
+        ["Auto-Limit (Zone)", "Market (Now)", "Manual Override"],
+        format_func=lambda x: {
+            "Auto-Limit (Zone)": "⏳ Wait for price to reach a zone (limit order — recommended)",
+            "Market (Now)":      "⚡ Enter right now at current price (market order)",
+            "Manual Override":   "🔧 Test a custom entry price (for scenario analysis)",
+        }[x] if _ls in ["Beginner","Intermediate"] else x,
+        help=(
+            "Limit orders wait for the best price. Market orders fill instantly but may cost more."
+            if _ls in ["Beginner","Intermediate"] else
+            "Auto-Limit: entry at zone boundary. Market: immediate fill. Manual: custom price."
+        )
+    )
 
     manual_price = 0.0
     if entry_mode == "Manual Override":
@@ -2634,37 +2734,208 @@ with st.sidebar:
         )
 
     elif strategy == "IWT Long Option (60+ DTE)":
-        st.markdown("**📈 IWT Long Options — 60+ DTE**")
-        st.caption("Teri Ijeoma: buy options 60+ DTE, DITM (delta 0.70+), for significant directional moves.")
-        lo_direction = st.selectbox("Direction", ["CALL", "PUT"], help="CALL: bullish. PUT: bearish.")
-        lo_underlying = st.number_input("Underlying Price ($)", value=0.0, step=1.0)
-        lo_strike = st.number_input("Strike Price", value=0.0, step=1.0, help="DITM calls: below current price. DITM puts: above.")
-        lo_premium = st.number_input("Premium Paid ($/share)", value=0.0, step=0.05, help="$5.00 = $500 per contract.")
-        lo_delta = st.number_input("Option Delta", value=0.75, min_value=0.10, max_value=0.99, step=0.01, help="Target 0.70-0.85 for DITM (IWT preferred).")
-        lo_dte = st.number_input("DTE (Days to Expiry)", value=90, min_value=1, max_value=400, step=1, help="IWT minimum: 60 DTE. Preferred: 90-120 DTE.")
-        lo_contracts_lo = st.number_input("Contracts", value=1, min_value=1, max_value=50, step=1)
-        st.caption("IWT exits: ✅ 50% or 100% gain on premium. 🔴 Stop at 50% loss.")
+        _lp2 = st.session_state.lang_level
+        if _lp2 in ["Beginner","Intermediate"]:
+            st.markdown("**📈 IWT Long Option — Buying a Call or Put**")
+            st.info(
+                "**What you're doing:** You're BUYING an option to capture a big price move.\n\n"
+                "**Example:** SPY is at $737. You think it's going higher. You buy a SPY $715 CALL "
+                "expiring in 90 days for $30/share ($3,000 per contract).\n\n"
+                "• If SPY rises to $775 by expiry, your $30 option could be worth $60+ → 100% gain\n"
+                "• If SPY falls sharply, the option decays → sell before you lose more than 50%\n\n"
+                "**IWT rules:** Buy at LEAST 60 days out. Choose a strike deep in-the-money (delta 0.70+)."
+            )
+        else:
+            st.markdown("**📈 IWT Long Option — 60+ DTE DITM**")
+
+        st.markdown("**① Are you bullish or bearish?**")
+        lo_direction = st.selectbox(
+            "Direction",
+            ["CALL (I think market goes UP)", "PUT (I think market goes DOWN)"],
+            format_func=lambda x: x,
+            help="CALL = profits when price rises. PUT = profits when price falls.",
+            key="lo_dir_select"
+        )
+        lo_direction = "CALL" if "CALL" in lo_direction else "PUT"
+
+        st.markdown("**② What is the stock/ETF priced at right now?**")
+        lo_underlying = st.number_input(
+            "Current price of the stock you're trading ($)",
+            value=0.0, step=1.0,
+            help="Check Google or your broker for the current price of SPY, AAPL, QQQ, etc."
+        )
+
+        # Auto-suggest DITM strike
+        _lo_suggested_k = 0.0
+        if lo_underlying > 0:
+            _lo_suggested_k = round(lo_underlying * (0.93 if lo_direction=="CALL" else 1.07))
+            _direction_word = "BELOW" if lo_direction=="CALL" else "ABOVE"
+            st.success(
+                f"**Suggested strike:** {_lo_suggested_k:.0f}  "
+                f"(≈7% {_direction_word} current price → DITM, acts like owning stock with leverage)"
+            )
+
+        st.markdown("**③ Which strike price will you buy?**")
+        lo_strike = st.number_input(
+            f"Strike price — {'BELOW' if lo_direction=='CALL' else 'ABOVE'} current price for DITM"
+            + (f" (suggested: {_lo_suggested_k:.0f})" if _lo_suggested_k > 0 else ""),
+            value=float(_lo_suggested_k) if _lo_suggested_k > 0 else 0.0,
+            step=1.0,
+            help=(
+                "DITM (Deep In The Money) = pick a strike price 5-10% BELOW the stock price for calls, "
+                "ABOVE for puts. Example: stock at $737 → buy the $690 call (DITM)."
+                if _lp2 in ["Beginner","Intermediate"] else
+                "DITM strike: delta ≥ 0.70. Mostly intrinsic value, lower theta risk."
+            )
+        )
+
+        st.markdown("**④ How many days until expiry?**")
+        lo_dte = st.number_input(
+            "Days to expiry (minimum 60 — IWT rule)",
+            value=90, min_value=1, max_value=400, step=1,
+            help="IWT minimum: 60 days. Why? Theta (time decay) barely touches the option this far out. Preferred: 90-120 days."
+        )
+        if lo_dte < 60:
+            st.error(f"⚠️ {lo_dte} DTE is below IWT's 60-day minimum. Theta decay will eat your option faster than the stock can move. Consider {max(60, lo_dte+30)} DTE or more.")
+        elif lo_dte < 90:
+            st.warning(f"🟡 {lo_dte} DTE is acceptable but Teri prefers 90+ days for breathing room.")
+        else:
+            st.caption(f"✅ {lo_dte} DTE — IWT compliant. Good breathing room for the trade to develop.")
+
+        st.markdown("**⑤ What does the option cost?**")
+        lo_premium = st.number_input(
+            "Premium per share ($) — get this from your broker's option chain",
+            value=0.0, step=0.05,
+            help=(
+                "Look at the 'Ask' price in your broker's option chain for that strike and expiry. "
+                "Example: $15.00 means ONE contract costs $1,500 (because each contract = 100 shares)."
+                if _lp2 in ["Beginner","Intermediate"] else
+                "Ask price per share. $15 = $1,500 per contract. Use mid-price for limit orders."
+            )
+        )
+        if lo_premium > 0 and lo_underlying > 0:
+            _lev = lo_underlying / lo_premium if lo_premium > 0 else 0
+            st.caption(
+                f"💡 ${lo_premium:.2f}/share × 100 = **${lo_premium*100:.0f} per contract** total cost. "
+                f"Leverage vs buying stock: **{_lev:.1f}× leverage**. "
+                f"IWT stop: if it loses 50% (falls to ${lo_premium*0.5:.2f}), sell immediately."
+            )
+
+        lo_delta = st.number_input(
+            "Delta of this option (from your broker)" if _lp2 in ["Beginner","Intermediate"] else "Option Delta",
+            value=0.75, min_value=0.10, max_value=0.99, step=0.01,
+            help=(
+                "Delta is shown in your broker's option chain next to each strike. "
+                "For DITM options, look for 0.70 or higher. "
+                "Delta 0.75 means the option moves $0.75 for every $1 the stock moves."
+                if _lp2 in ["Beginner","Intermediate"] else
+                "Target delta ≥ 0.70 for DITM. Δ ≈ probability ITM (risk-neutral measure)."
+            )
+        )
+        if lo_delta < 0.60:
+            st.warning(f"⚠️ Delta {lo_delta:.2f} is below DITM threshold. IWT prefers 0.70+ for leverage plays.")
+
+        lo_contracts_lo = st.number_input(
+            "Number of contracts (1 = 100 shares of exposure)",
+            value=1, min_value=1, max_value=50, step=1,
+            help="Start with 1 contract. Each contract controls 100 shares. Scale up only when consistently profitable."
+        )
+
+        if lo_premium > 0:
+            _total = lo_premium * 100 * lo_contracts_lo
+            st.info(
+                f"**Your total investment: ${_total:,.0f}**\n"
+                f"• Take profit at 50% gain: sell when worth ${_total*1.5:,.0f} (+${_total*0.5:,.0f})\n"
+                f"• Take profit at 100% gain: sell when worth ${_total*2:,.0f} (+${_total:,.0f})\n"
+                f"• Hard stop at 50% loss: sell if drops to ${_total*0.5:,.0f} — no exceptions"
+            )
     
 
     elif strategy == "Futures (Index/Commodity)":
-        st.markdown("**📦 Futures Trade**")
-        st.caption("Direct price exposure. Gains/losses are pure price movement × contract size.")
-        _FUT_MAP = {
-            "MES — Micro S&P (low margin)":"MES","ES — E-mini S&P 500":"ES",
-            "MNQ — Micro NASDAQ":"MNQ","NQ — E-mini NASDAQ":"NQ",
-            "M2K — Micro Russell 2000":"M2K","MCL — Micro Crude Oil":"MCL",
-            "CL — WTI Crude Oil":"CL","MGC — Micro Gold":"MGC","GC — Gold":"GC",
-            "ZC — Corn (CBOT)":"ZC","ZW — Wheat (CBOT)":"ZW","ZS — Soybeans":"ZS",
-            "NG — Natural Gas":"NG","SI — Silver":"SI",
+        _lpf = st.session_state.lang_level
+        if _lpf in ["Beginner","Intermediate"]:
+            st.info(
+                "**Futures = you control a large contract with a small deposit (margin).**\n\n"
+                "Example: MES (Micro S&P) — one contract controls ~$37,000 of S&P 500 value "
+                "but only requires ~$1,200 margin. Every 1-point S&P move = **$1.25 profit or loss**.\n\n"
+                "💡 Start with **Micro** contracts (MES, MNQ, MCL, MGC) until comfortable."
+            )
+
+        _FUT_SPECS = {
+            "MES — Micro S&P 500 ($1.25/tick)":    {"code":"MES","tick_val":1.25, "margin":1200},
+            "ES — E-mini S&P 500 ($12.50/tick)":   {"code":"ES", "tick_val":12.50,"margin":12000},
+            "MNQ — Micro NASDAQ ($0.50/tick)":      {"code":"MNQ","tick_val":0.50, "margin":1700},
+            "NQ — E-mini NASDAQ ($5.00/tick)":      {"code":"NQ", "tick_val":5.00, "margin":17000},
+            "MCL — Micro Crude Oil ($1.00/tick)":   {"code":"MCL","tick_val":1.00, "margin":600},
+            "CL — WTI Crude Oil ($10.00/tick)":     {"code":"CL", "tick_val":10.00,"margin":6000},
+            "MGC — Micro Gold ($1.00/tick)":        {"code":"MGC","tick_val":1.00, "margin":900},
+            "GC — Gold ($10.00/tick)":              {"code":"GC", "tick_val":10.00,"margin":9000},
+            "ZC — Corn ($12.50/tick)":              {"code":"ZC", "tick_val":12.50,"margin":1500},
+            "ZW — Wheat ($12.50/tick)":             {"code":"ZW", "tick_val":12.50,"margin":1700},
+            "ZS — Soybeans ($12.50/tick)":          {"code":"ZS", "tick_val":12.50,"margin":2000},
+            "NG — Natural Gas ($10.00/tick)":       {"code":"NG", "tick_val":10.00,"margin":2000},
+            "SI — Silver ($25.00/tick)":            {"code":"SI", "tick_val":25.00,"margin":8000},
+            "M2K — Micro Russell 2000 ($0.50/tick)":{"code":"M2K","tick_val":0.50,"margin":700},
         }
-        _fl = st.selectbox("Contract", list(_FUT_MAP.keys()),
-            help="Micro contracts = 1/10 the margin of full contracts. Start micro.")
-        fut_code = _FUT_MAP[_fl]
-        fut_entry     = st.number_input("Entry Price", value=0.0, step=0.25)
-        fut_stop      = st.number_input("Stop Price",  value=0.0, step=0.25, help="Your max-loss exit.")
-        fut_target    = st.number_input("Target Price", value=0.0, step=0.25)
-        fut_contracts = st.number_input("Contracts", value=1, min_value=1, max_value=20, step=1)
-        st.caption("⚠️ Futures amplify both profits and losses. Margin required. Mark-to-market daily.")
+        _fl = st.selectbox(
+            "Which contract are you trading?",
+            list(_FUT_SPECS.keys()),
+            help="Each contract shown with its tick value — how much you make or lose per 0.25 point move."
+        )
+        _fspec = _FUT_SPECS[_fl]
+        fut_code = _fspec["code"]
+
+        # Show contract specs inline
+        st.info(
+            f"**{_fl.split('(')[0].strip()} specs:**  "
+            f"Each 0.25-point tick = **${_fspec['tick_val']:.2f}**  |  "
+            f"Approx margin needed: **~${_fspec['margin']:,}**"
+        )
+
+        fut_entry = st.number_input(
+            "Your entry price (where you buy/sell)",
+            value=0.0, step=0.25,
+            help="The price at which you opened (or plan to open) the position."
+        )
+        fut_stop = st.number_input(
+            "Stop price — where you EXIT if wrong (your max-loss point)",
+            value=0.0, step=0.25,
+            help=(
+                "Set this BEFORE entering. Example: entry at 5300, stop at 5270 = 30 points risk. "
+                f"For {_fl.split('(')[0].strip()}: 30 pts × ${_fspec['tick_val']/0.25:.0f}/pt = "
+                f"${30*_fspec['tick_val']/0.25:,.0f} risk per contract."
+                if _fspec['tick_val'] > 0 else "Your exit point if the trade goes wrong."
+            )
+        )
+        fut_target = st.number_input(
+            "Target price — where you EXIT if right (your profit goal)",
+            value=0.0, step=0.25
+        )
+
+        if fut_entry > 0 and fut_stop > 0 and fut_target > 0:
+            _stop_pts  = abs(fut_entry - fut_stop)
+            _tgt_pts   = abs(fut_target - fut_entry)
+            _pt_val    = _fspec['tick_val'] / 0.25
+            _risk_usd    = _stop_pts * _pt_val
+            _reward_usd  = _tgt_pts * _pt_val
+            _rr        = _reward_usd / _risk_usd if _risk_usd > 0 else 0
+            st.success(
+                f"**Risk:** {_stop_pts:.2f} pts = ${_risk_usd:,.0f}/contract  |  "
+                f"**Reward:** {_tgt_pts:.2f} pts = ${_reward_usd:,.0f}/contract  |  "
+                f"**R/R: {_rr:.1f}:1** {'✅' if _rr >= 2 else '⚠️ aim for 2:1+'}"
+            )
+
+        fut_contracts = st.number_input(
+            "Number of contracts",
+            value=1, min_value=1, max_value=20, step=1,
+            help=f"Start with 1. Each additional contract multiplies your profit AND loss by the same amount."
+        )
+        if _lpf in ["Beginner","Intermediate"]:
+            st.caption(
+                f"⚠️ Important: with {fut_contracts} contract(s), each 1-point move = "
+                f"±${_fspec['tick_val']/0.25*fut_contracts:,.2f}. "
+                f"Futures profit/loss happens instantly, every second the market is open."
+            )
     elif strategy == "Income (SPX Vertical Credit Spread)":
         _lvl_v = st.session_state.lang_level
         
@@ -2910,17 +3181,42 @@ with st.sidebar:
             suggested_fresh = 2 if m.get('resistance_touches', 0) == 0 else 1 if m.get('resistance_touches', 0) <= 2 else 0
         st.caption(f"💡 Data suggests: Freshness = {suggested_fresh} ({m.get('support_touches' if 'Long' in strategy else 'resistance_touches', 0)} historical touches)")
 
-    fresh = st.selectbox("Freshness", [2, 1, 0],
-                        format_func=lambda x: {2:'2-Fresh', 1:'1-Used', 0:'0-Stale'}[x],
-                        help="Fresh: Untested level with strong orders waiting. Used: Touched 1-2x, some orders filled. Stale: Weak, tested 3+ times.")
+    _lps = st.session_state.lang_level
+    if _lps in ["Beginner","Intermediate"]:
+        st.caption("Rate each question 0-2. Total of 7+ means trade is ready. Below 5 = skip it.")
 
-    speed = st.selectbox("Speed Out", [2, 1, 0],
-                        format_func=lambda x: {2:'2-Fast', 1:'1-Avg', 0:'0-Slow'}[x],
-                        help="How quickly price left the zone. Fast = strong hands (2+ ATRs in 1-5 candles). Slow = weak interest.")
+    fresh = st.selectbox(
+        "① Is this price level FRESH? (never tested before = best)" if _lps in ["Beginner","Intermediate"] else "Freshness",
+        [2, 1, 0],
+        format_func=lambda x: {
+            2: "2 — Fresh ✅ Never been tested. Strong orders likely waiting here.",
+            1: "1 — Used once 🟡 Touched 1-2 times. Some orders already filled.",
+            0: "0 — Stale ❌ Hit 3+ times. Most orders gone. Weak level."
+        }[x] if _lps in ["Beginner","Intermediate"] else {2:'2-Fresh', 1:'1-Used', 0:'0-Stale'}[x],
+        help="Fresh levels have unfilled orders waiting (like a magnet). Stale levels have been picked clean. Fresh = stronger reaction expected."
+    )
 
-    time_z = st.selectbox("Time in Zone", [2, 1, 0],
-                         format_func=lambda x: {2:'2-Short', 1:'1-Med', 0:'0-Long'}[x],
-                         help="How long price lingered in zone. Short (1-2 candles) = strong rejection. Long (6+ candles) = indecision/weakness.")
+    speed = st.selectbox(
+        "② When price left this level, did it move FAST or slow?" if _lps in ["Beginner","Intermediate"] else "Speed Out",
+        [2, 1, 0],
+        format_func=lambda x: {
+            2: "2 — Fast ✅ Price exploded away (2+ bars, big candles). Strong interest.",
+            1: "1 — Average 🟡 Moved away but took a while.",
+            0: "0 — Slow ❌ Price crept away or barely moved. Weak level."
+        }[x] if _lps in ["Beginner","Intermediate"] else {2:'2-Fast', 1:'1-Avg', 0:'0-Slow'}[x],
+        help="Fast departure = strong institutional orders filled and price moved. Slow = weak hands, little conviction."
+    )
+
+    time_z = st.selectbox(
+        "③ How long did price LINGER at this level?" if _lps in ["Beginner","Intermediate"] else "Time in Zone",
+        [2, 1, 0],
+        format_func=lambda x: {
+            2: "2 — Short ✅ 1-3 candles then gone. Sharp rejection. Strong.",
+            1: "1 — Medium 🟡 4-6 candles. Acceptable.",
+            0: "0 — Long ❌ 7+ candles. Market was undecided. Weak level."
+        }[x] if _lps in ["Beginner","Intermediate"] else {2:'2-Short', 1:'1-Med', 0:'0-Long'}[x],
+        help="Short time = orders filled fast and price moved. Long time = too many sellers/buyers, level is contested."
+    )
 
     st.divider()
     if st.button("🔄 Reset Session", help="Clears all positions, P&L, and goal status to start fresh."):
@@ -2938,41 +3234,55 @@ with st.sidebar:
 
 with st.expander("🎓 Beginner's Guide (Read This First)", expanded=False):
     st.markdown("""
-### 🎓 How to Use Quantum Maestro
+### 🎓 How to Use Quantum Maestro — Start Here
 
-**Step 1: Set Your Risk**
-- Total Capital = actual account size
-- Risk per Trade = ~1% of capital ($10,000 → $100)
-- Never risk more than 2% per trade
+#### 5 Steps, Every Single Day
 
-**Step 2: Check Macro FIRST**
-- Scan VIX before individual stocks
-- If VIX HIGH/CRISIS → reduce size or don't trade
-- If Risk-Off (Gold + VIX rising) → avoid longs
+**① Set your account details** (Sidebar → Your Account)
+- Enter your actual trading capital
+- Risk per trade auto-sets to 1% (never risk more)
+- Your daily goal = 1% of capital — stop trading once you hit it
 
-**Step 3: Scan a Stock**
-- Use VIP List (safest) or enter ticker
-- Wait for 15+ indicators to load
+**② Get live market data** (click the big "Get Live Market Data" button)
+- This loads VIX (fear gauge), interest rates, and macro signals
+- If VIX > 25: reduce your trade size or skip the day entirely
+- If VIX > 35: stand aside — too dangerous for most strategies
 
-**Step 4: Score the Setup (IWT)**
-- Freshness (fresh > stale)
-- Time in zone (fast rejection > lingering)
-- Speed out (explosive > grinding)
-- R/R must be ≥ 2.0 (prefer ≥ 3.0)
+**③ Choose your goal** (Sidebar → What Do You Want to Do Today?)
+- Earn income this week? → Pick "Sell a vertical spread"
+- Betting on a big move? → Pick "Buy a DITM option"
+- Not sure? → Pick "Not sure — show me options" and read the Instrument Advisor
 
-**For SPX Vertical Credit Spreads**
-- Short strike = option you sell; long strike = protection you buy
-- Max profit = credit × 100 × contracts
-- Max loss = (spread width − credit) × 100 × contracts
-- For a $5-wide spread, gross width = $500 per contract
-- Defined risk protects the account; do not oversize just because max loss is capped
+**④ Scan the market** (click "Scan [ticker]" button)
+- 15+ indicators load automatically
+- The IWT Scorecard tells you how strong the setup is
+- Score 7-8: take the trade. Score 5-6: half size. Score 0-4: skip.
 
-**Step 5: Verdict Discipline**
-- 7-8 → GREEN (execute)
-- 5-6 → YELLOW (reduce size or wait)
-- 0-4 → RED (no trade)
+**⑤ Enter your trade in your broker**
+- Vertical spread? Use the Platform Order Translator section
+- It generates the exact order string for thinkorSwim, Fidelity, IBKR, tastytrade
+- Log the trade here so your journal tracks it
 
-**Golden Rules**
+---
+
+#### The Three Golden Rules
+
+1. **1% per trade, 6% total.** Never risk more than 1% of your account on a single trade or 6% combined across all open trades.
+2. **Stop at your daily goal.** When you're up 1%, close the screen. Greed after a win destroys consistency.
+3. **Defined risk only.** Use vertical spreads or options where your max loss is known before you enter. Never sell naked options.
+
+---
+
+#### Cheat Sheet: SPX Vertical PUT Spread (most common IWT income trade)
+
+| What you see in broker | What it means |
+|------------------------|---------------|
+| Sell 7395 PUT (higher #) | You COLLECT the premium (income) |
+| Buy 7390 PUT (lower #) | Your protection (limits max loss) |
+| Credit $0.50/share | You receive $50 immediately |
+| Max profit: $50 | If SPX stays above 7395 at expiry |
+| Max loss: $450 | If SPX falls below 7390 |
+| Breakeven: 7394.50 | SPX must stay above this |
 1) Stop trading when daily goal met
 2) Don't stack too many positions
 3) Trade WITH the trend
@@ -2984,6 +3294,20 @@ with st.expander("🎓 Beginner's Guide (Read This First)", expanded=False):
 
 # --- 6. MAIN UI ---
 st.subheader("📊 Market Intelligence Dashboard")
+_ld = st.session_state.lang_level
+if not st.session_state.macro and _ld in ["Beginner","Intermediate"]:
+    st.info(
+        "**👋 Start here:** Click **Get Live Market Data** below to load today's "
+        "VIX, interest rates, and market conditions. The app will then tell you "
+        "exactly what to trade and how to trade it."
+    )
+_ld = st.session_state.lang_level
+if not st.session_state.macro and _ld in ["Beginner","Intermediate"]:
+    st.info(
+        "**👋 Start here:** Click **Get Live Market Data** below to load today's "
+        "VIX, interest rates, and market conditions. The app will then tell you "
+        "exactly what to trade and how to trade it."
+    )
 
 
 # === INSTRUMENT ADVISOR ===
@@ -3009,14 +3333,14 @@ with st.expander("🤖 Instrument Advisor — What Should I Trade Today?", expan
         with st.expander("🚫 Not recommended for your profile", expanded=False):
             for _b in _adv["blocked"]:
                 st.caption(f"• {_b}")
-    st.caption("📡 Advisor uses LIVE VIX/IVR data. Click Macro Audit to refresh.")
+    st.caption("📡 Based on live market data. Refreshes when you click Get Live Market Data." if st.session_state.lang_level in ["Beginner","Intermediate"] else "📡 Advisor uses live VIX/IVR. Click Macro Audit to refresh.")
 
 col_macro, col_scan = st.columns([1, 1])
 
 
 # === IV ENVIRONMENT ARBITER — master strategy selector ===
 with st.expander("🧠 IV Arbiter — BUY or SELL Options Today?", expanded=True):
-    st.caption("High IV → Sell premium. Low IV → Buy 60+ DTE options. Let the market tell you which weapon to use.")
+    st.caption("High IV: sell premium (spreads). Low IV: buy options (DITM 60+ DTE). One number tells you which strategy to use today." if st.session_state.lang_level in ["Beginner","Intermediate"] else "High IV → Sell premium. Low IV → Buy 60+ DTE options. IVR drives strategy selection.")
     _vix_now = st.session_state.macro['vix'] if st.session_state.macro else 18.0
     _ivenv = classify_iv_environment(ivr_manual, _vix_now)
     col_iv1, col_iv2 = st.columns([1, 2])
@@ -3238,7 +3562,7 @@ if st.session_state.data is not None:
     # SIGNALS
     if st.session_state.signals:
         st.divider()
-        st.subheader("🎯 Multi-Algorithm Signal Fusion (15+ Indicators)")
+        st.subheader("📡 Market Signals — What Are the Indicators Saying?")
         st.caption("💡 Combines RSI, MACD, Bollinger Bands, Stochastic, ADX, Ichimoku, MFI, Williams %R, Moving Averages, SuperTrend, Patterns, Divergences")
 
         sig = st.session_state.signals
@@ -3362,7 +3686,7 @@ if st.session_state.data is not None:
             st.caption(f"ℹ️ {ticker} has no listed options. Try SPY, QQQ, AAPL, GLD, or any major optionable stock/ETF.")
 
 
-    st.subheader("📊 Technical Chart (Last 60 Days)")
+    st.subheader("📊 Price Chart (Last 60 Days)")
     st.caption("💡 Blue=SMA20, Orange=SMA50, Red=SMA200, Gray=Bollinger Bands, Green/Red lines=Support/Resistance")
 
     try:
@@ -3421,7 +3745,7 @@ if st.session_state.data is not None:
 
     # TRADE CALCULATION
     st.divider()
-    st.subheader("🎯 Trade Setup Calculator")
+    st.subheader("📐 Your Trade Details")
     st.caption("💡 Calculates entry, stop, target, position size, and REAL costs")
 
     if entry_mode == "Manual Override":
@@ -3791,8 +4115,12 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
 
     # VERDICT
     st.divider()
-    st.subheader("🚦 The Ultimate Verdict (IWT + Institutional Filters)")
-    st.caption("💡 Combines IWT score with 13 institutional penalty filters")
+    st.subheader("🚦 Should You Take This Trade?")
+    _lv2 = st.session_state.lang_level
+    if _lv2 in ["Beginner","Intermediate"]:
+        st.caption("The app scores your setup on multiple filters. 7-8 = take the trade. 5-6 = reduce size. 0-4 = skip.")
+    else:
+        st.caption("IWT score + 13 institutional penalty filters. Max 8, adjusted for PDT/macro/volatility/event risk.")
 
     if is_vertical:
         # For short verticals, raw reward/risk is usually below 1.0. Score credit efficiency
@@ -3889,31 +4217,70 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
 
     col_verdict, col_analysis = st.columns([1, 1])
 
+    _lv4 = st.session_state.lang_level
     with col_verdict:
         if st.session_state.goal_met:
-            st.error("## 🛑 DAILY GOAL MET - STOP TRADING")
-            st.markdown("<div class='risk-warning'><strong>CLOSE YOUR TERMINAL.</strong> Protect your gains. Consistency beats intensity.</div>", unsafe_allow_html=True)
+            st.error("## 🛑 You Hit Your Daily Goal — STOP NOW")
+            if _lv4 in ["Beginner","Intermediate"]:
+                st.info("You made your 1% today. Close your broker. Protect your gains. "
+                        "The best traders walk away when they're up — not when they're chasing.")
+            else:
+                st.markdown("<div class='risk-warning'><strong>CLOSE YOUR TERMINAL.</strong> Protect your gains.</div>", unsafe_allow_html=True)
             can_trade = False
         elif (st.session_state.total_risk_deployed + total_trade_risk) > (capital * max_portfolio_risk / 100):
-            st.error("## 🛑 PORTFOLIO RISK LIMIT EXCEEDED")
-            st.markdown(f"<div class='risk-warning'>Adding this trade would exceed your {max_portfolio_risk}% limit.</div>", unsafe_allow_html=True)
+            st.error("## 🛑 Too Much Risk Already Open")
+            if _lv4 in ["Beginner","Intermediate"]:
+                st.info(f"Adding this trade would put more than {max_portfolio_risk}% of your account at risk at once. "
+                        f"Close an existing trade first, or reduce your size on this one.")
+            else:
+                st.markdown(f"<div class='risk-warning'>Adding this trade exceeds your {max_portfolio_risk}% portfolio heat cap.</div>", unsafe_allow_html=True)
             can_trade = False
         else:
             can_trade = True
             if total_score >= 7:
-                st.success(f"## 🟢 GREEN LIGHT\n**Final Score: {total_score}/8**")
-                st.caption("✅ **Action:** Execute with FULL confidence. All systems GO.")
+                st.success(f"## ✅ YES — Take This Trade  ({total_score}/8)")
+                st.markdown(
+                    "All filters passed. Enter at your planned price, set your stop, set your target — and walk away."
+                    if _lv4 in ["Beginner","Intermediate"] else
+                    "Execute with full size. All systems GO."
+                )
             elif total_score >= 5:
-                st.warning(f"## 🟡 YELLOW LIGHT\n**Final Score: {total_score}/8**")
-                st.caption("⚠️ **Action:** Tradeable but NOT ideal. Reduce size 50% OR wait.")
+                st.warning(f"## 🟡 MAYBE — Trade Smaller  ({total_score}/8)")
+                st.markdown(
+                    "Setup is OK but not ideal. If you enter, use HALF your normal size. "
+                    "Or wait — a better setup for this same stock will come."
+                    if _lv4 in ["Beginner","Intermediate"] else
+                    "Conditional. Reduce size 50% or wait for confirmation candle."
+                )
             else:
-                st.error(f"## 🔴 RED LIGHT\n**Final Score: {total_score}/8**")
-                st.caption("🛑 **Action:** DO NOT TRADE. Setup is flawed.")
+                st.error(f"## 🔴 NO — Skip This Trade  ({total_score}/8)")
+                st.markdown(
+                    "Too many warning signs. Protect your account — no trade is better than a bad trade. "
+                    "A new opportunity will appear tomorrow."
+                    if _lv4 in ["Beginner","Intermediate"] else
+                    "Stand aside. Multiple filters failed. Setup is structurally weak."
+                )
 
         if penalties:
-            st.markdown("**⚠️ Penalties Applied:**")
-            for p in penalties:
-                st.caption(f"• {p}")
+            with st.expander(f"⚠️ {len(penalties)} penalty filter(s) triggered — click to see why"):
+                for p in penalties:
+                    if _lv4 in ["Beginner","Intermediate"]:
+                        # Translate penalty codes to plain English
+                        _plain = (p.replace("Trade Budget (-3)","🔴 Day-trade limit: no more same-day trades left")
+                                   .replace("Trade Budget (-1)","🟡 Day-trade caution: save your last trade for A+ setups")
+                                   .replace("DTE Discipline (-1)","🟡 DTE too high: tighten up or use shorter expiry")
+                                   .replace("Expected Move (-2)","🔴 Strike too close: short strike inside expected move = high risk")
+                                   .replace("POP (-1)","🟡 Odds: less than 65% chance of profit")
+                                   .replace("Event Risk (-2)","🔴 Big news soon: major event within 48h = hold off")
+                                   .replace("Event Hold (-2)","🔴 Holding through event: very risky")
+                                   .replace("Fed/Rates (-2)","🟡 Rates rising: hurts tech/growth stocks")
+                                   .replace("Market Hours (-1)","🟡 Bad timing: low liquidity period")
+                                   .replace("Trend Misalignment (-1)","🟡 Against the trend: trading against the main direction")
+                                   .replace("RSI Extreme (-1)","🟡 Overextended: stock has moved too far, too fast")
+                                   .replace("Multi-Algo Conflict (-1)","🟡 Mixed signals: technical indicators disagree"))
+                        st.caption(f"• {_plain}")
+                    else:
+                        st.caption(f"• {p}")
 
     with col_analysis:
         st.markdown("**📋 Setup Quality Checklist**")
@@ -3964,7 +4331,7 @@ Option Math: {('Vertical ' + spread_kind + ' spread | Short ' + str(short_strike
     # EXECUTION
     if can_trade and total_score >= 5:
         st.divider()
-        st.subheader("⚡ Trade Execution")
+        st.subheader("📤 Log Your Trade")
         st.caption("💡 PAPER = practice (no P&L). LIVE = real trade (affects P&L).")
 
         col_exec1, col_exec2 = st.columns(2)
@@ -4006,26 +4373,39 @@ else:
 # POSITION MANAGEMENT
 if st.session_state.open_positions:
     st.divider()
-    st.subheader("📊 Open Positions (Live Trades)")
-    st.caption("💡 These are trades you logged as LIVE. Close them after you exit in your broker.")
+    st.subheader("📊 Open Trades")
+    _lop = st.session_state.lang_level
+    if _lop in ["Beginner","Intermediate"]:
+        st.caption("These are your active trades. When you close a trade in your broker, come back here and log the exit price to track your P&L.")
+    else:
+        st.caption("Live position log. P&L updates when you close a position here.")
 
     positions_df = pd.DataFrame(st.session_state.open_positions)
-    positions_df = positions_df[['ticker', 'action', 'entry', 'stop', 'target', 'shares', 'risk', 'score']]
-    st.dataframe(positions_df, use_container_width=True)
+    _display_cols = [c for c in ['ticker','action','entry','stop','target','shares','risk','score'] if c in positions_df.columns]
+    _rename = {'ticker':'Symbol','action':'Type','entry':'Entry $','stop':'Stop $',
+               'target':'Target $','shares':'Size','risk':'Risk $','score':'Score'}
+    st.dataframe(positions_df[_display_cols].rename(columns=_rename), use_container_width=True)
 
-    st.markdown("**Close a Position:**")
-    st.caption("💡 For stocks/CSP, enter underlying exit price. For SPX verticals, enter the closing debit/spread value in index points, e.g., 0.35.")
+    st.markdown("**Close a trade you already exited in your broker:**")
+    if _lop in ["Beginner","Intermediate"]:
+        st.caption(
+            "Stocks/ETFs: enter the price you sold at. "
+            "SPX Verticals: enter the credit/debit remaining (e.g. 0.35 if spread is worth $0.35 to close). "
+            "The app calculates your actual profit or loss."
+        )
+    else:
+        st.caption("Stocks: exit price. SPX verticals: closing debit in index points.")
 
     col_close1, col_close2, col_close3 = st.columns(3)
 
     with col_close1:
-        position_to_close = st.selectbox("Select Position", [p['ticker'] for p in st.session_state.open_positions])
+        position_to_close = st.selectbox("Which trade?", [p['ticker'] for p in st.session_state.open_positions])
 
     with col_close2:
-        exit_price = st.number_input("Exit Price ($)", value=0.0, step=0.01)
+        exit_price = st.number_input("At what price did you exit? ($)", value=0.0, step=0.01)
 
     with col_close3:
-        if st.button("✅ CLOSE POSITION"):
+        if st.button("✅ CLOSE & RECORD"):
             if exit_price > 0:
                 for i, pos in enumerate(st.session_state.open_positions):
                     if pos['ticker'] == position_to_close:
@@ -4078,8 +4458,12 @@ if st.session_state.open_positions:
 # PERFORMANCE ANALYTICS
 if st.session_state.closed_trades:
     st.divider()
-    st.subheader("📈 Performance Analytics Dashboard")
-    st.caption("💡 These metrics show how good your trading system is")
+    st.subheader("📈 How Are You Doing?")
+    _lpf2 = st.session_state.lang_level
+    if _lpf2 in ["Beginner","Intermediate"]:
+        st.caption("Your trading scorecard. Win rate above 50% is a start — but average win size matters just as much.")
+    else:
+        st.caption("Performance analytics across closed trades. Win rate, EV/trade, R-multiples, drawdown.")
 
     closed_df = pd.DataFrame(st.session_state.closed_trades)
 
@@ -5182,8 +5566,15 @@ IVR_90d = (VIX_today − VIX_90d_min) / (VIX_90d_max − VIX_90d_min) × 100
 # JOURNAL EXPORT
 if st.session_state.journal:
     st.divider()
-    st.subheader("📓 Trading Journal (All Trades)")
-    st.caption("💡 Contains BOTH paper and live trades. Review regularly to find patterns.")
+    st.subheader("📓 Your Trading Journal")
+    _ljl = st.session_state.lang_level
+    if _ljl in ["Beginner","Intermediate"]:
+        st.info(
+            "Your journal records every trade you analyse. Review it weekly to spot what's working and what isn't. "
+            "Consistent traders study their journal as much as the market."
+        )
+    else:
+        st.caption("Full trade log: paper + live. Review regularly for pattern detection and system improvement.")
 
     journal_df = pd.DataFrame(st.session_state.journal)
     st.dataframe(journal_df, use_container_width=True)
@@ -5212,7 +5603,7 @@ if st.session_state.journal:
             )
 
 st.divider()
-st.caption("📊 EasyStockTrader — Smart Stock Analysis | Simulation Only — Not Financial Advice")
+st.caption("📊 EasyStockTrader by Gabriel Mahia — Smart analysis tool. For educational use only. Not financial advice. Always verify with your broker.")
 st.caption("© 2026 Gabriel Mahia | Consistency beats intensity.")
 # -- Feedback sidebar ---------------------------------------------------------
 with st.sidebar:
