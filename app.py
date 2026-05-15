@@ -3675,7 +3675,7 @@ if st.session_state.data is not None:
                 if st.session_state.lang_level in ["Beginner","Intermediate"]:
                     st.caption("📡 Live market data. Greeks auto-calculated from current option prices.")
                 else:
-                    st.caption("📡 IV: yfinance delayed bid/ask. Greeks: exact BSM (scipy.stats.norm). IVR: realized vol proxy. Tradier connection enables broker Greeks.")
+                    st.caption("📡 IV: delayed market bid/ask. Greeks: BSM formula. IVR: realized vol proxy. Broker connection enables real-time data.")
         elif _opt and _opt.get("no_options"):
             st.caption(f"ℹ️ {ticker} has no listed options. Try SPY, QQQ, AAPL, GLD, or any major optionable stock/ETF.")
 
