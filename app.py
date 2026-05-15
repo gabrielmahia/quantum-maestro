@@ -46,7 +46,7 @@ def _calc_indicators(df):
     gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
     loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
     rs = gain / loss.replace(0, np.nan)
-    df['RSI_14'] = 100 - (100 / (1 + rs))
+    df['RSI_14'] = (100 - (100 / (1 + rs))).fillna(50)  # NaN→50 neutral if no volatility
 
     # MACD
     ema12 = cl.ewm(span=12, adjust=False).mean()
@@ -2460,12 +2460,12 @@ engine = InstitutionalAnalyst()
 with st.sidebar:
     _tdr_ok = _tradier_is_connected()
     if _tdr_ok:
-        st.success("✅ Tradier connected — broker Greeks active")
+        st.success("✅ Broker connected — real-time data active")
     else:
         if st.session_state.lang_level in ["Beginner","Intermediate"]:
             st.caption("📡 Live market data active.")
         else:
-            st.caption("📡 Greeks: yfinance+BSM. Add TRADIER_TOKEN to Streamlit secrets for broker-computed Greeks.")
+            st.caption("📡 Live market data — options pricing auto-calculated. Contact your app admin to connect your broker account for-computed Greeks.")
     st.divider()
     st.header("🎯 Your Experience Level")
     st.session_state.lang_level = st.selectbox(
@@ -3118,6 +3118,7 @@ with st.sidebar:
                 elif _eff2 < 20:
                     st.warning(f"⚠️ Credit ({_eff2:.1f}% of width) is below the 20% IWT minimum. Try to collect at least ${_w*0.20:.2f} per share.")
                 else:
+                    _ev2 = spread_credit*100 - (1-spread_credit/_w)*(_w-spread_credit)*100
                     st.success(f"✅ Credit ({_eff2:.1f}% of width). Max profit ${spread_credit*100:.0f} | Max loss ${(_w-spread_credit)*100:.0f} per contract.")
 
         # ── Remaining inputs ─────────────────────────────────────────────────
@@ -3294,13 +3295,6 @@ with st.expander("🎓 Beginner's Guide (Read This First)", expanded=False):
 
 # --- 6. MAIN UI ---
 st.subheader("📊 Market Intelligence Dashboard")
-_ld = st.session_state.lang_level
-if not st.session_state.macro and _ld in ["Beginner","Intermediate"]:
-    st.info(
-        "**👋 Start here:** Click **Get Live Market Data** below to load today's "
-        "VIX, interest rates, and market conditions. The app will then tell you "
-        "exactly what to trade and how to trade it."
-    )
 _ld = st.session_state.lang_level
 if not st.session_state.macro and _ld in ["Beginner","Intermediate"]:
     st.info(
@@ -3521,10 +3515,10 @@ if st.session_state.data is not None:
     if abs(m['gap']) > 2.0:
         if m['rvol'] > 1.5:
             col2.metric("Gap %", f"{m['gap']:.2f}%", delta="🚀 PRO",
-                       help="PROFESSIONAL GAP: Large gap (>2%) + High volume = Institutional breakout. Gap likely to HOLD.")
+                       help="Large price gap with strong volume = major institutions drove this move. Gap likely to hold and trend continues.")
         else:
             col2.metric("Gap %", f"{m['gap']:.2f}%", delta="⚠️ NOVICE",
-                       help="NOVICE GAP: Large gap but low volume = Retail FOMO. Gap likely to FILL.")
+                       help="Large price gap but weak volume = mostly retail traders, not institutions. Gap often closes within days.")
     else:
         col2.metric("Gap %", f"{m['gap']:.2f}%", help="Gap = (Today's Open - Yesterday's Close) / Yesterday's Close")
 
@@ -4578,46 +4572,98 @@ with st.expander("🔧 Trade Management Engine", expanded=False):
             st.info("Enter position values to get management decision.")
 
 # === KELLY CRITERION + RISK-OF-RUIN ===
-with st.expander("🎲 Kelly Criterion & Risk-of-Ruin", expanded=False):
-    st.caption(
-        "Institutional position sizing science. "
-        "Full Kelly maximises long-run growth but produces severe drawdowns. "
-        "Most quant desks use Quarter Kelly or less."
-    )
+with st.expander("🎯 Position Sizing — How Big Should Your Trades Be?", expanded=False):
+    _lkv = st.session_state.lang_level
+    if _lkv in ["Beginner","Intermediate"]:
+        st.info(
+            "**How much of your account should you put into one trade?**\n\n"
+            "This calculator tells you the mathematically correct answer based on your "
+            "actual win rate and average win/loss size. "
+            "The app uses Quarter Kelly — the conservative professional standard."
+        )
+    else:
+        st.caption(
+            "Kelly Criterion: f* = (p·b − q) / b. Quarter Kelly (f*/4) is the institutional default. "
+            "Full Kelly maximises E[ln(W)] but produces severe periodic drawdowns."
+        )
     _ck1, _ck2 = st.columns(2)
     with _ck1:
-        _k_win = st.slider("Win Rate (%)", 30, 85, 60, step=1) / 100.0
-        _k_avgwin  = st.number_input("Avg Win (% of 1R, e.g. 50 = 50%)", value=50.0, step=5.0) / 100.0
-        _k_avgloss = st.number_input("Avg Loss (% of 1R, e.g. 100 = full max loss)", value=100.0, step=5.0) / 100.0
-        _k_monthly = st.number_input("Trades / Month", value=8, min_value=1, max_value=50, step=1)
+        _k_win = st.slider(
+            "Your win rate (%)" if _lkv in ["Beginner","Intermediate"] else "Win Rate (%)",
+            30, 85, 60, step=1,
+            help="Out of every 10 trades, how many do you win? 60% = 6 wins out of 10."
+        ) / 100.0
+        _k_avgwin = st.number_input(
+            "Average WIN size (% of your max risk)" if _lkv in ["Beginner","Intermediate"] else "Avg Win (% of 1R)",
+            value=50.0, step=5.0,
+            help=(
+                "When you win a trade, how much do you typically make vs what you risked? "
+                "50% = you make half of what you risked (e.g., risked $100, made $50). "
+                "100% = you make exactly what you risked."
+                if _lkv in ["Beginner","Intermediate"] else
+                "Average win as % of 1R (1R = your risk per trade). 50 = win 0.5R per win."
+            )
+        ) / 100.0
+        _k_avgloss = st.number_input(
+            "Average LOSS size (% of your max risk)" if _lkv in ["Beginner","Intermediate"] else "Avg Loss (% of 1R)",
+            value=100.0, step=5.0,
+            help=(
+                "When you lose, how much do you typically lose vs what you planned to risk? "
+                "100% = you lose the full amount you set as your max risk (ideal discipline). "
+                "Higher means you sometimes hold losing trades too long."
+                if _lkv in ["Beginner","Intermediate"] else
+                "Average loss as % of 1R. 100 = always hit your stop (ideal). >100 = holding losers."
+            )
+        ) / 100.0
+        _k_monthly = st.number_input(
+            "How many trades do you take per month?",
+            value=8, min_value=1, max_value=50, step=1
+        )
     with _ck2:
         if _k_avgwin > 0 and _k_avgloss > 0:
             _kr = kelly_and_ruin(_k_win, _k_avgwin, _k_avgloss, _k_monthly)
-            st.code(
-                f"Full Kelly:      {_kr['kelly_pct']:.1f}% per trade\n"
-                f"Half Kelly:      {_kr['half_kelly_pct']:.1f}% per trade\n"
-                f"Quarter Kelly:   {_kr['quarter_kelly_pct']:.1f}% (recommended)\n"
-                f"\n"
-                f"Edge per Trade:  {_kr['edge_per_trade_pct']:.1f}% of 1R\n"
-                f"Monthly Return:  {_kr['expected_monthly_pct']:.1f}% of 1R\n"
-                f"Risk of Ruin:    {_kr['ruin_probability_pct']:.1f}%"
-            )
             if _kr['edge_per_trade_pct'] > 0:
-                st.success(f"✅ Positive edge. Recommended size: **{_kr['recommended_size_pct']:.1f}% of capital** (Quarter Kelly).")
+                st.success(
+                    f"✅ **Your edge is real — you have a mathematical advantage.**\n\n"
+                    f"Put **{_kr['quarter_kelly_pct']:.1f}% of your account** into each trade."
+                    if _lkv in ["Beginner","Intermediate"] else
+                    f"✅ Positive edge. Quarter Kelly: **{_kr['quarter_kelly_pct']:.1f}% of capital per trade**."
+                )
+                st.code(
+                    f"Recommended size: {_kr['quarter_kelly_pct']:.1f}% per trade\n"
+                    f"Edge per trade:   {_kr['edge_per_trade_pct']:.1f}%\n"
+                    f"Monthly return:   {_kr['expected_monthly_pct']:.1f}%\n"
+                    f"Risk of ruin:     {_kr['ruin_probability_pct']:.2f}%"
+                    if _lkv in ["Beginner","Intermediate"] else
+                    f"Full Kelly:     {_kr['kelly_pct']:.1f}%\n"
+                    f"Half Kelly:     {_kr['half_kelly_pct']:.1f}%\n"
+                    f"Quarter Kelly:  {_kr['quarter_kelly_pct']:.1f}% ← recommended\n"
+                    f"Edge/trade:     {_kr['edge_per_trade_pct']:.1f}%\n"
+                    f"Monthly EV:     {_kr['expected_monthly_pct']:.1f}%\n"
+                    f"Risk of Ruin:   {_kr['ruin_probability_pct']:.2f}%"
+                )
             else:
-                st.error("🔴 Negative edge — do not trade this system mechanically.")
+                st.error(
+                    "🔴 **Your numbers don't add up to a profitable system yet.**\n\n"
+                    "At this win rate and win/loss size, you'd lose money over time. "
+                    "You need to either win more often, OR make more when you win vs what you lose."
+                    if _lkv in ["Beginner","Intermediate"] else
+                    f"🔴 Negative edge (EV = {_kr['edge_per_trade_pct']:.1f}%). "
+                    f"Kelly = 0%. Do not size mechanically — fix the system first."
+                )
+                if _lkv in ["Beginner","Intermediate"]:
+                    st.caption(
+                        "Credit spreads need at least 80-85% win rate when risking 4× what you make. "
+                        "Long options need 2:1+ reward/risk ratio. Adjust your parameters until the edge turns positive."
+                    )
             st.caption(_kr['note'])
-            st.caption(
-                "💡 Quarter Kelly preserves ~75% of optimal long-run growth with ~50% of the drawdown. "
-                "Half Kelly is the institutional compromise. Full Kelly is rarely used outside academia."
-            )
 
 
 # =============================================================================
 # LIVE TRADING — Account · Order Builder · Confirm · Execute
 # Tradier brokerage integration.
 # Every order requires two explicit steps: Preview → Confirm.
-# Futures/Forex require a separate broker (see TRADIER_SETUP.md).
+# Futures/Forex require a separate broker (see the setup guide).
 # =============================================================================
 
 st.divider()
@@ -4625,25 +4671,35 @@ st.header("📤 Execute Trade")
 _lvl = st.session_state.lang_level
 
 if not _tradier_is_connected():
+    _ltd = st.session_state.lang_level
     st.info(
-        "🔗 **Connect Tradier to enable live trading.** "
-        "See **TRADIER_SETUP.md** in the repo for the two-minute setup. "
-        "Once connected, this section lets you place real orders directly from the analysis above."
+        "🔗 **Want to place real trades directly from this app?**\n\n"
+        "This app can connect to your Tradier brokerage account and execute orders automatically. "
+        "To set it up, your account admin needs to add your Tradier API key to the app settings — "
+        "it takes about two minutes. Contact support or your account admin to get connected."
+        if _ltd in ["Beginner","Intermediate"] else
+        "🔗 **Connect Tradier to enable live execution.** "
+        "Contact your app admin to connect your broker account. See the setup guide. "
+        "Sandbox = paper trading. Production = real orders."
     )
 else:
     _env_label = (st.secrets.get("TRADIER_ENV") or
                   st.secrets.get("tradier", {}).get("env", "production")).lower()
     _is_sandbox = _env_label == "sandbox"
 
+    _ltd2 = st.session_state.lang_level
     if _is_sandbox:
-        st.warning(
-            "🧪 **PAPER TRADING MODE (Sandbox)** — orders are simulated, no real money is at risk. "
-            "Switch from paper trading to real trading in your app settings."
+        st.success(
+            "🧪 **PAPER TRADING (Practice Mode)** — no real money used. "
+            "Orders are simulated so you can practice without any financial risk. "
+            "When you're ready to trade with real money, your account admin can switch this to live mode."
         )
     else:
         st.error(
-            "⚡ **LIVE TRADING MODE** — orders execute in your REAL Tradier account with REAL money. "
-            "Every click costs money if filled. There are no take-backs after a filled order."
+            "⚡ **LIVE TRADING — REAL MONEY** \n\n"
+            "Orders placed here go straight to your real brokerage account. "
+            "Every order you confirm will cost or earn real money. "
+            "There is no undo after an order is filled."
         )
 
     # ── Account dashboard ────────────────────────────────────────────────────
@@ -4717,7 +4773,7 @@ else:
                             st.success(f"✅ Order {_oid} cancelled.")
                             st.cache_data.clear()
                         else:
-                            st.error(f"Cancel failed: {_cr}")
+                            st.error(f"Cancel failed. Please try again or cancel in your broker directly.")
         else:
             st.caption("No recent orders.")
 
@@ -4996,7 +5052,7 @@ else:
 
         _instrument_note = ""
         if "Futures" in _order_class or "futures" in _order_class.lower():
-            st.warning("⚠️ Futures are NOT supported via Tradier. Use Interactive Brokers, NinjaTrader, or thinkorSwim.")
+            st.info("ℹ️ Futures orders cannot be placed through this app's broker connection. Use your futures broker directly (Interactive Brokers, NinjaTrader, or thinkorSwim) to place futures trades. Use the Futures Calculator above to size your trade first.")
 
         # Beginner plain-English summary
         if _lvl == "Beginner":
@@ -5079,7 +5135,7 @@ The most you can lose: ${_order_preview.get('max_loss',0):,.2f}
                             "Double-check your strike and expiration date."
                         )
             else:
-                st.error("No response from Tradier. Check your connection.")
+                st.error("No response from the broker. Check your internet connection and try again.")
 
         if not _can_submit:
             st.caption("Check both boxes above to enable the order button.")
