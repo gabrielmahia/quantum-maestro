@@ -171,6 +171,22 @@ VALUE_TICKERS = ["JPM", "BAC", "XOM", "CVX", "BRK.B", "JNJ", "PG"]
 KENYA_TICKERS = ["SCOM.NR", "EQTY.NR", "KCB.NR", "EABL.NR", "COOP.NR", "ABSA.NR", "NCBA.NR", "BAT.NR"]
 
 # 📊 COMBINED TICKER LIST (US + Kenya)
+# Teri Ijeoma's core trading universe (her public 34-stock list)
+TERI_UNIVERSE = [
+    # Mega-cap tech & AI
+    "NVDA","AMD","MSFT","AAPL","META","GOOGL","AMZN","TSLA",
+    # Semis & hardware
+    "AVGO","ARM","MU","SMCI","TSM","AMAT","LRCX",
+    # ETFs (index + sector)
+    "SPY","QQQ","IWM","XLK","XLE","XLF","GLD","TLT",
+    # Financial
+    "JPM","GS","MS","V","MA",
+    # Healthcare & consumer
+    "UNH","JNJ","PG","KO",
+    # Energy & commodities
+    "XOM","CVX","CL=F","GC=F",
+]
+
 ALL_TICKERS = VIP_TICKERS + KENYA_TICKERS
 
 SECTOR_MAP = {
@@ -1404,6 +1420,72 @@ def plain_spread_explanation(underlying, short_k, long_k, spread_type,
         "option_word":   option_word,
     }
 
+# =============================================================================
+# GLOBAL PRE-MARKET SCAN — Asia → Europe → US
+# Teri Ijeoma's top-down morning workflow.
+# Real data: yfinance tickers. Runs on demand, cached 30 min.
+# =============================================================================
+
+@st.cache_data(ttl=1800)
+def run_global_scan():
+    """
+    Fetch real-time quotes for the Teri morning sheet:
+    Asia (Nikkei, Hang Seng, Shanghai), Europe (DAX, FTSE, EuroStoxx),
+    US (SPY, QQQ, VIX, 10Y, DXY, Oil, Gold, ES, NQ).
+    Returns a structured dict of all readings.
+    """
+    import warnings; warnings.filterwarnings("ignore")
+    def safe_quote(ticker, field="Close"):
+        try:
+            d = yf.download(ticker, period="2d", progress=False)
+            if isinstance(d.columns, pd.MultiIndex):
+                d = d[field].iloc[:,0] if field in d.columns.get_level_values(0) else d.iloc[:,0]
+            else:
+                d = d[field]
+            d = d.dropna()
+            if len(d) >= 2:
+                prev, curr = float(d.iloc[-2]), float(d.iloc[-1])
+                return {"value": curr, "prev": prev, "chg_pct": (curr-prev)/prev*100}
+            elif len(d) == 1:
+                return {"value": float(d.iloc[-1]), "prev": None, "chg_pct": None}
+        except Exception:
+            pass
+        return {"value": None, "prev": None, "chg_pct": None}
+
+    TICKERS = {
+        "Asia": {
+            "🇯🇵 Nikkei":       "^N225",
+            "🇭🇰 Hang Seng":    "^HSI",
+            "🇨🇳 Shanghai":     "000001.SS",
+        },
+        "Europe": {
+            "🇩🇪 DAX":          "^GDAXI",
+            "🇬🇧 FTSE 100":     "^FTSE",
+            "🇪🇺 EuroStoxx50":  "^STOXX50E",
+        },
+        "US Market": {
+            "SPY":              "SPY",
+            "QQQ":              "QQQ",
+            "VIX":              "^VIX",
+            "10Y Yield":        "^TNX",
+            "DXY (Dollar)":     "DX-Y.NYB",
+            "Oil (WTI)":        "CL=F",
+            "Gold":             "GC=F",
+        },
+        "Futures": {
+            "ES (S&P futs)":    "ES=F",
+            "NQ (Nasdaq futs)": "NQ=F",
+            "RTY (Russell)":    "RTY=F",
+        },
+    }
+
+    result = {}
+    for region, tickers in TICKERS.items():
+        result[region] = {}
+        for name, sym in tickers.items():
+            result[region][name] = safe_quote(sym)
+    return result
+
 # V4 — FULL INSTRUMENT SUITE · AUTO-DATA · BEGINNER-TO-PRO LANGUAGE
 # =============================================================================
 
@@ -2486,6 +2568,24 @@ with st.sidebar:
     st.header("1. Your Account")
 
     _lp = st.session_state.lang_level
+
+    # Dual-account mode (Scout vs Production)
+    _acct_mode = st.radio(
+        "Which account are you trading today?",
+        ["Account A — Scout (learn & test)", "Account B — Production (income engine)"],
+        help=(
+            "Account A (Scout): small capital, test new setups, learn without big losses. "
+            "Account B (Production): your real income account — apply only proven strategies."
+        ),
+        horizontal=True
+    )
+    _is_production = "Production" in _acct_mode
+
+    if _is_production:
+        st.success("📊 **Production Account** — use proven strategies only. Higher size, tighter discipline.")
+    else:
+        st.info("🧪 **Scout Account** — test ideas here first. Small size. Fail cheaply.")
+
     if _lp in ["Beginner","Intermediate"]:
         st.caption("Fill in your actual account details so the app sizes trades correctly for you.")
 
@@ -2657,10 +2757,12 @@ with st.sidebar:
     st.divider()
     st.header("3. How Will You Trade?")
     _ls = st.session_state.lang_level
-    _strat_opts = ['Income (SPX Vertical Credit Spread)', 'IWT Long Option (60+ DTE)',
-                   'Futures (Index/Commodity)', 'Long (Buy)', 'Short (Sell)', 'Income (Cash-Secured Put)']
+    _strat_opts = ['Income (SPX Vertical Credit Spread)', 'Income (Iron Condor — sideways market)',
+                   'IWT Long Option (60+ DTE)', 'Futures (Index/Commodity)',
+                   'Long (Buy)', 'Short (Sell)', 'Income (Cash-Secured Put)']
     _strat_labels = {
         'Income (SPX Vertical Credit Spread)': "💰 Sell a vertical spread — collect weekly income (SPX)",
+        'Income (Iron Condor — sideways market)':"🦅 Iron Condor — collect income when market moves sideways",
         'IWT Long Option (60+ DTE)':           "🚀 Buy a DITM option — ride a big directional move (IWT)",
         'Futures (Index/Commodity)':           "🛢️ Trade futures — oil, gold, S&P micro-contracts",
         'Long (Buy)':                          "📈 Buy shares — profit when stock rises",
@@ -2679,6 +2781,36 @@ with st.sidebar:
             "Determines which inputs and calculators appear below."
         )
     )
+
+    # Day-of-week risk throttle (Mon=observe, Tue=income, Wed=reduce, Thu=production)
+    import datetime as _dt
+    _dow = _dt.datetime.now().weekday()  # 0=Mon, 4=Fri
+    _dow_names = {0:"Monday",1:"Tuesday",2:"Wednesday",3:"Thursday",4:"Friday"}
+    _dow_guidance = {
+        0: ("🔵 MONDAY — Observe", "yellow",
+            "Monday is for scanning and planning, not trading. "
+            "Run the global scan, check the week's events, set alerts. Small size only if a perfect setup appears."),
+        1: ("🟢 TUESDAY — Best income day", "green",
+            "Tuesday is historically the best day for SPX credit spreads. "
+            "Full size on A+ setups. Run your IWT scorecard before entering."),
+        2: ("🟡 WEDNESDAY — Reduce size", "yellow",
+            "Wednesday has elevated event risk (Fed minutes, mid-week earnings). "
+            "Reduce size 50%. Avoid opening new spreads near major announcements."),
+        3: ("🟢 THURSDAY — Production day", "green",
+            "Post-event repricing. Volatility often elevated from Wednesday events, "
+            "meaning better premiums. One of the best days for 5-7 DTE income trades."),
+        4: ("🔴 FRIDAY — Caution / close", "red",
+            "Friday has elevated gamma risk near expiry. "
+            "Close any 0-1 DTE positions before noon. No new spreads expiring today."),
+    }
+    _today_label, _today_color, _today_note = _dow_guidance.get(_dow, _dow_guidance[4])
+    if _ls in ["Beginner","Intermediate"]:
+        _dow_display_fn = {
+            "yellow": st.warning, "green": st.success, "red": st.error
+        }.get(_today_color, st.info)
+        _dow_display_fn(f"**{_today_label}** — {_today_note}")
+    else:
+        st.caption(f"📅 {_today_label}: {_today_note[:80]}")
 
     entry_mode = st.radio(
         "When do you want to enter?" if _ls in ["Beginner","Intermediate"] else "Entry",
@@ -2936,6 +3068,90 @@ with st.sidebar:
                 f"±${_fspec['tick_val']/0.25*fut_contracts:,.2f}. "
                 f"Futures profit/loss happens instantly, every second the market is open."
             )
+    elif strategy == "Income (Iron Condor — sideways market)":
+        _lic = st.session_state.lang_level
+        if _lic in ["Beginner","Intermediate"]:
+            st.info(
+                "**🦅 Iron Condor — getting paid when the market goes SIDEWAYS**\n\n"
+                "An iron condor combines TWO credit spreads: a put spread below the market "
+                "AND a call spread above the market. You profit if the market stays in the zone between them.\n\n"
+                "Example on SPX at 7423: sell 7200 put spread AND sell 7600 call spread. "
+                "As long as SPX stays between 7200-7600 at expiry, you keep both credits.\n\n"
+                "Best used when: VIX is moderate, no major events, market has been range-bound."
+            )
+
+        st.markdown("**① When does it expire?**")
+        _ic_dte = st.number_input("Days to expiry (DTE)", value=7, min_value=1, max_value=45, step=1,
+            help="7-14 DTE is standard for iron condors. Longer = more premium but more time for market to move.")
+
+        st.markdown("**② SPX level right now?**")
+        _ic_spx = st.number_input("SPX reference price",
+            value=float(st.session_state.get("_last_spx_entered", 0.0)), step=1.0)
+        if _ic_spx > 0: st.session_state["_last_spx_entered"] = _ic_spx
+
+        _ic_vix = st.number_input("VIX right now (%)", value=17.0, min_value=1.0, max_value=80.0, step=0.5)
+
+        # Auto-suggest wings
+        _ic_sugg = {}
+        if _ic_spx > 0 and _ic_vix > 0 and _ic_dte > 0:
+            import math as _m
+            _ic_em = _ic_spx * (_ic_vix/100) * _m.sqrt(_ic_dte/365)
+            _ic_put_short  = round((_ic_spx - _ic_em*0.75)/5)*5
+            _ic_put_long   = _ic_put_short - 25
+            _ic_call_short = round((_ic_spx + _ic_em*0.75)/5)*5
+            _ic_call_long  = _ic_call_short + 25
+            _ic_sugg = {"put_short":_ic_put_short,"put_long":_ic_put_long,
+                        "call_short":_ic_call_short,"call_long":_ic_call_long,"em":_ic_em}
+            st.success(
+                f"Expected move: ±{_ic_em:.0f} pts  |  "
+                f"**PUT side:** Sell {_ic_put_short}/Buy {_ic_put_long}  |  "
+                f"**CALL side:** Sell {_ic_call_short}/Buy {_ic_call_long}  |  "
+                f"Profit zone: {_ic_put_short}-{_ic_call_short}"
+            )
+
+        st.markdown("**③ PUT spread (below the market):**")
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            _ic_ps = st.number_input("PUT you SELL (higher # below market)",
+                value=float(_ic_sugg.get("put_short",0)), step=5.0)
+        with _c2:
+            _ic_pl = st.number_input("PUT you BUY (protection, lower #)",
+                value=float(_ic_sugg.get("put_long",0)), step=5.0)
+        _ic_put_credit = st.number_input("Credit collected — put side ($/share)", value=0.0, step=0.05)
+
+        st.markdown("**④ CALL spread (above the market):**")
+        _c3, _c4 = st.columns(2)
+        with _c3:
+            _ic_cs = st.number_input("CALL you SELL (lower # above market)",
+                value=float(_ic_sugg.get("call_short",0)), step=5.0)
+        with _c4:
+            _ic_cl = st.number_input("CALL you BUY (protection, higher #)",
+                value=float(_ic_sugg.get("call_long",0)), step=5.0)
+        _ic_call_credit = st.number_input("Credit collected — call side ($/share)", value=0.0, step=0.05)
+
+        _ic_contracts = st.number_input("Contracts", value=1, min_value=1, max_value=20, step=1)
+
+        if _ic_put_credit > 0 and _ic_call_credit > 0:
+            _ic_total_credit = (_ic_put_credit + _ic_call_credit)
+            _ic_width = abs(_ic_ps - _ic_pl)
+            _ic_max_profit = _ic_total_credit * 100 * _ic_contracts
+            _ic_max_loss   = (_ic_width - _ic_total_credit) * 100 * _ic_contracts
+            st.info(
+                f"**Total credit: ${_ic_total_credit:.2f}/share = ${_ic_max_profit:,.0f} per {_ic_contracts} contract(s)**\n"
+                f"Profit zone: SPX stays between {_ic_ps:.0f} and {_ic_cs:.0f} at expiry\n"
+                f"Max loss: ${_ic_max_loss:,.0f} if SPX breaks either wing"
+            )
+            # Wire to spread variables so downstream calc works
+            short_strike = _ic_ps; long_strike = _ic_pl
+            spread_credit = _ic_put_credit; spread_kind = "PUT"
+            spx_reference_price = _ic_spx; iv_percent = _ic_vix; dte = _ic_dte
+            short_delta = 0.15; event_risk_48h = False; hold_through_event = False
+        else:
+            short_strike = 0.0; long_strike = 0.0; spread_credit = 0.0
+            spread_kind = "PUT"; spx_reference_price = _ic_spx; iv_percent = _ic_vix
+            dte = _ic_dte; short_delta = 0.15; event_risk_48h = False; hold_through_event = False
+
+
     elif strategy == "Income (SPX Vertical Credit Spread)":
         _lvl_v = st.session_state.lang_level
         
@@ -3303,6 +3519,86 @@ if not st.session_state.macro and _ld in ["Beginner","Intermediate"]:
         "exactly what to trade and how to trade it."
     )
 
+
+# =============================================================================
+# GLOBAL PRE-MARKET SCAN — Asia → Europe → US Morning Brief
+# =============================================================================
+
+with st.expander("🌍 Morning Brief — Global Market Scan (Asia → Europe → US)", expanded=False):
+    _lgm = st.session_state.lang_level
+    if _lgm in ["Beginner","Intermediate"]:
+        st.caption(
+            "Teri's morning process: check Asia overnight, then Europe, then US futures. "
+            "This tells you whether the market is risk-on (buy) or risk-off (sell/avoid) before you trade anything."
+        )
+
+    if st.button("🔄 Run Global Scan Now", key="global_scan_btn"):
+        with st.spinner("Fetching live data across 16 markets..."):
+            _gs = run_global_scan()
+        st.session_state["_global_scan"] = _gs
+
+    _gs = st.session_state.get("_global_scan")
+    if _gs:
+        # Colour-code each change
+        def _fmt(entry, label):
+            v = entry.get("value"); chg = entry.get("chg_pct")
+            if v is None: return f"{label}: N/A"
+            chg_str = f" ({chg:+.2f}%)" if chg is not None else ""
+            icon = "🟢" if (chg or 0) > 0 else ("🔴" if (chg or 0) < 0 else "⬜")
+            return f"{icon} **{label}**: {v:,.2f}{chg_str}"
+
+        risk_on_count = 0; risk_off_count = 0; total_count = 0
+
+        for region, data in _gs.items():
+            st.markdown(f"**{region}**")
+            cols = st.columns(min(len(data), 4))
+            for j, (name, entry) in enumerate(data.items()):
+                with cols[j % min(len(data), 4)]:
+                    chg = entry.get("chg_pct") or 0
+                    v   = entry.get("value")
+                    if v is not None:
+                        total_count += 1
+                        if chg > 0: risk_on_count += 1
+                        elif chg < 0: risk_off_count += 1
+                    st.markdown(_fmt(entry, name))
+
+        # Overall regime signal
+        st.markdown("---")
+        _risk_score = risk_on_count - risk_off_count
+        if total_count > 0:
+            if _risk_score >= 4:
+                st.success(
+                    f"🟢 **Risk-ON globally** ({risk_on_count}/{total_count} markets up) — "
+                    f"Favourable for SPX income trades and directional calls."
+                )
+            elif _risk_score <= -4:
+                st.error(
+                    f"🔴 **Risk-OFF globally** ({risk_off_count}/{total_count} markets down) — "
+                    f"Avoid new income trades. Reduce size. Consider protective puts."
+                )
+            else:
+                st.warning(
+                    f"🟡 **Mixed signals** ({risk_on_count} up / {risk_off_count} down) — "
+                    f"Proceed carefully. Prefer smaller size and tighter stops."
+                )
+
+        # Teri checklist
+        if _lgm in ["Beginner","Intermediate"]:
+            st.markdown("**Before you trade, answer these:**")
+            _checks = {
+                "Is SPY above its 20-day average (trending up)?": None,
+                "Is VIX below 25 (calm enough to sell premium)?":
+                    "below_25" if (_gs.get("US Market",{}).get("VIX",{}).get("value") or 99) < 25 else None,
+                "Did Asia close positive overnight?":
+                    "asia_positive" if (_gs.get("Asia",{}).get("🇯🇵 Nikkei",{}).get("chg_pct") or 0) > 0 else None,
+                "Is Oil stable (no big moves)?":
+                    "oil_stable" if abs((_gs.get("US Market",{}).get("Oil (WTI)",{}).get("chg_pct") or 5)) < 2 else None,
+            }
+            for q, answered in _checks.items():
+                icon = "✅" if answered else "❓"
+                st.caption(f"{icon} {q}")
+    else:
+        st.caption("Click 'Run Global Scan Now' to load live data from 16 global markets.")
 
 # === INSTRUMENT ADVISOR ===
 with st.expander("🤖 Instrument Advisor — What Should I Trade Today?", expanded=True):
