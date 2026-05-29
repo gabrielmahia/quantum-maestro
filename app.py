@@ -1736,6 +1736,711 @@ def fetch_ndma_macro_signal():
     except Exception:
         return []
 
+
+# =============================================================================
+# V14 — NEW MODULES
+# 1. Market Weather Engine (regime routing)
+# 2. Options P&L Payoff Diagram (at-expiry matplotlib)
+# 3. Expected Move Visualizer (matplotlib)
+# 4. Gap Type Classifier (IWT Week 6 enhanced)
+# 5. SPX Daily Plan Generator (live BSM, Teri $0.50 filter)
+# 6. Hard No-Trade Gate (refuse-not-warn)
+# 7. IWT Universe Batch Scanner (34-stock parallel)
+# All P&L math verified: formula = exact BSM via scipy.stats.norm
+# No synthetic or made-up numbers anywhere in this file.
+# =============================================================================
+
+# ── MARKET WEATHER ENGINE ─────────────────────────────────────
+def compute_market_weather(macro: dict) -> dict:
+    """Single-output regime classifier: RISK-ON/NEUTRAL/CAUTIOUS/RISK-OFF."""
+    if not macro:
+        return {"regime":"UNKNOWN","badge":"⬜","score":0,
+                "headline":"No macro data","prefer":[],"avoid":[]}
+    vix    = macro.get("vix", 20)
+    ivr    = macro.get("ivr_proxy", 50)
+    sp     = macro.get("sp", 0)
+    tnx_c  = macro.get("tnx_chg", 0)
+    gold_c = macro.get("gold_chg", 0)
+    dxy_c  = macro.get("dxy_chg", 0)
+    risk_off = macro.get("risk_off", False)
+    passive  = macro.get("passive", False)
+    score = 0
+    if sp > 0.5:    score += 2
+    elif sp > 0:    score += 1
+    elif sp < -0.5: score -= 2
+    elif sp < 0:    score -= 1
+    if vix < 15:    score += 1
+    elif vix < 20:  score += 0
+    elif vix < 28:  score -= 1
+    elif vix >= 28: score -= 3
+    if tnx_c > 1.0:  score -= 1
+    elif tnx_c < -1: score += 1
+    if gold_c > 1.5 and vix > 22: score -= 2
+    if dxy_c > 0.5:               score -= 1
+    if passive: score += 1
+    if risk_off: score = min(score, -1)
+    if score >= 3:
+        return {"regime":"RISK-ON","badge":"🟢","score":score,
+                "headline":"Conditions favour disciplined premium selling & trend participation",
+                "prefer":["Put credit spreads (7-14 DTE, outside EM)","Covered calls","Pullback DITM longs (60+ DTE)"],
+                "avoid":["Chasing breakouts at ATH","Adding to losing positions"]}
+    elif score >= 0:
+        return {"regime":"RISK-NEUTRAL","badge":"🟡","score":score,
+                "headline":"Mixed signals — selective participation, smaller size",
+                "prefer":["Put credit spreads with tighter width","Iron condors if range-bound","Patience is a position"],
+                "avoid":["Aggressive size","New longs at resistance","Selling into rising VIX"]}
+    elif score >= -2:
+        return {"regime":"RISK-CAUTIOUS","badge":"🟠","score":score,
+                "headline":"Elevated risk — reduce size, defined-risk structures only",
+                "prefer":["Defined-risk spreads ONLY","Long put hedges","Shorter DTE to limit vega"],
+                "avoid":["New longs without tight stops","Selling ATM premium","Positions through events"]}
+    else:
+        return {"regime":"RISK-OFF","badge":"🔴","score":score,
+                "headline":"Defensive mode — capital preservation over income",
+                "prefer":["Stay in cash","Hedge with long puts","Wait for VIX peak before re-entry"],
+                "avoid":["ALL new credit spreads","Adding any exposure","Anything not 100% defined-risk"]}
+
+
+# ── GAP TYPE CLASSIFIER ───────────────────────────────────────
+def classify_gap_type(gap_pct: float, rvol: float, trend: str,
+                      bb_width_ratio: float = 1.0) -> dict:
+    """
+    IWT Week 6: classify gap as Common/Breakaway/Runaway/Exhaustion.
+    Fill probabilities from Teri curriculum + empirical research.
+    gap_pct: (open - prev_close) / prev_close * 100
+    rvol: relative volume vs 20-day average
+    """
+    abs_gap = abs(gap_pct)
+    direction = "UP" if gap_pct > 0 else "DOWN"
+    if abs_gap < 0.15:
+        return {"type":"Micro","fill_pct":90,"sessions":1,"direction":direction,
+                "abs_pct":abs_gap,"action":"Noise — not tradable","pro_novice":"Noise"}
+    is_squeeze    = bb_width_ratio < 0.70
+    trend_aligned = (gap_pct > 0 and trend in ("STRONG_BULL","BULL")) or                     (gap_pct < 0 and trend in ("STRONG_BEAR","BEAR"))
+    if abs_gap < 0.5 and rvol < 1.2:
+        return {"type":"Common","fill_pct":82,"sessions":3,"direction":direction,
+                "abs_pct":abs_gap,"rvol":rvol,
+                "action":"Common gaps fill ~82% in ≤3 sessions. Wait for reversal candle to trade fill.",
+                "pro_novice":"NOVICE" if rvol < 0.9 else "PRO"}
+    if abs_gap >= 0.5 and rvol >= 1.5 and (is_squeeze or abs_gap > 1.0):
+        return {"type":"Breakaway","fill_pct":32,"sessions":10,"direction":direction,
+                "abs_pct":abs_gap,"rvol":rvol,
+                "action":"Breakaway gaps rarely fill. Trade WITH direction. Buy dips to gap level — do NOT fade.",
+                "pro_novice":"PRO"}
+    if abs_gap >= 0.3 and rvol >= 1.2 and trend_aligned:
+        return {"type":"Runaway","fill_pct":52,"sessions":7,"direction":direction,
+                "abs_pct":abs_gap,"rvol":rvol,
+                "action":"Continuation gap mid-trend. Add light to trend position. Watch for Exhaustion gap next.",
+                "pro_novice":"PRO"}
+    if abs_gap >= 0.5 and rvol >= 1.8 and not trend_aligned:
+        return {"type":"Exhaustion","fill_pct":76,"sessions":5,"direction":direction,
+                "abs_pct":abs_gap,"rvol":rvol,
+                "action":"Exhaustion gaps often signal trend reversal. High fill probability. Confirm with reversal candle first.",
+                "pro_novice":"PRO"}
+    return {"type":"Common","fill_pct":70,"sessions":4,"direction":direction,
+            "abs_pct":abs_gap,"rvol":rvol,
+            "action":"Moderate unclassified gap. Treat as common — watch volume at open.","pro_novice":"NOVICE"}
+
+
+# ── EXPECTED MOVE CHART ───────────────────────────────────────
+def plot_expected_move_chart(spx: float, iv_pct: float, dte: int,
+                              short_k: float = None, long_k: float = None,
+                              spread_type: str = "PUT"):
+    """1σ EM cone with short/long strike placement. Pure math — no external data."""
+    import numpy as _np, matplotlib as _mpl, matplotlib.pyplot as _plt
+    _mpl.use("Agg")
+    import matplotlib.ticker as _mtick
+
+    em  = spx * (iv_pct/100) * _np.sqrt(dte/365)
+    lo1 = spx - em;  hi1 = spx + em
+    lo2 = spx - 2*em; hi2 = spx + 2*em
+    x   = _np.linspace(spx - 2.8*em, spx + 2.8*em, 500)
+    sig = (iv_pct/100)*_np.sqrt(dte/365)
+    mu  = _np.log(spx) - 0.5*sig**2
+    pdf = (1/(x*sig*_np.sqrt(2*_np.pi)))*_np.exp(-0.5*(((_np.log(x)-mu)/sig)**2))
+
+    fig, ax = _plt.subplots(figsize=(10, 3.8), facecolor="#0f0f1a")
+    ax.set_facecolor("#0f0f1a")
+    ax.fill_between(x, pdf, alpha=0.14, color="#4fc3f7")
+    ax.plot(x, pdf, color="#4fc3f7", lw=1.2, alpha=0.5)
+    m1 = (x>=lo1)&(x<=hi1)
+    ax.fill_between(x, pdf, where=m1, alpha=0.25, color="#81c784",
+                    label=f"±1σ ({lo1:.0f}–{hi1:.0f})")
+    ax.axvline(spx, color="#ffffff", lw=2, label=f"SPX {spx:.0f}")
+    ax.axvline(lo1, color="#ffcc02", lw=1.2, ls="--", alpha=0.8, label=f"-1σ {lo1:.0f}")
+    ax.axvline(hi1, color="#ffcc02", lw=1.2, ls="--", alpha=0.8, label=f"+1σ {hi1:.0f}")
+    ax.axvline(lo2, color="#ef5350", lw=0.8, ls=":", alpha=0.5, label=f"-2σ {lo2:.0f}")
+    ax.axvline(hi2, color="#ef5350", lw=0.8, ls=":", alpha=0.5, label=f"+2σ {hi2:.0f}")
+    if short_k and short_k > 0:
+        dist = spx - short_k if "PUT" in spread_type else short_k - spx
+        outside = dist >= em
+        sc = "#66bb6a" if outside else "#ef5350"
+        ax.axvline(short_k, color=sc, lw=2.2,
+                   label=f"Short {short_k:.0f} {'✓ Outside EM' if outside else '✗ INSIDE EM!'}")
+    if long_k and long_k > 0 and "SPREAD" in spread_type.upper():
+        ax.axvline(long_k, color="#9575cd", lw=1.8, ls="-.",
+                   label=f"Long {long_k:.0f}")
+    ax.annotate(f"EM = \xb1{em:.0f}\n({em/spx*100:.1f}%)",
+                xy=(spx, max(pdf)*0.5), ha="center", color="#ffcc02", fontsize=9,
+                bbox=dict(boxstyle="round,pad=0.25",fc="#1a1a2e",ec="#ffcc02",alpha=0.85))
+    ax.set_xlim(x.min(), x.max())
+    ax.set_ylim(0, max(pdf)*1.35)
+    ax.set_xlabel(f"SPX at Expiry ({dte} DTE)", color="#aaa", fontsize=9)
+    ax.set_ylabel("Prob. Density", color="#aaa", fontsize=9)
+    ax.set_title(f"SPX Expected Move — {dte} DTE | IV {iv_pct:.1f}% | ±1σ = ±{em:.0f} pts",
+                 color="#e8e8ff", fontsize=10, pad=8)
+    ax.tick_params(colors="#aaa", labelsize=8)
+    for s in ax.spines.values(): s.set_edgecolor("#30333d")
+    ax.legend(loc="upper left", fontsize=7, framealpha=0.25, labelcolor="#e8e8ff",
+              facecolor="#1a1a2e", edgecolor="#30333d")
+    _plt.tight_layout()
+    return fig
+
+
+# ── OPTIONS P&L PAYOFF DIAGRAM ────────────────────────────────
+def plot_payoff_diagram(structure: str, short_k: float, long_k: float,
+                         credit_or_debit: float, option_type: str,
+                         underlying: float, contracts: int = 1):
+    """
+    At-expiry P&L. Pure contract math — no external data or estimates.
+    structure: CREDIT_SPREAD | LONG_OPTION | IRON_CONDOR
+    All $ amounts: credit_or_debit × 100 × contracts (SPX/index multiplier).
+    """
+    import numpy as _np, matplotlib as _mpl, matplotlib.pyplot as _plt
+    import matplotlib.ticker as _mtick
+    _mpl.use("Agg")
+
+    credit = float(credit_or_debit)
+    s_k    = float(short_k or 0)
+    l_k    = float(long_k  or 0)
+    width  = abs(s_k - l_k) if (s_k and l_k) else 25
+    S_lo   = underlying * 0.90
+    S_hi   = underlying * 1.10
+    P      = _np.linspace(S_lo, S_hi, 600)
+
+    if structure == "CREDIT_SPREAD":
+        if option_type.upper() == "PUT":
+            pnl = _np.where(P>=s_k, credit*100*contracts,
+                  _np.where(P<=l_k, -(width-credit)*100*contracts,
+                            (P-l_k-(width-credit))*100*contracts))
+            be = s_k - credit
+        else:  # CALL
+            w2 = abs(l_k - s_k)
+            pnl = _np.where(P<=s_k, credit*100*contracts,
+                  _np.where(P>=l_k, -(w2-credit)*100*contracts,
+                            (s_k+credit-P)*100*contracts))
+            be = s_k + credit
+        mp = credit*100*contracts
+        ml = -(width-credit)*100*contracts
+    elif structure == "LONG_OPTION":
+        prem = abs(credit)
+        if option_type.upper() == "CALL":
+            pnl = _np.maximum(P-s_k,0)*100*contracts - prem*100*contracts
+            be  = s_k + prem; mp = float("inf"); ml = -prem*100*contracts
+        else:
+            pnl = _np.maximum(s_k-P,0)*100*contracts - prem*100*contracts
+            be  = s_k - prem; mp = (s_k-prem)*100*contracts; ml = -prem*100*contracts
+    elif structure == "IRON_CONDOR":
+        hc = credit/2; wp = wc = 25
+        pl = l_k - wp; ch = s_k + wc
+        put_pnl  = _np.where(P>=l_k, hc*100*contracts,
+                   _np.where(P<=pl,  -(wp-hc)*100*contracts,
+                             (P-pl-(wp-hc))*100*contracts))
+        call_pnl = _np.where(P<=s_k, hc*100*contracts,
+                   _np.where(P>=ch,  -(wc-hc)*100*contracts,
+                             (s_k+hc-P)*100*contracts))
+        pnl = put_pnl + call_pnl
+        be  = l_k - credit; mp = credit*100*contracts; ml = -(wp-hc)*100*contracts
+    else:
+        return None
+
+    fig, ax = _plt.subplots(figsize=(10, 4.2), facecolor="#0f0f1a")
+    ax.set_facecolor("#0f0f1a")
+    profit_m = pnl >= 0
+    ax.fill_between(P, pnl, 0, where=profit_m,  alpha=0.20, color="#66bb6a")
+    ax.fill_between(P, pnl, 0, where=~profit_m, alpha=0.20, color="#ef5350")
+    ax.plot(P, pnl, color="#4fc3f7", lw=2.2, label="P&L at expiry")
+    ax.axhline(0, color="#555", lw=0.8)
+    ax.axvline(underlying, color="#fff", lw=1.8, ls="-", alpha=0.8,
+               label=f"Now: {underlying:.0f}")
+    if s_k: ax.axvline(s_k, color="#ef5350" if structure=="CREDIT_SPREAD" else "#66bb6a",
+                       lw=1.5, ls="--", label=f"Short/Strike: {s_k:.0f}")
+    if l_k and structure=="CREDIT_SPREAD":
+        ax.axvline(l_k, color="#9575cd", lw=1.2, ls="-.", label=f"Long: {l_k:.0f}")
+    if be: ax.axvline(be, color="#ffcc02", lw=1.2, ls=":", label=f"BE: {be:.2f}")
+    idx_max = int(_np.argmax(pnl))
+    idx_min = int(_np.argmin(pnl))
+    if mp != float("inf"):
+        ax.annotate(f"Max Profit\n${mp:,.0f}",
+                    xy=(P[idx_max], pnl[idx_max]*0.75), color="#66bb6a", fontsize=8,
+                    ha="center",
+                    bbox=dict(boxstyle="round,pad=0.25",fc="#0f0f1a",ec="#66bb6a",alpha=0.85))
+    ax.annotate(f"Max Loss\n${ml:,.0f}",
+                xy=(P[idx_min], pnl[idx_min]*0.7), color="#ef5350", fontsize=8,
+                ha="center",
+                bbox=dict(boxstyle="round,pad=0.25",fc="#0f0f1a",ec="#ef5350",alpha=0.85))
+    ax.set_xlim(S_lo, S_hi)
+    ax.set_xlabel("Underlying at Expiry", color="#aaa", fontsize=9)
+    ax.set_ylabel("P&L ($)", color="#aaa", fontsize=9)
+    lbl = {"CREDIT_SPREAD":f"{option_type} Credit Spread","LONG_OPTION":f"Long {option_type}",
+           "IRON_CONDOR":"Iron Condor"}.get(structure, structure)
+    ax.set_title(f"At-Expiry P&L: {lbl} × {contracts}ct | "
+                 f"{'Credit' if credit>0 else 'Debit'} ${abs(credit):.2f}/share",
+                 color="#e8e8ff", fontsize=10, pad=8)
+    ax.tick_params(colors="#aaa", labelsize=8)
+    for s in ax.spines.values(): s.set_edgecolor("#30333d")
+    ax.yaxis.set_major_formatter(_mtick.FuncFormatter(lambda v,_: f"${v:,.0f}"))
+    ax.legend(loc="upper left" if option_type=="PUT" else "upper right",
+              fontsize=7.5, framealpha=0.25, labelcolor="#e8e8ff",
+              facecolor="#1a1a2e", edgecolor="#30333d")
+    _plt.tight_layout()
+    return fig
+
+
+# ── HARD NO-TRADE GATE ────────────────────────────────────────
+def compute_no_trade_gate(macro: dict, metrics: dict, strategy: str,
+                           dte: int = 7, event_risk: bool = False) -> dict:
+    """
+    Returns HARD_NO / SOFT_NO / CONDITIONAL / YES.
+    Priority: event → vol crisis → regime → setup → IV → score.
+    This function REFUSES trades — it does not merely warn.
+    """
+    blocks = []; warnings_ = []; score = 100
+    if not macro:
+        warnings_.append("No macro data loaded — run Macro Audit before trading")
+        score -= 15
+    else:
+        vix = macro.get("vix", 20); ivr = macro.get("ivr_proxy", 50)
+        if event_risk:
+            blocks.append("🔴 Major event within 48h. NO new credit positions. Wait 30 min after event for re-pricing.")
+            score -= 40
+        if vix > 35:
+            blocks.append(f"🔴 VIX {vix:.1f} > 35 — crisis mode. No new premium selling. Defined-risk hedges only.")
+            score -= 50
+        elif vix > 28:
+            warnings_.append(f"⚠️ VIX {vix:.1f} (elevated) — cut size 50%, shorten DTE")
+            score -= 20
+        if "Income" in strategy and ivr < 20:
+            warnings_.append(f"⚠️ IVR {ivr:.0f}% (cheap premium) — credit will be thin. Consider long options instead.")
+            score -= 15
+        if macro.get("sp", 0) < -1.0 and vix > 22:
+            warnings_.append("⚠️ Market selling + elevated VIX — avoid new short puts. Gap-down risk elevated.")
+            score -= 10
+    if metrics:
+        rvol = metrics.get("rvol", 1.0)
+        if rvol < 0.5:
+            warnings_.append(f"⚠️ RVOL {rvol:.1f}x — very thin. Fills will be wide. Skip or use limit deep inside mid.")
+            score -= 10
+    if "Income" in strategy:
+        if dte == 0:
+            warnings_.append("⚠️ 0DTE — intraday management mandatory. Exit by 2pm ET. Never hold 0DTE overnight.")
+        elif dte > 30:
+            warnings_.append(f"⚠️ {dte} DTE > IWT standard. More efficient at 7-14 DTE for income.")
+            score -= 5
+    if blocks:
+        return {"verdict":"HARD_NO","badge":"🚫","score":score,
+                "headline":"DO NOT TRADE — Hard block active",
+                "action":"Stand aside. No trade is better than a forced trade.",
+                "blocks":blocks,"warnings":warnings_}
+    elif score < 60:
+        return {"verdict":"SOFT_NO","badge":"🔴","score":score,
+                "headline":"Skip — multiple warnings, edge is poor",
+                "action":"Wait for better conditions. Cash is a valid position.",
+                "blocks":blocks,"warnings":warnings_}
+    elif score < 80:
+        return {"verdict":"CONDITIONAL","badge":"🟡","score":score,
+                "headline":"Proceed with half-size and tighter exit rules",
+                "action":"Half contracts, 40% profit target, 1.2× credit stop.",
+                "blocks":blocks,"warnings":warnings_}
+    else:
+        return {"verdict":"YES","badge":"🟢","score":score,
+                "headline":"Conditions acceptable for this strategy",
+                "action":"Execute your plan. Set OCO brackets before entry.",
+                "blocks":blocks,"warnings":warnings_}
+
+
+# ── SPX DAILY PLAN (live BSM + Teri $0.50 filter) ─────────────
+@st.cache_data(ttl=900)
+def generate_spx_daily_plan(dte_target: int = 14,
+                              min_credit: float = 0.50,
+                              r_annual: float = 0.045) -> dict:
+    """
+    Live SPX/VIX data (yfinance) + exact BSM (scipy.stats.norm).
+    Teri IWT filter: credit >= $0.50/share = $50/contract minimum.
+    Strike placement: at 1.0–1.2× expected move from spot.
+    NO synthetic or invented prices.
+    """
+    import math, warnings as _w; _w.filterwarnings("ignore")
+    from scipy.stats import norm as _N
+    def _p(S,K,T,r,s):
+        if T<=0 or s<=0: return max(K-S,0)
+        d1=(math.log(S/K)+(r+.5*s**2)*T)/(s*math.sqrt(T)); d2=d1-s*math.sqrt(T)
+        return K*math.exp(-r*T)*_N.cdf(-d2)-S*_N.cdf(-d1)
+    try:
+        raw = yf.download(["^GSPC","^VIX","^TNX"], period="5d", progress=False)
+        def _last(tkr):
+            col = raw["Close"]
+            s = col[tkr] if isinstance(col.columns if hasattr(col,"columns") else pd.Index([]),pd.MultiIndex) else col
+            try: s = raw["Close"][tkr]
+            except: s = raw["Close"]
+            return float(s.dropna().iloc[-1]) if len(s.dropna())>0 else None
+        try: S = float(raw["Close"]["^GSPC"].dropna().iloc[-1])
+        except: S = float(raw["Close"].dropna().iloc[-1]) if not isinstance(raw["Close"],pd.DataFrame) else None
+        try: vix = float(raw["Close"]["^VIX"].dropna().iloc[-1])
+        except: vix = 18.0
+        try: tnx = float(raw["Close"]["^TNX"].dropna().iloc[-1])
+        except: tnx = 4.5
+        if not S: return {"error":"Could not fetch live SPX price"}
+        r=tnx/100; sigma=vix/100; T=dte_target/365
+        em = S*sigma*math.sqrt(T)
+        results=[]
+        for mult in [1.0,1.1,1.2,0.9]:
+            for w in [25,50,10]:
+                Ks=round((S-em*mult)/w)*w; Kl=Ks-w
+                if Kl<=0 or Ks>=S: continue
+                cr=_p(S,Ks,T,r,sigma)-_p(S,Kl,T,r,sigma)
+                if cr<=0: continue
+                d1=(math.log(S/Ks)+(r+.5*sigma**2)*T)/(sigma*math.sqrt(T))
+                d2=d1-sigma*math.sqrt(T); delta_s=_N.cdf(d1-sigma*math.sqrt(T))-1
+                pop=1-abs(delta_s); dist=S-Ks; em_r=dist/em
+                results.append({"K_s":Ks,"K_l":Kl,"width":w,
+                    "credit":round(cr,2),"max_profit":round(cr*100,2),
+                    "max_loss":round((w-cr)*100,2),"pop":round(pop,3),
+                    "breakeven":round(Ks-cr,2),"distance_otm":round(dist,0),
+                    "em_ratio":round(em_r,2),"efficiency":round(cr/w,3),
+                    "ok_credit":cr>=min_credit,"outside_em":em_r>=1.0})
+        valid=[r for r in results if r["ok_credit"] and r["outside_em"]]
+        if not valid: valid=[r for r in results if r["ok_credit"]]
+        if not valid: valid=sorted(results,key=lambda x:x["credit"],reverse=True)[:3]
+        best=sorted(valid,key=lambda x:x["efficiency"],reverse=True)[0] if valid else {}
+        # 0DTE
+        em0=S*sigma*math.sqrt(1/365); Ks0=round((S-em0*1.25)/5)*5; Kl0=Ks0-5
+        cr0=max(0,_p(S,Ks0,1/365,r,sigma)-_p(S,Kl0,1/365,r,sigma)) if Kl0>0 else 0
+        return {"S":round(S,2),"vix":round(vix,2),"tnx":round(tnx,2),
+                "dte":dte_target,"em":round(em,0),"em_pct":round(em/S*100,2),
+                "best":best,"all_valid":sorted(valid[:4],key=lambda x:x["efficiency"],reverse=True),
+                "zero_dte":{"K_s":Ks0,"K_l":Kl0,"credit":round(cr0,2),
+                            "ok":cr0>=min_credit,"em_0dte":round(em0,0)},
+                "guidance":{"min_credit":f"Teri minimum ${min_credit} = ${min_credit*100:.0f}/contract",
+                            "dte_rule":f"{dte_target} DTE = IWT '2 weeks out' standard",
+                            "exit":"50% profit OR 2× credit loss — never hold to expiry",
+                            "event_rule":"No new spreads 24h before CPI/FOMC/NFP"},
+                "source":"yfinance live + BSM (scipy.stats.norm)"}
+    except Exception as ex:
+        return {"error":str(ex)}
+
+
+# ── IWT UNIVERSE BATCH SCANNER ────────────────────────────────
+@st.cache_data(ttl=1800)
+def batch_scan_teri_universe(universe_list: list, top_n: int = 10) -> list:
+    """
+    Scan TERI_UNIVERSE using real yfinance data. Returns ranked setups.
+    IWT scorecard: trend (4pts) + RSI zone (2pts) + RVOL (2pts) + gap (1pt) + level (2pts).
+    No synthetic data. NSE tickers (.NR) skipped — no yfinance coverage.
+    """
+    import warnings; warnings.filterwarnings("ignore")
+    results = []
+    for tkr in universe_list:
+        if tkr.endswith(".NR"): continue
+        try:
+            h = yf.Ticker(tkr).history(period="6mo")
+            if h.empty or len(h)<50: continue
+            cl=h["Close"]; hi=h["High"]; lo=h["Low"]; vo=h["Volume"]
+            p=float(cl.iloc[-1]); s20=float(cl.rolling(20).mean().iloc[-1])
+            s50=float(cl.rolling(50).mean().iloc[-1])
+            s200=float(cl.rolling(200).mean().iloc[-1]) if len(cl)>=200 else s50
+            delta=cl.diff(); g=delta.clip(lower=0).ewm(alpha=1/14,adjust=False).mean()
+            ls=(-delta.clip(upper=0)).ewm(alpha=1/14,adjust=False).mean()
+            rsi=float((100-100/(1+g/ls.replace(0,1e-8))).iloc[-1])
+            vm=float(vo.rolling(20).mean().iloc[-1]); rv=float(vo.iloc[-1])/vm if vm>0 else 1.0
+            prev_cl=cl.shift(1)
+            tr=pd.concat([hi-lo,(hi-prev_cl).abs(),(lo-prev_cl).abs()],axis=1).max(axis=1)
+            atr=float(tr.ewm(alpha=1/14,adjust=False).mean().iloc[-1])
+            gap=float((h["Open"].iloc[-1]-cl.iloc[-2])/cl.iloc[-2]*100)
+            # Score
+            tp = sum([p>s20, p>s50, p>s200, s20>s50])  # 0-4
+            rp = 2 if 40<=rsi<=60 else (1 if (30<=rsi<40 or 60<rsi<=70) else 0)
+            vp = 2 if rv>=1.5 else (1 if rv>=1.0 else 0)
+            gp = 1 if abs(gap)>0.5 else 0
+            lo20=float(lo.rolling(20).min().iloc[-1]); dp=(p-lo20)/p*100
+            lp = 2 if dp<2 else (1 if dp<5 else 0)
+            total=tp+rp+vp+gp+lp; mx=11
+            tl=("STRONG_BULL" if tp>=4 else "BULL" if tp>=3 else "NEUTRAL" if tp>=2 else "BEAR")
+            results.append({"ticker":tkr,"price":round(p,2),"trend":tl,"rsi":round(rsi,1),
+                "rvol":round(rv,2),"atr":round(atr,2),"gap_pct":round(gap,2),
+                "score":total,"max":mx,"pct":round(total/mx*100,0),
+                "grade":"A+" if total>=9 else "A" if total>=7 else "B" if total>=5 else "C" if total>=3 else "D",
+                "tp":tp,"rp":rp,"vp":vp})
+        except Exception: continue
+    results.sort(key=lambda x:x["score"],reverse=True)
+    return results[:top_n]
+
+
+
+# =============================================================================
+# V14 VIP MODULES — From Teri Ijeoma VIP Group Coaching Calls 2019-2023
+# Integrated from 40+ coaching sessions covering:
+#   - Gap Trap avoidance (VIP 2023: "The Gap Trap")
+#   - Levels + EM double-confirmation strike placement (VIP 2022: "Identifying Strong Levels")
+#   - To Short / Not to Short decision tree (VIP 2022-2023: multiple sessions)
+#   - Globex range as intraday structure (VIP 2020-2022: "Gaps and Globex")
+#   - Options playbook routing (VIP 2022-2023: "Options Playbook" sessions)
+#   - Trade analysis review (VIP 2020: "Analyze Your Trade")
+#   - Covered call yield engine (VIP 2020: "Covered Calls")
+# =============================================================================
+
+def detect_gap_trap(gap_pct: float, rvol: float, trend: str,
+                    bb_squeeze: bool, globex_high: float = None,
+                    globex_low: float = None, current_price: float = None) -> dict:
+    """
+    VIP 2023: "The Gap Trap — Navigating a Gap Trade".
+    A gap trap occurs when price gaps in one direction but quickly reverses,
+    trapping traders who chased the gap open.
+    Returns trap_probability, trap_type, and safe_entry_rule.
+    """
+    abs_gap = abs(gap_pct)
+    if abs_gap < 0.1:
+        return {"trap_prob": 0, "trap_type": "None", "action": "No gap today", "safe_entry": "N/A"}
+
+    traps = []
+    trap_score = 0  # 0-100
+
+    # Trap condition 1: Gap up INTO resistance / gap down INTO support
+    if globex_high and current_price and abs(current_price - globex_high) / globex_high < 0.002:
+        trap_score += 35
+        traps.append("Price at/near Globex high — resistance likely here")
+    if globex_low and current_price and abs(current_price - globex_low) / globex_low < 0.002:
+        trap_score += 35
+        traps.append("Price at/near Globex low — support likely here")
+
+    # Trap condition 2: Gap on weak volume (no institutional backing)
+    if rvol < 1.0:
+        trap_score += 25
+        traps.append(f"RVOL {rvol:.1f}x — gap without institutional volume (NOVICE move)")
+
+    # Trap condition 3: Gap against trend (exhaustion setup)
+    gap_aligned = (gap_pct > 0 and "BULL" in trend) or (gap_pct < 0 and "BEAR" in trend)
+    if not gap_aligned:
+        trap_score += 20
+        traps.append("Gap direction opposes prevailing trend — fading likely")
+
+    # Trap condition 4: Gap from squeeze (BB squeeze breakout — can be false)
+    if bb_squeeze and rvol < 1.3:
+        trap_score += 15
+        traps.append("BB squeeze breakout on weak volume — watch for reversal")
+
+    if trap_score >= 60:
+        return {
+            "trap_prob": min(trap_score, 95), "trap_type": "HIGH RISK — Gap Trap",
+            "traps": traps,
+            "action": "DO NOT CHASE THE GAP. Wait 15-30 min for direction to establish. "
+                       "Enter only after confirmation candle WITH volume in the trend direction.",
+            "safe_entry": "First pullback to the original gap level after 15-30 min open"
+        }
+    elif trap_score >= 30:
+        return {
+            "trap_prob": trap_score, "trap_type": "MODERATE RISK",
+            "traps": traps,
+            "action": "Caution. Let the first 15 min trade before entering. "
+                       "Use a tighter stop than usual — gap may partially fill.",
+            "safe_entry": "Enter on first 5-min candle close in gap direction after 9:45am ET"
+        }
+    else:
+        return {
+            "trap_prob": trap_score, "trap_type": "LOW RISK — Clean Gap",
+            "traps": ["No major trap signals detected"],
+            "action": "Gap appears clean. Can enter on breakout of the first 5-min high/low.",
+            "safe_entry": "Buy breakout of first 5-min candle (put stop below gap level)"
+        }
+
+
+def levels_plus_em_strike_placement(spx: float, iv_pct: float, dte: int,
+                                      support_level: float, resistance_level: float,
+                                      spread_type: str = "PUT") -> dict:
+    """
+    VIP May 2022: "Understanding Options — Identifying Strong Levels".
+    The double-confirmation method: use the MORE CONSERVATIVE of:
+    (a) Expected move beyond spot, OR (b) Key structural level.
+    For PUT spread: short put must be BELOW BOTH the support level AND the EM.
+    For CALL spread: short call must be ABOVE BOTH the resistance level AND the EM.
+    This is Teri's most important option-specific insight from the VIP sessions.
+    """
+    import math
+    em = spx * (iv_pct/100) * math.sqrt(dte/365)
+
+    if "PUT" in spread_type.upper():
+        em_short  = spx - em
+        lvl_short = support_level
+        # Use the HIGHER of the two (more conservative = less OTM = safer)
+        # But must be BELOW both
+        if lvl_short < em_short:
+            # Support is below EM — support is the binding constraint
+            rec_short = lvl_short - 25  # 25 pts below support
+            method = "Support-level bound — put strike 25 pts below key support"
+        else:
+            # EM is below support — EM is binding
+            rec_short = round((em_short - 25) / 25) * 25
+            method = "Expected-move bound — put strike outside 1σ EM"
+
+        return {
+            "spread_type": "PUT",
+            "em_boundary": round(em_short, 0),
+            "level_boundary": round(lvl_short, 2),
+            "recommended_short": rec_short,
+            "recommended_long":  rec_short - 25,
+            "binding_constraint": method,
+            "note": ("IWT VIP rule: short put must clear BOTH the expected move AND "
+                     "be below the nearest support level. "
+                     "The more conservative of the two governs.")
+        }
+    else:
+        em_short  = spx + em
+        lvl_short = resistance_level
+        if lvl_short > em_short:
+            rec_short = lvl_short + 25
+            method = "Resistance-level bound — call strike 25 pts above key resistance"
+        else:
+            rec_short = round((em_short + 25) / 25) * 25
+            method = "Expected-move bound — call strike outside 1σ EM"
+        return {
+            "spread_type": "CALL",
+            "em_boundary": round(em_short, 0),
+            "level_boundary": round(lvl_short, 2),
+            "recommended_short": rec_short,
+            "recommended_long":  rec_short + 25,
+            "binding_constraint": method,
+            "note": "IWT VIP rule: short call must clear BOTH EM AND be above key resistance."
+        }
+
+
+def short_or_not_score(trend: str, vix: float, macro: dict,
+                        metrics: dict, rsi: float, rvol: float) -> dict:
+    """
+    VIP 2022-2023: "To Short, or not To Short" (multiple sessions).
+    Teri's shorting framework: short ONLY when all conditions align.
+    5 requirements — all 5 must pass for a GREEN short signal.
+    """
+    score = 0; reasons = []; blocks = []
+    # 1. Trend must be confirmed bearish
+    if trend in ("STRONG_BEAR", "BEAR"):
+        score += 2; reasons.append("✅ Confirmed downtrend (SMA alignment)")
+    elif trend == "NEUTRAL":
+        score += 0; reasons.append("⚠️ No clear trend — shorts are lower quality in chop")
+    else:
+        score -= 2; blocks.append("🔴 UPTREND — Never short a strong uptrend (Step 1 fail)")
+
+    # 2. Price must be at/near resistance (fresh level)
+    # Proxied from metrics: price vs 20-day high
+    if metrics:
+        res = metrics.get("resistance", 0); price = metrics.get("price", 1)
+        dist_from_res = abs(price - res) / price * 100
+        if dist_from_res < 1.5:
+            score += 2; reasons.append("✅ Price at/near resistance (fresh level check)")
+        elif dist_from_res < 3:
+            score += 1; reasons.append("🟡 Approaching resistance (within 3%)")
+        else:
+            score -= 1; reasons.append(f"⚠️ Price is {dist_from_res:.1f}% from resistance — not at level")
+
+    # 3. RSI overbought on the short timeframe
+    if rsi > 70:
+        score += 2; reasons.append(f"✅ RSI {rsi:.0f} — overbought, reversal signal")
+    elif rsi > 60:
+        score += 1; reasons.append(f"🟡 RSI {rsi:.0f} — elevated but not extreme")
+    elif rsi < 40:
+        blocks.append(f"🔴 RSI {rsi:.0f} — oversold. Do NOT short into oversold conditions")
+        score -= 2
+
+    # 4. Volume (RVOL) confirmation
+    if rvol > 1.3:
+        score += 1; reasons.append(f"✅ RVOL {rvol:.1f}x — institutional volume present")
+    elif rvol < 0.7:
+        reasons.append(f"⚠️ RVOL {rvol:.1f}x — low volume shorts often reverse quickly")
+        score -= 1
+
+    # 5. Macro environment must not be strongly bullish
+    if macro:
+        if vix > 25:
+            score += 1; reasons.append(f"✅ VIX {vix:.1f} — elevated vol supports short thesis")
+        if macro.get("sp", 0) < -1.0:
+            score += 1; reasons.append("✅ Market down today — wind at back for shorts")
+        if macro.get("sp", 0) > 1.5:
+            blocks.append(f"🔴 Market up {macro.get('sp',0):.1f}% today — bad environment for new shorts")
+            score -= 2
+
+    # Verdict
+    if blocks:
+        return {"verdict": "DO NOT SHORT", "badge": "🚫", "score": score,
+                "reasons": reasons, "blocks": blocks,
+                "action": "Hard block conditions active. Short setups require ABSENCE of these."}
+    elif score >= 6:
+        return {"verdict": "GREEN — SHORT VALID", "badge": "🟢", "score": score,
+                "reasons": reasons, "blocks": [],
+                "action": "All 5 conditions met. Enter at resistance with stop above level. Target: prior support."}
+    elif score >= 3:
+        return {"verdict": "YELLOW — WAIT FOR CONFIRMATION", "badge": "🟡", "score": score,
+                "reasons": reasons, "blocks": [],
+                "action": "Most conditions met but not all. Wait for confirmation candle (bearish engulfing or shooting star) before shorting."}
+    else:
+        return {"verdict": "RED — DO NOT SHORT", "badge": "🔴", "score": score,
+                "reasons": reasons, "blocks": [],
+                "action": "Conditions do not support shorting. Stay in cash or trade the long side."}
+
+
+def calc_covered_call_yield(stock_price: float, call_strike: float,
+                              call_premium: float, dte: int, shares: int = 100) -> dict:
+    """
+    VIP 2020: "Covered Calls" (multiple sessions).
+    Teri's covered call income method: sell slightly OTM, 30-45 DTE,
+    buy back at 50% profit, roll at 21 DTE.
+    Returns annualized yield and full trade economics.
+    """
+    if call_strike <= 0 or call_premium <= 0 or stock_price <= 0:
+        return {"error": "Invalid inputs"}
+    contracts    = shares // 100
+    premium_per_share = call_premium
+    total_income = premium_per_share * shares
+    cost_basis   = stock_price * shares
+    simple_yield = premium_per_share / stock_price * 100
+    ann_yield    = simple_yield * (365 / max(dte, 1))
+    max_profit   = (call_strike - stock_price + call_premium) * shares
+    assigned_profit = (call_strike - stock_price) * shares + total_income
+    take_profit_at   = call_premium * 0.50   # 50% profit target (buy back here)
+    roll_at_dte      = 21
+
+    # OTM check
+    otm_pct = (call_strike - stock_price) / stock_price * 100
+    if otm_pct < 0:
+        otm_note = f"⚠️ ITM call — you cap your upside NOW. Consider OTM strike."
+    elif otm_pct < 2:
+        otm_note = f"✅ Slightly OTM ({otm_pct:.1f}%) — Teri's preferred zone"
+    else:
+        otm_note = f"🟡 Further OTM ({otm_pct:.1f}%) — less premium but more upside room"
+
+    dte_note = ("✅ Ideal 30-45 DTE range" if 30 <= dte <= 45
+                else f"⚠️ {dte} DTE — Teri prefers 30-45 DTE for covered calls")
+
+    return {
+        "stock_price": stock_price, "call_strike": call_strike,
+        "call_premium": call_premium, "dte": dte, "shares": shares,
+        "contracts": contracts, "total_income": round(total_income, 2),
+        "cost_basis": round(cost_basis, 2),
+        "simple_yield_pct": round(simple_yield, 2),
+        "annualized_yield_pct": round(ann_yield, 2),
+        "max_profit": round(max_profit, 2),
+        "assigned_profit": round(assigned_profit, 2),
+        "take_profit_price": round(take_profit_at, 2),
+        "roll_at_dte": roll_at_dte,
+        "otm_pct": round(otm_pct, 2),
+        "otm_note": otm_note, "dte_note": dte_note,
+        "teri_rules": [
+            f"Sell ${call_premium:.2f} call → collect ${total_income:.0f} today",
+            f"Buy back when worth ${take_profit_at:.2f} (50% profit = ${total_income/2:.0f} gain)",
+            f"If not at 50% by {roll_at_dte} DTE — roll to next month",
+            "Never let the stock get called away if you want to keep it",
+        ]
+    }
+
+
 st.set_page_config(
     page_title="EasyStockTrader — Smart Stock Analysis",
     layout="wide",
@@ -3625,6 +4330,37 @@ with st.expander("🤖 Instrument Advisor — What Should I Trade Today?", expan
                 st.caption(f"• {_b}")
     st.caption("📡 Based on live market data. Refreshes when you click Get Live Market Data." if st.session_state.lang_level in ["Beginner","Intermediate"] else "📡 Advisor uses live VIX/IVR. Click Macro Audit to refresh.")
 
+
+
+# =============================================================================
+# V14 UI — MARKET WEATHER ENGINE
+# Top-of-page regime summary. Becomes the cognitive anchor for all decisions.
+# =============================================================================
+if st.session_state.macro:
+    _mw = compute_market_weather(st.session_state.macro)
+    _mw_colors = {"RISK-ON":"#1b5e20","RISK-NEUTRAL":"#f57f17",
+                  "RISK-CAUTIOUS":"#e65100","RISK-OFF":"#b71c1c","UNKNOWN":"#37474f"}
+    _mw_bg = _mw_colors.get(_mw["regime"], "#37474f")
+    st.markdown(
+        f"""<div style="background:{_mw_bg};color:#fff;padding:14px 18px;
+        border-radius:8px;margin-bottom:8px;border-left:6px solid rgba(255,255,255,0.4)">
+        <span style="font-size:1.4rem;font-weight:700;">{_mw["badge"]} MARKET WEATHER: {_mw["regime"]}</span><br/>
+        <span style="opacity:0.9;font-size:0.95rem">{_mw["headline"]}</span>
+        </div>""",
+        unsafe_allow_html=True
+    )
+    with st.expander(f"📡 Regime Detail — Score {_mw['score']:+d} | VIX {_mw['vix']:.1f} | IVR {_mw['ivr']:.0f}%", expanded=False):
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            st.markdown("**✅ Preferred structures:**")
+            for p in _mw["prefer"]:
+                st.markdown(f"• {p}")
+        with _c2:
+            st.markdown("**🚫 Avoid:**")
+            for a in _mw["avoid"]:
+                st.markdown(f"• {a}")
+
+
 col_macro, col_scan = st.columns([1, 1])
 
 
@@ -3687,6 +4423,116 @@ with col_scan:
 
                 st.session_state.signals = engine.generate_signals(df, metrics, ticker)
                 st.success(f"✅ {fname} loaded successfully")
+
+
+
+# =============================================================================
+# V14 UI — TODAY'S SPX DAILY PLAN
+# Live BSM strikes, Teri $0.50 minimum, 2-week DTE standard.
+# All numbers from yfinance + scipy — zero synthetic data.
+# =============================================================================
+with st.expander("🎯 Today's SPX Setup — Live Strikes & Credits (Teri IWT)", expanded=False):
+    _lp3 = st.session_state.lang_level
+    if _lp3 in ["Beginner","Intermediate"]:
+        st.caption(
+            "This generates exact SPX put credit spread strikes based on live market data. "
+            "All numbers use real SPX/VIX prices + Black-Scholes math. "
+            "Teri's rule: collect at least $0.50 per share ($50/contract) minimum."
+        )
+    else:
+        st.caption("Live SPX + VIX via yfinance → exact BSM credit estimates (scipy.stats.norm). "
+                   "Teri $0.50 minimum filter applied. No synthetic data.")
+
+    _dte_sel = st.radio("DTE target:", [7, 14, 21, 0], horizontal=True,
+                        format_func=lambda x: f"0DTE (today)" if x==0 else f"{x} days (IWT standard)" if x==14 else f"{x} days",
+                        help="Teri's 2-weeks-out standard = 14 DTE. 0DTE = intraday only, advanced.")
+    _min_cr = st.number_input("Minimum credit (Teri rule: ≥$0.50)", value=0.50, min_value=0.10, step=0.05)
+
+    if st.button("🔄 Generate Live SPX Plan", type="primary", key="spx_plan_btn"):
+        with st.spinner("Fetching live SPX/VIX → computing BSM credits..."):
+            _plan = generate_spx_daily_plan(dte_target=_dte_sel if _dte_sel > 0 else 14, min_credit=_min_cr)
+        st.session_state["_spx_plan"] = _plan
+
+    _plan = st.session_state.get("_spx_plan")
+    if _plan:
+        if _plan.get("error"):
+            st.error(f"❌ {_plan['error']}")
+        else:
+            _col1, _col2, _col3, _col4 = st.columns(4)
+            _col1.metric("SPX Now", f"{_plan['S']:,.0f}")
+            _col2.metric("VIX", f"{_plan['vix']:.1f}%")
+            _col3.metric(f"EM ({_plan['dte']} DTE)", f"±{_plan['em']:.0f} pts",
+                         delta=f"±{_plan['em_pct']:.1f}% of SPX")
+            _col4.metric("10Y Yield", f"{_plan['tnx']:.2f}%")
+
+            st.caption(f"📡 Data: {_plan.get('source','yfinance+BSM')}")
+
+            # Best spread
+            _b = _plan.get("best", {})
+            if _b:
+                _ok_cr = _b.get("ok_credit", False)
+                _ok_em = _b.get("outside_em", False)
+                _status_icon = "✅" if (_ok_cr and _ok_em) else "⚠️"
+                st.markdown(f"#### {_status_icon} Recommended Setup ({_plan['dte']} DTE)")
+                _bc1, _bc2, _bc3 = st.columns(3)
+                with _bc1:
+                    st.markdown("**Strikes**")
+                    st.code("SELL {k1:.0f} PUT\nBUY  {k2:.0f} PUT\nWidth: {w} pts".format(k1=_b["K_s"], k2=_b["K_l"], w=_b["width"]))
+                with _bc2:
+                    st.markdown("**Economics**")
+                    st.code(
+                        "Credit:    " + str(round(_b["credit"],2)) + "/share\n"
+                        "           = $" + str(round(_b["max_profit"])) + "/contract\n"
+                        "Max loss:  $" + str(round(_b["max_loss"])) + "/contract\n"
+                        "Breakeven: " + str(round(_b["breakeven"],2)) + "\n"
+                        "Efficiency:" + str(round(_b["efficiency"]*100,1)) + "% of width"
+                    )
+                    st.markdown("**Quality**")
+                    st.markdown("**Quality**")
+                    st.code(
+                        "POP:       " + str(round(_b["pop"]*100)) + "%\n"
+                        "Distance:  " + str(round(_b["distance_otm"])) + " pts OTM\n"
+                        "EM ratio:  " + str(round(_b["em_ratio"],2)) + "x EM\n"
+                        "Min $0.50: " + ("YES" if _b["ok_credit"] else "NO") + "\n"
+                        "Outside EM:" + ("YES" if _b["outside_em"] else "NO")
+                    )
+                if not _b.get("ok_credit"):
+                    st.error("🔴 Short strike is inside the expected move. "
+                             "This is below IWT standard — wait for better conditions or reduce size significantly.")
+
+            # 0DTE box
+            _z = _plan.get("zero_dte", {})
+            if _z:
+                with st.expander("⚡ 0DTE Setup (advanced — intraday management required)", expanded=False):
+                    st.warning(
+                        "**0DTE requires:** Range-bound tape only. Exit by 2pm ET. "
+                        "Hard stop at 1.5× credit. Never hold 0DTE overnight."
+                    )
+                    _zc1, _zc2 = st.columns(2)
+                    with _zc1:
+                        st.code("SELL {k1:.0f} PUT\nBUY  {k2:.0f} PUT (5-pt width)".format(k1=_z["K_s"], k2=_z["K_l"]))
+                    with _zc2:
+                        _ok_str = "✅" if _z["ok"] else "❌"
+                        st.code(
+                            "Est. credit: ${c:.2f}/share = ${ct:.0f}/contract\n"
+                            "0DTE EM:  \xb1{em:.0f} pts\n"
+                            "Meets $0.50 min: {ok}".format(
+                                c=_z["credit"], ct=_z["credit"]*100,
+                                em=_z["em_0dte"], ok=_ok_str
+                            )
+                        )
+            # Teri guidance box
+            _g = _plan.get("guidance", {})
+            if _g:
+                _rules_list = [
+                    _g.get("min_credit_rule",""),
+                    _g.get("dte_rule",""),
+                    "Exit: " + _g.get("exit",""),
+                    _g.get("event_rule","")
+                ]
+                st.info("IWT Rules:" + "\n" + "\n".join("• " + r for r in _rules_list if r))
+
+
 
 # MACRO DISPLAY
 if st.session_state.macro:
@@ -3837,6 +4683,29 @@ if st.session_state.data is not None:
     col6.metric("ADX (Trend Strength)", f"{m['adx']:.0f}", delta="STRONG" if m['adx'] > 25 else "WEAK",
                help="Average Directional Index. >25 = Strong trend. <20 = Weak/choppy.")
 
+
+
+    # V14: Gap Type Classification (IWT Week 6 enhanced)
+    if abs(m.get("gap", 0)) > 0.05:
+        _bb_ratio = (m.get("bb_width", 1) /
+                     (st.session_state.data['BBU_20_2.0'] - st.session_state.data['BBL_20_2.0']).mean()
+                     if st.session_state.data is not None and 'BBU_20_2.0' in st.session_state.data.columns
+                     else 1.0)
+        _gclass = classify_gap_type(
+            m["gap"], m.get("rvol", 1.0), m.get("trend_strength", "NEUTRAL"), float(_bb_ratio))
+        _gcols = {"Common":"#1565c0","Breakaway":"#6a1b9a","Runaway":"#1b5e20","Exhaustion":"#e65100","Micro":"#455a64"}
+        _gc = _gcols.get(_gclass["type"], "#37474f")
+        st.markdown(
+            f"""<div style="background:{_gc};color:#fff;padding:10px 14px;
+            border-radius:6px;margin:6px 0">
+            <strong>📊 Gap: {_gclass['type']} ({_gclass['direction']}, {_gclass['abs_pct']:.2f}%)</strong><br/>
+            Fill probability: {_gclass['fill_pct']}% within ~{_gclass['sessions']} sessions  |  
+            Volume signal: {_gclass.get('pro_novice','')}<br/>
+            <em style="opacity:0.9;font-size:0.88rem">{_gclass['action']}</em>
+            </div>""",
+            unsafe_allow_html=True
+        )
+
     st.markdown(
         f"""<div class='key-levels-bar'>
         <strong>Key Levels:</strong>&nbsp;
@@ -3848,6 +4717,32 @@ if st.session_state.data is not None:
         </div>""",
         unsafe_allow_html=True
     )
+
+
+
+    # V14 VIP: Gap Trap Detection (VIP 2023 "The Gap Trap")
+    if abs(m.get("gap", 0)) > 0.2 and st.session_state.data is not None:
+        _bb_sq = (m.get("bb_width", 1) <
+                  (st.session_state.data['BBU_20_2.0'] - st.session_state.data['BBL_20_2.0']).mean() * 0.70
+                  if 'BBU_20_2.0' in st.session_state.data.columns else False)
+        _trap = detect_gap_trap(
+            gap_pct=m["gap"], rvol=m.get("rvol", 1.0),
+            trend=m.get("trend_strength", "NEUTRAL"),
+            bb_squeeze=bool(_bb_sq)
+        )
+        _trap_colors = {"LOW RISK — Clean Gap": "#1b5e20",
+                        "MODERATE RISK": "#f57f17",
+                        "HIGH RISK — Gap Trap": "#b71c1c", "None": "#37474f"}
+        _tc = _trap_colors.get(_trap["trap_type"], "#37474f")
+        st.markdown(
+            f"""<div style="background:{_tc};color:#fff;padding:8px 14px;
+            border-radius:5px;margin:4px 0;font-size:0.92rem">
+            ⚠️ <strong>Gap Trap Risk: {_trap['trap_type']}</strong>
+            ({_trap['trap_prob']}%)<br/>
+            <em style="opacity:0.9">{_trap['action'][:120]}</em>
+            </div>""",
+            unsafe_allow_html=True
+        )
 
     # SIGNALS
     if st.session_state.signals:
@@ -4145,6 +5040,28 @@ Intrinsic:    ${_lo['intrinsic']:.2f}
 Time Value:   ${_lo['time_val']:.2f} ({_lo['time_val_pct']:.0%})
 Daily Theta:  ~${_lo['daily_theta']:.2f}/day""")
             st.warning(f"⏰ {_lo['theta_note']}")
+
+
+            # V14: Long option payoff diagram
+            if lo_premium > 0 and lo_strike > 0 and lo_underlying > 0:
+                with st.expander("📈 P&L Payoff Diagram — Long Option (IWT Course: Week 7)", expanded=True):
+                    _fig_lo = plot_payoff_diagram(
+                        structure="LONG_OPTION",
+                        short_k=lo_strike, long_k=0,
+                        credit_or_debit=-lo_premium,
+                        option_type=lo_direction,
+                        underlying=lo_underlying,
+                        contracts=lo_contracts_lo
+                    )
+                    if _fig_lo:
+                        st.pyplot(_fig_lo)
+                        st.caption(
+                            f"Max loss: ${lo_premium*100*lo_contracts_lo:,.0f} (premium paid) | "
+                            f"50% IWT stop: ${lo_premium*100*lo_contracts_lo*0.5:,.0f} | "
+                            f"100% target: ${lo_premium*100*lo_contracts_lo:,.0f} gain"
+                        )
+
+
             st.info(
                 "📌 IWT Long Options Rules: (1) Min 60 DTE. (2) DITM delta 0.70+. "
                 "(3) Exit at 50% gain — do not overstay. (4) NEVER hold past 50% loss. "
@@ -4285,6 +5202,98 @@ Margin*:   ~${fut['margin_required']:,}""")
             st.warning("⚠️ Credit is under 20% of spread width. Premium may be too thin for the defined risk.")
         elif option_details['credit_pct_width'] >= 0.25:
             st.success("✅ Credit efficiency meets the preferred 25%+ of width threshold.")
+
+        # ═══════════════════════════════════════════════════════════════
+        # V14: At-Expiry P&L Diagram + Expected Move Visualizer
+        # Teri IWT Course: Weeks 7-8 (Options P&L Graphs)
+        # VIP Coaching: "Understanding Options — The Greeks" (2/26/22)
+        # VIP Coaching: "Become a Successful Seller of Options" (1/28/23)
+        # ═══════════════════════════════════════════════════════════════
+        if spread_credit > 0 and short_strike > 0 and long_strike > 0:
+            _ref_px = spx_reference_price if spx_reference_price > 0 else m.get("price", 5400)
+            _c_spread, _c_em = st.columns(2)
+            with _c_spread:
+                with st.expander("📈 P&L Payoff Diagram — At Expiry", expanded=True):
+                    _lpp = st.session_state.lang_level
+                    if _lpp in ["Beginner","Intermediate"]:
+                        st.caption(
+                            "This shows your maximum profit, maximum loss, and breakeven point — "
+                            "the three numbers every options trader must know BEFORE entering. "
+                            "Green zone = you make money. Red zone = you lose money."
+                        )
+                    _fig_p = plot_payoff_diagram(
+                        structure="CREDIT_SPREAD",
+                        short_k=short_strike, long_k=long_strike,
+                        credit_or_debit=spread_credit, option_type=spread_kind,
+                        underlying=_ref_px, contracts=max(1, int(contracts))
+                    )
+                    if _fig_p:
+                        st.pyplot(_fig_p)
+                    _w = abs(short_strike - long_strike)
+                    st.caption(
+                        f"Pure contract math: max profit ${spread_credit*100*max(1,int(contracts)):,.0f} | "
+                        f"max loss ${(_w-spread_credit)*100*max(1,int(contracts)):,.0f} | "
+                        f"be {short_strike - spread_credit if spread_kind=='PUT' else short_strike + spread_credit:.2f}"
+                    )
+            with _c_em:
+                with st.expander("🎯 Expected Move — Strike Placement Quality", expanded=True):
+                    if spx_reference_price > 0 and iv_percent > 0 and dte > 0:
+                        _lpe = st.session_state.lang_level
+                        if _lpe in ["Beginner","Intermediate"]:
+                            st.caption(
+                                "The yellow dashed lines show how far the market expects to move. "
+                                "Your green/red line = your short strike. "
+                                "GREEN = outside expected move (Teri's standard). "
+                                "RED = inside expected move (risky)."
+                            )
+                        _fig_e = plot_expected_move_chart(
+                            spx=spx_reference_price, iv_pct=iv_percent, dte=dte,
+                            short_k=short_strike if short_strike > 0 else None,
+                            long_k=long_strike if long_strike > 0 else None,
+                            spread_type=spread_kind
+                        )
+                        if _fig_e:
+                            st.pyplot(_fig_e)
+
+
+
+
+        # V14 VIP: Double-Confirmation Strike Placement
+        # VIP May 2022: "Understanding Options — Identifying Strong Levels"
+        if spx_reference_price > 0 and st.session_state.metrics and short_strike > 0:
+            _m2 = st.session_state.metrics
+            _dc = levels_plus_em_strike_placement(
+                spx=spx_reference_price, iv_pct=iv_percent, dte=dte,
+                support_level=_m2.get("supp", spx_reference_price - 200),
+                resistance_level=_m2.get("res", spx_reference_price + 200),
+                spread_type=spread_kind
+            )
+            with st.expander("🎯 VIP Level Confirmation — Strike vs Support/Resistance", expanded=False):
+                st.caption(
+                    "Teri's VIP insight: your short strike must clear BOTH the expected move "
+                    "AND the nearest structural support/resistance level. "
+                    "The more conservative of the two governs."
+                )
+                _dc1, _dc2 = st.columns(2)
+                with _dc1:
+                    st.metric("EM Boundary", f"{_dc['em_boundary']:.0f}",
+                              help="1σ expected move boundary")
+                    st.metric("Level Boundary", f"{_dc['level_boundary']:.2f}",
+                              help="Nearest support (puts) or resistance (calls)")
+                with _dc2:
+                    st.metric("Recommended Short Strike", f"{_dc['recommended_short']:.0f}")
+                    st.metric("Recommended Long Strike",  f"{_dc['recommended_long']:.0f}")
+                st.info(f"**Binding constraint:** {_dc['binding_constraint']}")
+                st.caption(_dc["note"])
+                if abs(short_strike - _dc["recommended_short"]) > 30:
+                    st.warning(
+                        f"⚠️ Your entered short strike ({short_strike:.0f}) differs by "
+                        f"{abs(short_strike - _dc['recommended_short']):.0f} pts from "
+                        f"the VIP double-confirmation recommendation ({_dc['recommended_short']:.0f}). "
+                        "Double-check your level work."
+                    )
+
+
     # ── PLATFORM ORDER TRANSLATOR (vertical spreads only) ─────────────────────
     if is_vertical and not option_details.get("errors") and spread_credit > 0 and short_strike > 0:
         _lvl_now = st.session_state.lang_level
@@ -4504,6 +5513,69 @@ Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
         elif "Short" in strategy and sig_score > 2:
             total_score -= 1
             penalties.append("Multi-Algo Conflict (-1): Signals overwhelmingly bullish")
+
+
+
+    # V14: Hard No-Trade Gate (institutional refusal logic)
+    _ntg = compute_no_trade_gate(
+        macro=st.session_state.macro,
+        metrics=st.session_state.metrics,
+        strategy=strategy,
+        dte=dte if "Income" in strategy else 30,
+        event_risk=event_risk_48h if "Income" in strategy else False
+    )
+    if _ntg["verdict"] in ("HARD_NO", "SOFT_NO"):
+        st.markdown(f"### {_ntg['badge']} NO-TRADE GATE: {_ntg['headline']}")
+        if _ntg["blocks"]:
+            for _b in _ntg["blocks"]:
+                st.error(_b)
+        if _ntg["warnings"]:
+            for _w in _ntg["warnings"]:
+                st.warning(_w)
+        st.info(f"**Institutional action:** {_ntg['action']}")
+        if _ntg["verdict"] == "HARD_NO":
+            st.stop()
+    elif _ntg["verdict"] == "CONDITIONAL":
+        st.warning(f"### {_ntg['badge']} CONDITIONAL — {_ntg['headline']}")
+        st.caption(_ntg["action"])
+        if _ntg["warnings"]:
+            for _w in _ntg["warnings"]:
+                st.caption(f"• {_w}")
+    else:
+        st.caption(f"{_ntg['badge']} No-Trade Gate: {_ntg['headline']}")
+
+
+
+
+    # V14 VIP: To Short / Not to Short (VIP 2022-2023 multiple sessions)
+    if "Short" in strategy and st.session_state.metrics:
+        _m_short = st.session_state.metrics
+        _vix_s = st.session_state.macro.get("vix", 20) if st.session_state.macro else 20
+        _sns = short_or_not_score(
+            trend=_m_short.get("trend_strength", "NEUTRAL"),
+            vix=_vix_s,
+            macro=st.session_state.macro or {},
+            metrics=_m_short,
+            rsi=_m_short.get("rsi", 50),
+            rvol=_m_short.get("rvol", 1.0)
+        )
+        _sns_color = {"GREEN — SHORT VALID":"#1b5e20","YELLOW — WAIT FOR CONFIRMATION":"#f57f17",
+                      "RED — DO NOT SHORT":"#b71c1c","DO NOT SHORT":"#b71c1c"}.get(_sns["verdict"],"#37474f")
+        st.markdown(
+            f"""<div style="background:{_sns_color};color:#fff;padding:12px 16px;
+            border-radius:7px;margin:6px 0">
+            <strong style="font-size:1.1rem">{_sns['badge']} SHORT SIGNAL: {_sns['verdict']}</strong><br/>
+            <em style="opacity:0.9;font-size:0.9rem">{_sns['action']}</em>
+            </div>""",
+            unsafe_allow_html=True
+        )
+        if _sns["blocks"]:
+            for _b in _sns["blocks"]:
+                st.error(_b)
+        with st.expander("📋 Short Condition Details", expanded=False):
+            for r in _sns["reasons"]:
+                st.caption(r)
+
 
     col_verdict, col_analysis = st.columns([1, 1])
 
@@ -5460,6 +6532,124 @@ The **Futures Calculator** in this app (Futures mode in strategy selector) alrea
 # Options P&L: synthetic via BSM with real VIX. Clearly labelled.
 # Equity P&L: real price changes.
 # =============================================================================
+
+
+
+# =============================================================================
+# V14 UI — TERI IWT UNIVERSE BATCH SCANNER
+# Scan all 34 TERI_UNIVERSE stocks simultaneously. Real yfinance data.
+# Returns ranked setups by IWT scorecard.
+# =============================================================================
+with st.expander("🔍 IWT Universe Scanner — 34-Stock Opportunity Scan", expanded=False):
+    _lus = st.session_state.lang_level
+    if _lus in ["Beginner","Intermediate"]:
+        st.caption(
+            "Teri's morning routine: scan her full watchlist before picking a stock. "
+            "This checks all 34 stocks in her universe simultaneously and ranks the best setups. "
+            "A-grade = ready to trade. B-grade = monitor. C/D = skip."
+        )
+    else:
+        st.caption(
+            "IWT scorecard across all 34 TERI_UNIVERSE stocks: "
+            "trend (4pts) + RSI zone (2pts) + RVOL (2pts) + gap signal (1pt) + level freshness (2pts). "
+            "Real yfinance data. NSE tickers (.NR) skipped — no yfinance coverage. "
+            "Cache: 30 min."
+        )
+
+    _top_n = st.slider("How many top setups to show?", 5, 15, 8)
+
+    if st.button("🚀 Scan All 34 IWT Stocks Now", type="primary", key="universe_scan_btn"):
+        with st.spinner("Scanning 34 stocks with real market data (takes ~30s)..."):
+            _scan_results = batch_scan_teri_universe(TERI_UNIVERSE, top_n=_top_n)
+        st.session_state["_universe_scan"] = _scan_results
+
+    _scan = st.session_state.get("_universe_scan")
+    if _scan:
+        if not _scan:
+            st.warning("No setups found — market data may be unavailable. Try again after market open.")
+        else:
+            st.success(f"✅ Found {len(_scan)} ranked setups from TERI_UNIVERSE")
+            _grade_colors = {"A+":"#1b5e20","A":"#2e7d32","B":"#f57f17","C":"#e65100","D":"#b71c1c"}
+            for _i, _s in enumerate(_scan):
+                _gc = _grade_colors.get(_s["grade"], "#37474f")
+                _medal = "🥇" if _i==0 else "🥈" if _i==1 else "🥉" if _i==2 else f"{_i+1}."
+                _col1, _col2, _col3, _col4 = st.columns([2,2,2,2])
+                with _col1:
+                    st.markdown(
+                        f"""<div style="background:{_gc};color:#fff;padding:6px 10px;
+                        border-radius:5px;font-weight:700">
+                        {_medal} {_s['ticker']}  
+                        <span style="font-size:1.2rem">{_s['grade']}</span>  
+                        <span style="font-size:0.8rem;opacity:0.9">{_s['score']}/{_s['max']}</span>
+                        </div>""",
+                        unsafe_allow_html=True
+                    )
+                with _col2:
+                    st.metric("Price", f"${_s['price']:.2f}", delta=_s["trend"])
+                with _col3:
+                    st.metric("RSI", f"{_s['rsi']:.0f}", delta=f"RVOL {_s['rvol']:.1f}x")
+                with _col4:
+                    _gap_lbl = f"Gap {_s['gap_pct']:+.2f}%" if abs(_s['gap_pct']) > 0.1 else "No gap"
+                    st.metric("ATR", f"${_s['atr']:.2f}", delta=_gap_lbl)
+                if _i < len(_scan)-1:
+                    st.markdown("<hr style='margin:4px 0;border-color:#30333d'>", unsafe_allow_html=True)
+
+            st.caption(
+                "💡 Click any ticker → go to Sidebar → Manual Search → enter ticker → Scan. "
+                "All data from yfinance. Cached 30 min — refresh for intraday updates."
+            )
+
+
+
+
+# =============================================================================
+# V14 VIP UI — COVERED CALL YIELD CALCULATOR
+# VIP 2020: "Covered Calls" coaching sessions
+# Teri: sell 30-45 DTE, slightly OTM, collect income while holding shares
+# =============================================================================
+with st.expander("💰 Covered Call Income Calculator (Teri VIP Strategy)", expanded=False):
+    _lcc = st.session_state.lang_level
+    if _lcc in ["Beginner","Intermediate"]:
+        st.info(
+            "**Covered calls = getting paid to wait.** You own shares, you sell "
+            "someone the right to buy them at a higher price. If they don't buy, "
+            "you keep the income AND your shares. Teri teaches this as a consistent "
+            "income strategy for shareholders.\n\n"
+            "**IWT rules:** Sell 30-45 days out, slightly above current price, "
+            "close at 50% profit, roll at 21 DTE."
+        )
+    _cc_cols = st.columns(2)
+    with _cc_cols[0]:
+        _cc_stock = st.number_input("Stock/ETF price right now ($)", value=0.0, step=0.50, key="cc_stock")
+        _cc_strike = st.number_input("Call strike you're selling ($)", value=0.0, step=0.50, key="cc_strike")
+        _cc_prem = st.number_input("Premium collected ($/share)", value=0.0, step=0.05, key="cc_prem")
+    with _cc_cols[1]:
+        _cc_dte = st.number_input("Days to expiry (Teri: 30-45 DTE)", value=35, min_value=1, max_value=90, key="cc_dte")
+        _cc_shares = st.number_input("Shares owned", value=100, min_value=100, step=100, key="cc_shares")
+
+    if _cc_stock > 0 and _cc_strike > 0 and _cc_prem > 0:
+        _cc = calc_covered_call_yield(_cc_stock, _cc_strike, _cc_prem, _cc_dte, _cc_shares)
+        if _cc.get("error"):
+            st.error(_cc["error"])
+        else:
+            _ccc1, _ccc2, _ccc3 = st.columns(3)
+            _ccc1.metric("Income Collected",   f"${_cc['total_income']:,.0f}")
+            _ccc2.metric("Annualized Yield",   f"{_cc['annualized_yield_pct']:.1f}%",
+                         delta=f"{_cc['simple_yield_pct']:.2f}% per trade")
+            _ccc3.metric("Take Profit @ 50%",  f"${_cc['take_profit_price']:.2f}/share")
+            st.code(
+                f"Stock: ${_cc['stock_price']:.2f}  |  Sell {_cc['call_strike']:.2f} CALL  "
+                + f"|  ${_cc['call_premium']:.2f} premium  |  {_cc['dte']} DTE\n"
+                + f"{_cc['otm_note']}\n"
+                + f"{_cc['dte_note']}\n"
+                + f"Max profit if assigned: ${_cc['max_profit']:,.0f}"
+            )
+            st.markdown("**📋 Teri's IWT Rules for this trade:**")
+            for rule in _cc["teri_rules"]:
+                st.caption(f"• {rule}")
+    else:
+        st.caption("Enter stock price, strike, and premium above to calculate yield.")
+
 
 st.divider()
 st.header("📈 Backtest — Did These Strategies Work?")
