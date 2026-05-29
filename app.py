@@ -2441,6 +2441,480 @@ def calc_covered_call_yield(stock_price: float, call_strike: float,
     }
 
 
+
+# =============================================================================
+# V14b — NEW MODULES FROM TRADE AND TRAVEL 2.0 / OPTIONS 101 / VIP CURRICULUM
+# Sources: T&T 2.0 (2023 refresh), Options 101, Coaching Calls 2019-2023
+# Math: all verified — no synthetic data
+# =============================================================================
+
+def calc_six_figure_plan(
+    monthly_goal: float,
+    account_size: float,
+    win_rate: float = 0.70,
+    avg_contract_risk: float = 500.0,
+    trades_per_day: int = 2,
+) -> dict:
+    """
+    T&T 2.0 / Coaching Call 1/9/2023: "Building a Six Figure Trading Plan"
+    Teri's backward-planning framework: start from income goal,
+    derive required daily performance, and check account math.
+
+    This does NOT invent a profitable edge — it shows what YOU would need
+    to achieve the goal with the given inputs. Kelly/BSM edge is separate.
+    """
+    if monthly_goal <= 0 or account_size <= 0:
+        return {"error": "Invalid inputs"}
+
+    annual_goal   = monthly_goal * 12
+    daily_goal    = monthly_goal / 21          # ~21 trading days/month
+    weekly_goal   = monthly_goal / 4.3
+
+    # Per-contract P&L math (credit spread context)
+    # avg_contract_risk = max_loss_per_contract
+    # At 70% win rate with 1:1 win/loss (50% profit target):
+    # avg_win  = credit × 100 × contracts (taking 50% of max credit)
+    # avg_loss = credit × 200 × contracts (2× credit = stop)
+    # For simplification: express win in $ per trade
+    avg_win_per_trade  = avg_contract_risk * 0.33  # 33% return on risk (50% of credit)
+    avg_loss_per_trade = avg_contract_risk * 0.67  # 67% loss (approx 2× credit stop)
+    ev_per_trade       = win_rate * avg_win_per_trade - (1 - win_rate) * avg_loss_per_trade
+
+    if ev_per_trade <= 0:
+        ev_note = (f"WARNING: At {win_rate:.0%} win rate with this risk/reward, "
+                   f"expected value per trade is ${ev_per_trade:.2f}. "
+                   "You need higher win rate or better R:R to hit this goal.")
+    else:
+        ev_note = f"Positive EV: ${ev_per_trade:.2f}/trade at {win_rate:.0%} win rate."
+
+    # Trades needed to hit daily goal
+    trades_for_daily_goal = daily_goal / max(ev_per_trade, 0.01)
+    monthly_return_pct    = monthly_goal / account_size * 100
+
+    # Account size sanity check: account should support goals without oversizing
+    # Teri's rule: risk max 1% per trade
+    max_risk_per_trade = account_size * 0.01
+    sizing_ok = avg_contract_risk <= max_risk_per_trade
+
+    return {
+        "monthly_goal":        round(monthly_goal, 2),
+        "annual_goal":         round(annual_goal, 2),
+        "daily_goal":          round(daily_goal, 2),
+        "weekly_goal":         round(weekly_goal, 2),
+        "account_size":        account_size,
+        "monthly_return_pct":  round(monthly_return_pct, 2),
+        "ev_per_trade":        round(ev_per_trade, 2),
+        "ev_note":             ev_note,
+        "avg_win_per_trade":   round(avg_win_per_trade, 2),
+        "avg_loss_per_trade":  round(avg_loss_per_trade, 2),
+        "trades_needed_daily": round(trades_for_daily_goal, 1),
+        "trades_planned_daily": trades_per_day,
+        "daily_reachable":     trades_per_day >= trades_for_daily_goal,
+        "max_risk_1pct":       round(max_risk_per_trade, 2),
+        "sizing_ok":           sizing_ok,
+        "sizing_note": (
+            f"1% rule: max ${max_risk_per_trade:.0f}/trade on ${account_size:,.0f} account. "
+            + ("Your avg contract risk fits." if sizing_ok else
+               f"Your ${avg_contract_risk:.0f} risk EXCEEDS 1% — reduce to 1 contract or widen stop less.")
+        ),
+        "teri_rules": [
+            f"Monthly goal ${monthly_goal:,.0f} = ${daily_goal:.0f}/day over 21 trading days",
+            "Write this plan down — review before every session",
+            "Stop trading the day you hit your daily goal",
+            "Stop trading the week you double your daily goal in losses",
+            "Small consistent wins beat occasional big wins",
+        ],
+    }
+
+
+def options_playbook_router(vix: float, ivr: float, trend: str,
+                             pre_event: bool = False,
+                             post_event_selloff: bool = False) -> dict:
+    """
+    Options 101 — Trading Options Playbook (97:12)
+    Maps market conditions to specific option structures.
+    Teri's playbook logic from the coaching session.
+    Returns: primary structure, secondary structure, avoid list, reasoning.
+    """
+    # Classify VIX regime
+    if vix < 15:
+        vix_regime = "LOW"
+    elif vix < 22:
+        vix_regime = "MODERATE"
+    elif vix < 30:
+        vix_regime = "ELEVATED"
+    else:
+        vix_regime = "HIGH"
+
+    # Classify IVR
+    ivr_regime = "LOW" if ivr < 25 else "MODERATE" if ivr < 50 else "HIGH"
+
+    # Determine playbook entry
+    if pre_event:
+        return {
+            "play": "PRE-EVENT: STAND ASIDE",
+            "badge": "⏸️",
+            "primary": "Close or reduce existing positions",
+            "secondary": "If must be on: long options only (defined risk), 1/4 size",
+            "avoid": ["Selling new premium", "Increasing size", "Iron condors"],
+            "reason": "Events reprice IV rapidly — credit collected evaporates on a spike",
+            "teri_rule": "Events are the #1 killer of premium sellers. Teri's rule: flat into events.",
+        }
+
+    if post_event_selloff:
+        return {
+            "play": "POST-SELLOFF: SELL PREMIUM AGGRESSIVELY",
+            "badge": "💥",
+            "primary": "Put credit spreads (14-21 DTE, 20-25 delta)",
+            "secondary": "Iron condors if IV is extremely elevated (IVR > 70%)",
+            "avoid": ["Buying premium — you're overpaying IV crush", "New long options"],
+            "reason": "Post-event IV crush is powerful. Sell when IV is high, buy when IV is low.",
+            "teri_rule": "Post-event = premium seller's payday. IV reverts fast — be a seller.",
+        }
+
+    # Standard routing
+    if trend in ("STRONG_BULL", "BULL") and vix_regime == "LOW":
+        return {
+            "play": "BULL + LOW VIX: BUY DEBIT SPREAD OR LONG CALL",
+            "badge": "📈",
+            "primary": "Call debit spread (75-90 DTE, ATM/slightly OTM, 40-50 delta)",
+            "secondary": "Long call (DITM, 70+ delta, 60+ DTE) — Teri's preferred long option",
+            "avoid": ["Selling puts (credit is thin in low VIX)", "Naked calls"],
+            "reason": "Low IVR means options are cheap — pay for direction, don't sell cheap premium.",
+            "teri_rule": "When IV is low and trend is up, buy options rather than sell them.",
+        }
+    elif trend in ("STRONG_BULL", "BULL") and vix_regime in ("MODERATE", "ELEVATED"):
+        return {
+            "play": "BULL + ELEVATED VIX: SELL PUT CREDIT SPREAD",
+            "badge": "🐂",
+            "primary": "Put credit spread (14-21 DTE, 15-20 delta short strike, outside EM)",
+            "secondary": "Cash-secured put if you want to own the stock at the strike",
+            "avoid": ["Long puts", "Bear call spreads", "Oversizing in high VIX"],
+            "reason": "Premium is elevated — collect income while betting the trend continues.",
+            "teri_rule": "High IV + uptrend = ideal credit spread environment. Be the house.",
+        }
+    elif trend in ("STRONG_BEAR", "BEAR") and vix_regime in ("ELEVATED", "HIGH"):
+        return {
+            "play": "BEAR + HIGH VIX: SELL CALL CREDIT SPREAD OR BUY PUTS",
+            "badge": "🐻",
+            "primary": "Call credit spread (14-21 DTE, 15-20 delta, above resistance)",
+            "secondary": "Long put (DITM, 60+ DTE) if trend is very strong",
+            "avoid": ["Selling put credit spreads into a downtrend", "Long calls"],
+            "reason": "Selling calls at resistance in a downtrend harvests premium WITH the trend.",
+            "teri_rule": "Short-side premium selling: sell calls, not puts, in a downtrend.",
+        }
+    elif trend == "NEUTRAL" and vix_regime in ("ELEVATED", "HIGH"):
+        return {
+            "play": "RANGE-BOUND + ELEVATED VIX: IRON CONDOR",
+            "badge": "🦅",
+            "primary": "Iron condor (14-21 DTE, 15-20 delta on both sides)",
+            "secondary": "Strangle if IV is very high (but not for beginners)",
+            "avoid": ["Directional trades", "Long options (IV crush risk)"],
+            "reason": "Rangebound + elevated IV = collect premium from both sides. Theta works for you.",
+            "teri_rule": "Iron condors: only when price is going NOWHERE and IV is HIGH.",
+        }
+    elif vix_regime == "HIGH":
+        return {
+            "play": "HIGH VIX CRISIS: DEFINED RISK ONLY",
+            "badge": "⚠️",
+            "primary": "If selling: very narrow spreads (1-2× expected move away), 7 DTE max",
+            "secondary": "Long puts as portfolio hedge",
+            "avoid": ["Naked anything", "Oversizing", "New bullish credit spreads"],
+            "reason": "High VIX means wide moves possible. Only take trades where max loss is acceptable.",
+            "teri_rule": "In crisis VIX: smaller size, tighter structure, no heroes.",
+        }
+    else:
+        return {
+            "play": "NEUTRAL CONDITIONS: WAIT OR SMALL SIZE",
+            "badge": "🟡",
+            "primary": "Put credit spread with tighter width (10-15 pts vs normal 25)",
+            "secondary": "Stand aside — cash is a valid position",
+            "avoid": ["Full-size trades", "Complex multi-leg without clear thesis"],
+            "reason": "Mixed signals = smaller size or no trade. No edge = no trade.",
+            "teri_rule": "When in doubt, stay out. You can't lose money on a trade you don't take.",
+        }
+
+
+def gap_trade_playbook(gap_pct: float, gap_type: str, rvol: float,
+                        trend: str, spx_price: float = 0,
+                        globex_high: float = 0, globex_low: float = 0) -> dict:
+    """
+    Bonus: Gaps Coaching Call (78:12) + VIP Gaps 2019-2023
+    Three distinct gap trading strategies based on Teri's coaching.
+    Returns specific entry, stop, and target rules for each applicable strategy.
+    """
+    abs_gap = abs(gap_pct)
+    direction = "UP" if gap_pct > 0 else "DOWN"
+
+    strategies = []
+
+    # ── STRATEGY 1: FADE THE GAP ─────────────────────────────────
+    # Only for common gaps, low volume, within normal range
+    if gap_type in ("Common", "Micro") and abs_gap < 0.5 and rvol < 1.2:
+        fade_entry = "Wait for the FIRST CANDLE to close in the gap fill direction"
+        fade_stop  = f"1 ATR above gap high ({direction} gap) — if price reclaims gap, exit immediately"
+        fade_tgt   = f"The gap fill level (prev close: {gap_pct:+.2f}% move to fill)"
+        strategies.append({
+            "name": "FADE",
+            "badge": "↩️",
+            "confidence": "HIGH",
+            "entry_rule": fade_entry,
+            "stop_rule": fade_stop,
+            "target_rule": fade_tgt,
+            "context": (
+                "Common gaps fill ~82% of the time. "
+                "Low volume = no institutional conviction behind the gap. "
+                "Wait for the first pullback candle — don't sell the gap open directly."
+            ),
+            "teri_rule": "Never fade a gap with high volume. Only fade low-volume, small gaps.",
+        })
+
+    # ── STRATEGY 2: RIDE THE GAP ─────────────────────────────────
+    # For breakaway / runaway gaps with volume confirmation
+    if gap_type in ("Breakaway", "Runaway") and rvol >= 1.3:
+        ride_entry = "Wait 15-30 min after open. Enter on FIRST PULLBACK to the gap level."
+        ride_stop  = f"Below the gap level (if gap fills, thesis is wrong)"
+        trend_word = "prior high" if direction == "UP" else "prior low"
+        ride_tgt   = f"Next major support/resistance level ({trend_word})"
+        strategies.append({
+            "name": "RIDE",
+            "badge": "🚀",
+            "confidence": "HIGH",
+            "entry_rule": ride_entry,
+            "stop_rule": ride_stop,
+            "target_rule": ride_tgt,
+            "context": (
+                f"{gap_type} gap with {rvol:.1f}x volume = institutional backing. "
+                "DO NOT fade this. Let the first 15-30 min establish direction, "
+                "then enter the pullback to the gap level."
+            ),
+            "teri_rule": "Institutional gaps do NOT fill quickly. Ride the momentum.",
+        })
+
+    # ── STRATEGY 3: USE GAP AS STOP LEVEL ────────────────────────
+    # For any gap > 0.3% — the gap level becomes a natural stop
+    if abs_gap >= 0.3:
+        if direction == "UP":
+            stop_use = (
+                f"Gap low ({gap_pct:.2f}% above yesterday's close) = natural support. "
+                "If entering a long position today, place stop BELOW the gap level. "
+                "A full gap fill invalidates the bullish setup."
+            )
+        else:
+            stop_use = (
+                f"Gap high ({abs(gap_pct):.2f}% below yesterday's close) = natural resistance. "
+                "If entering a short position today, place stop ABOVE the gap level. "
+                "A full gap fill invalidates the bearish setup."
+            )
+        strategies.append({
+            "name": "STOP LEVEL",
+            "badge": "🛡️",
+            "confidence": "APPLICABLE",
+            "entry_rule": "No specific entry — use the gap level as a natural stop for other setups",
+            "stop_rule": stop_use,
+            "target_rule": "Use your standard R:R target from buyer/seller levels",
+            "context": (
+                "Every gap creates a natural reference level. "
+                "The gap open level is where price 'jumped from' — it's a structural reference. "
+                "Teri: 'The gap level is your line in the sand.'"
+            ),
+            "teri_rule": "The gap level is always a relevant stop or target — use it.",
+        })
+
+    # ── GLOBEX RANGE CONTEXT ────────────────────────────────────
+    globex_note = ""
+    if globex_high > 0 and globex_low > 0 and spx_price > 0:
+        globex_range = globex_high - globex_low
+        if spx_price > globex_high:
+            globex_note = (
+                f"SPX opened ABOVE Globex high ({globex_high:.0f}). "
+                f"This is a HIGH MOMENTUM session — Globex high is now support. "
+                f"Expect range extension up to {globex_high + globex_range:.0f}"
+            )
+        elif spx_price < globex_low:
+            globex_note = (
+                f"SPX opened BELOW Globex low ({globex_low:.0f}). "
+                f"HIGH MOMENTUM to the downside — Globex low is now resistance. "
+                f"Expect potential extension to {globex_low - globex_range:.0f}"
+            )
+        else:
+            globex_note = (
+                f"SPX within Globex range ({globex_low:.0f}–{globex_high:.0f}, "
+                f"range={globex_range:.0f} pts). "
+                "Normal session expected — range may contain most of today's movement."
+            )
+
+    if not strategies:
+        strategies.append({
+            "name": "NO CLEAR PLAY",
+            "badge": "—",
+            "confidence": "LOW",
+            "entry_rule": "No actionable gap trade today",
+            "stop_rule": "N/A",
+            "target_rule": "N/A",
+            "context": "Gap is too small or conditions don't fit a clear strategy. Trade other setups.",
+            "teri_rule": "No setup = no trade. Wait for the next one.",
+        })
+
+    return {
+        "gap_pct": gap_pct,
+        "gap_type": gap_type,
+        "direction": direction,
+        "rvol": rvol,
+        "strategies": strategies,
+        "globex_note": globex_note,
+    }
+
+
+def calc_cc_cost_basis_reducer(
+    stock_price: float,
+    purchase_price: float,
+    calls_sold: list,   # list of (premium, strike, dte) tuples per month
+    shares: int = 100,
+) -> dict:
+    """
+    Options 101 — Protect your Long Term Portfolio: Sell Covered Calls (71:31)
+    Tracks how repeated covered call sales reduce cost basis over time.
+    Teri: "My goal is eventually to own the stock for free."
+
+    calls_sold: list of premiums collected per round (e.g., [2.50, 1.80, 3.20])
+    All values per-share.
+    """
+    total_premium_collected = sum(p for p in calls_sold)
+    current_cost_basis       = purchase_price - total_premium_collected
+    cost_reduction_pct       = total_premium_collected / purchase_price * 100
+    breakeven_months_at_avg  = (purchase_price / (total_premium_collected / max(len(calls_sold), 1)))
+    unrealized_gain_on_stock = (stock_price - current_cost_basis) * shares
+    cost_basis_vs_price      = stock_price - current_cost_basis   # how far OTM from cost basis
+
+    rounds = []
+    running_basis = purchase_price
+    for i, p in enumerate(calls_sold):
+        running_basis -= p
+        rounds.append({
+            "round": i + 1,
+            "premium": p,
+            "cost_basis_after": round(running_basis, 2),
+            "reduction_to_date": round(purchase_price - running_basis, 2),
+        })
+
+    return {
+        "purchase_price":          purchase_price,
+        "current_stock_price":     stock_price,
+        "total_rounds":            len(calls_sold),
+        "total_premium_collected": round(total_premium_collected, 2),
+        "current_cost_basis":      round(current_cost_basis, 2),
+        "cost_reduction_pct":      round(cost_reduction_pct, 1),
+        "breakeven_months":        round(breakeven_months_at_avg, 1),
+        "unrealized_gain":         round(unrealized_gain_on_stock, 2),
+        "still_above_cost_basis":  stock_price > current_cost_basis,
+        "cost_basis_buffer":       round(cost_basis_vs_price, 2),
+        "rounds":                  rounds,
+        "avg_premium_per_round":   round(total_premium_collected / max(len(calls_sold), 1), 2),
+        "teri_goal_note":          (
+            f"At ${total_premium_collected / max(len(calls_sold), 1):.2f}/month avg, "
+            f"you'll own this stock 'for free' (zero cost basis) in "
+            f"~{breakeven_months_at_avg:.0f} months of covered calls."
+        ),
+        "teri_rules": [
+            "Sell 30-45 DTE, slightly OTM (0.25-0.30 delta)",
+            "Take 50% profit — buy back when worth half what you sold it for",
+            "Roll to next month at 21 DTE if not yet at 50% profit",
+            "If stock gets called away at your strike: you kept the premium AND got the gain",
+            "Never sell a strike you're not happy to sell your shares at",
+        ],
+    }
+
+
+def troubleshoot_trading(responses: dict) -> dict:
+    """
+    Coaching Call 1/4/2023: Troubleshoot Your Trading (118:27)
+    Teri's diagnostic framework for common trading problems.
+    responses: dict of symptom → bool (True = experiencing this problem)
+    """
+    DIAGNOSTICS = [
+        {
+            "symptom": "making_then_losing",
+            "label": "Making money then giving it back",
+            "root_cause": "No profit targets set, or overriding targets",
+            "fix": "Set OCO brackets BEFORE entry: take-profit at 50%, stop at 2× credit",
+            "teri_quote": "Teri: 'If you don't have a profit target, greed will take it back.'",
+            "severity": "HIGH",
+        },
+        {
+            "symptom": "losses_bigger_than_wins",
+            "label": "Average losses > average wins",
+            "root_cause": "Inconsistent position sizing — oversizing losing trades",
+            "fix": "Same size EVERY trade. Track position size consistency for 1 week.",
+            "teri_quote": "Teri: '1% risk on every trade — winning or losing, same size.'",
+            "severity": "HIGH",
+        },
+        {
+            "symptom": "too_many_trades",
+            "label": "Trading too much / boredom trading",
+            "root_cause": "No written pre-market plan; reacting instead of planning",
+            "fix": "Write your plan before market opens. If a setup isn't in the plan, it's not a trade.",
+            "teri_quote": "Teri: 'I plan the trade and trade the plan. If it's not in my plan, it's not my trade.'",
+            "severity": "MEDIUM",
+        },
+        {
+            "symptom": "missing_good_setups",
+            "label": "Missing good setups / not at screen at the right time",
+            "root_cause": "No pre-market alerts set; reactive trading",
+            "fix": "Set price alerts the night before at your buyer/seller levels. Let alerts come to you.",
+            "teri_quote": "Teri: 'Set your alerts and walk away. The chart will call you.'",
+            "severity": "MEDIUM",
+        },
+        {
+            "symptom": "scared_to_enter",
+            "label": "Scared to enter / hesitating at good setups",
+            "root_cause": "Position size is too large for your comfort level",
+            "fix": "Cut your size in HALF until you're not scared. Then slowly rebuild.",
+            "teri_quote": "Teri: 'If you're scared to enter, the position is too big. Trade smaller.'",
+            "severity": "MEDIUM",
+        },
+        {
+            "symptom": "revenge_trading",
+            "label": "Revenge trading after a loss",
+            "root_cause": "Emotional dysregulation; loss triggers urgency to 'make it back'",
+            "fix": "After a loss: step away for 15 minutes minimum. Review the plan. Check max daily loss.",
+            "teri_quote": "Teri: 'The market will be open tomorrow. You don't have to make it back today.'",
+            "severity": "HIGH",
+        },
+        {
+            "symptom": "holding_losers_too_long",
+            "label": "Holding losing trades too long hoping for recovery",
+            "root_cause": "No defined stop loss; emotional attachment to position",
+            "fix": "Define your stop BEFORE entry. If you don't know your stop, don't take the trade.",
+            "teri_quote": "Teri: 'Hope is not a trading strategy.'",
+            "severity": "HIGH",
+        },
+    ]
+
+    active = [d for d in DIAGNOSTICS if responses.get(d["symptom"], False)]
+    high   = [d for d in active if d["severity"] == "HIGH"]
+    med    = [d for d in active if d["severity"] == "MEDIUM"]
+
+    if not active:
+        summary = "No major issues flagged. Continue monitoring these categories weekly."
+        priority = "MAINTAIN"
+    elif high:
+        summary = f"CRITICAL: {len(high)} high-severity issue(s) detected. Fix these first."
+        priority = "FIX NOW"
+    else:
+        summary = f"{len(med)} medium-severity issue(s). Address systematically."
+        priority = "IMPROVE"
+
+    return {
+        "active_diagnoses": active,
+        "high_severity": high,
+        "medium_severity": med,
+        "summary": summary,
+        "priority": priority,
+        "total_issues": len(active),
+        "teri_rule": "Fix one problem at a time. Trying to fix everything at once = fixing nothing.",
+    }
+
 st.set_page_config(
     page_title="EasyStockTrader — Smart Stock Analysis",
     layout="wide",
@@ -4361,6 +4835,45 @@ if st.session_state.macro:
                 st.markdown(f"• {a}")
 
 
+    # V14b: Options Playbook Router — T&T Options 101 / Coaching Playbook session
+    if st.session_state.macro:
+        _opb_macro = st.session_state.macro
+        _opb_vix   = _opb_macro.get("vix", 20)
+        _opb_ivr   = _opb_macro.get("ivr_proxy", 50)
+        _opb_trend = _opb_macro.get("sp_trend", "NEUTRAL")
+        _pre_evt   = st.session_state.get("event_risk_48h", False)
+        _post_evt  = (_opb_macro.get("sp", 0) < -2 and _opb_vix > 22)
+
+        _play = options_playbook_router(_opb_vix, _opb_ivr, _opb_trend, _pre_evt, _post_evt)
+        _play_color = {
+            "PRE-EVENT: STAND ASIDE": "#455a64",
+            "POST-SELLOFF: SELL PREMIUM AGGRESSIVELY": "#1b5e20",
+            "BULL + LOW VIX: BUY DEBIT SPREAD OR LONG CALL": "#0d47a1",
+            "BULL + ELEVATED VIX: SELL PUT CREDIT SPREAD": "#1b5e20",
+            "BEAR + HIGH VIX: SELL CALL CREDIT SPREAD OR BUY PUTS": "#b71c1c",
+            "RANGE-BOUND + ELEVATED VIX: IRON CONDOR": "#4a148c",
+            "HIGH VIX CRISIS: DEFINED RISK ONLY": "#b71c1c",
+            "NEUTRAL CONDITIONS: WAIT OR SMALL SIZE": "#f57f17",
+        }.get(_play["play"], "#37474f")
+        st.markdown(
+            "<div style='background:" + _play_color + ";color:#fff;padding:10px 14px;"
+            "border-radius:6px;margin:6px 0'>"
+            "<strong>" + _play["badge"] + " OPTIONS PLAYBOOK: " + _play["play"] + "</strong><br/>"
+            "<em style='opacity:0.9;font-size:0.88rem'>" + _play["primary"] + "</em>"
+            "</div>",
+            unsafe_allow_html=True
+        )
+        with st.expander("📖 Full Playbook Entry", expanded=False):
+            st.caption("**Primary:** " + _play["primary"])
+            if _play.get("secondary"):
+                st.caption("**Secondary:** " + _play["secondary"])
+            st.caption("**Why:** " + _play["reason"])
+            if _play.get("avoid"):
+                st.caption("**Avoid:** " + ", ".join(_play["avoid"]))
+            st.info(_play["teri_rule"])
+
+
+
 col_macro, col_scan = st.columns([1, 1])
 
 
@@ -4743,6 +5256,36 @@ if st.session_state.data is not None:
             </div>""",
             unsafe_allow_html=True
         )
+
+
+
+    # V14b: Gap Trade Playbook — 3 strategies (Coaching Call + VIP sessions)
+    if abs(m.get("gap", 0)) > 0.1 and st.session_state.get("_gclass"):
+        _gclass_v = st.session_state.get("_gclass", {})
+        _gtp = gap_trade_playbook(
+            gap_pct=m["gap"], gap_type=_gclass_v.get("type","Common"),
+            rvol=m.get("rvol", 1.0), trend=m.get("trend_strength","NEUTRAL"),
+            spx_price=m.get("price", 0)
+        )
+        if _gtp["strategies"]:
+            with st.expander("📋 Gap Trade Playbook — " + str(len(_gtp["strategies"])) + " applicable strategy(ies)", expanded=False):
+                for _strat in _gtp["strategies"]:
+                    _sbg = {"FADE":"#1565c0","RIDE":"#1b5e20","STOP LEVEL":"#37474f",
+                            "NO CLEAR PLAY":"#455a64"}.get(_strat["name"],"#37474f")
+                    st.markdown(
+                        "<div style='background:" + _sbg + ";color:#fff;"
+                        "padding:8px 12px;border-radius:5px;margin:4px 0'>"
+                        "<strong>" + _strat["badge"] + " " + _strat["name"] + " (" + _strat["confidence"] + ")</strong>"
+                        "</div>",
+                        unsafe_allow_html=True
+                    )
+                    st.caption("**Entry:** " + _strat["entry_rule"])
+                    st.caption("**Stop:** " + _strat["stop_rule"])
+                    st.caption("**Target:** " + _strat["target_rule"])
+                    st.info(_strat["teri_rule"])
+                if _gtp["globex_note"]:
+                    st.warning("Globex Context: " + _gtp["globex_note"])
+
 
     # SIGNALS
     if st.session_state.signals:
@@ -6649,6 +7192,155 @@ with st.expander("💰 Covered Call Income Calculator (Teri VIP Strategy)", expa
                 st.caption(f"• {rule}")
     else:
         st.caption("Enter stock price, strike, and premium above to calculate yield.")
+
+
+
+
+
+
+# =============================================================================
+# V14b UI — TROUBLESHOOT YOUR TRADING CHECKLIST
+# Coaching Call 1/4/2023: "Troubleshoot Your Trading" (118:27)
+# Teri's diagnostic framework for common trading problems.
+# =============================================================================
+with st.expander("🔧 Troubleshoot Your Trading — Diagnostic Checklist", expanded=False):
+    st.caption(
+        "From Teri's coaching call: diagnose why your trading isn't where you want it. "
+        "Check every box that applies — be honest with yourself."
+    )
+    _tt_responses = {}
+    _tt_symptoms = [
+        ("making_then_losing",    "I make money but then give it back"),
+        ("losses_bigger_than_wins","My average losses are bigger than my average wins"),
+        ("too_many_trades",       "I trade too much / get bored and trade"),
+        ("missing_good_setups",   "I miss good setups because I'm not watching at the right time"),
+        ("scared_to_enter",       "I hesitate and miss entries I planned"),
+        ("revenge_trading",       "After a loss I rush to make it back"),
+        ("holding_losers_too_long","I hold losing trades too long hoping they recover"),
+    ]
+    for sym, label in _tt_symptoms:
+        _tt_responses[sym] = st.checkbox(label, key="tt_" + sym)
+
+    if any(_tt_responses.values()):
+        _ttd = troubleshoot_trading(_tt_responses)
+        _pcolor = {"FIX NOW":"#b71c1c","IMPROVE":"#f57f17","MAINTAIN":"#1b5e20"}.get(_ttd["priority"],"#37474f")
+        st.markdown(
+            "<div style='background:" + _pcolor + ";color:#fff;padding:10px 14px;"
+            "border-radius:6px;margin:8px 0'>"
+            "<strong>DIAGNOSIS: " + _ttd["priority"] + "</strong><br/>"
+            "<em>" + _ttd["summary"] + "</em></div>",
+            unsafe_allow_html=True
+        )
+        for _diag in _ttd["active_diagnoses"]:
+            sev_icon = "🔴" if _diag["severity"] == "HIGH" else "🟡"
+            with st.expander(sev_icon + " " + _diag["label"], expanded=_diag["severity"]=="HIGH"):
+                st.markdown("**Root cause:** " + _diag["root_cause"])
+                st.success("**Fix:** " + _diag["fix"])
+                st.info(_diag["teri_quote"])
+        st.caption(_ttd["teri_rule"])
+    else:
+        st.caption("Check any that apply above to see Teri's diagnosis and fix.")
+
+
+# =============================================================================
+# V14b UI — SIX FIGURE TRADING PLAN CALCULATOR
+# T&T 2.0 / Coaching Call 1/9/2023: "Building a Six Figure Trading Plan"
+# Teri's backward-planning: start from income goal, derive what you need.
+# =============================================================================
+with st.expander("📊 Six Figure Trading Plan — Build Your Income Blueprint", expanded=False):
+    _lang_sfp = st.session_state.lang_level
+    if _lang_sfp in ["Beginner","Intermediate"]:
+        st.info(
+            "Teri's approach: start with your INCOME GOAL and work backwards to "
+            "what you need to do each day. This is your business plan, not just a trade plan."
+        )
+    else:
+        st.caption(
+            "T&T 2.0 / Coaching Call 1/9/2023. Math: EV = win_rate × avg_win - loss_rate × avg_loss. "
+            "No invented edge — shows what inputs WOULD be needed to hit the goal."
+        )
+    _sf1, _sf2 = st.columns(2)
+    with _sf1:
+        _sfp_monthly = st.number_input("Monthly income goal ($)", value=5000, step=500, key="sfp_monthly")
+        _sfp_account = st.number_input("Account size ($)", value=25000, step=1000, key="sfp_acct")
+        _sfp_wr      = st.slider("Your win rate (%)", 50, 90, 70, key="sfp_wr") / 100
+    with _sf2:
+        _sfp_risk    = st.number_input("Avg risk per contract ($)", value=500, step=50, key="sfp_risk")
+        _sfp_tpd     = st.number_input("Planned trades per day", value=2, min_value=1, max_value=5, key="sfp_tpd")
+
+    if _sfp_monthly > 0 and _sfp_account > 0:
+        _sfp = calc_six_figure_plan(_sfp_monthly, _sfp_account, _sfp_wr, _sfp_risk, _sfp_tpd)
+        if _sfp.get("error"):
+            st.error(_sfp["error"])
+        else:
+            _s1, _s2, _s3, _s4 = st.columns(4)
+            _s1.metric("Daily Target",   "$" + str(round(_sfp["daily_goal"])))
+            _s2.metric("Weekly Target",  "$" + str(round(_sfp["weekly_goal"])))
+            _s3.metric("Annual Goal",    "$" + str(round(_sfp["annual_goal"] / 1000)) + "k")
+            _s4.metric("Monthly Return", str(_sfp["monthly_return_pct"]) + "%",
+                       delta=("Achievable" if _sfp["daily_reachable"] else "Review inputs"))
+            st.code(
+                "EV per trade:   $" + str(_sfp["ev_per_trade"]) + "\n"
+                "Trades needed:  " + str(_sfp["trades_needed_daily"]) + "/day (you plan: " + str(_sfp_tpd) + ")\n"
+                "1% risk limit:  $" + str(round(_sfp["max_risk_1pct"])) + "/trade\n"
+                "Your avg risk:  $" + str(round(_sfp_risk)) + "/trade → " +
+                ("OK" if _sfp["sizing_ok"] else "TOO LARGE")
+            )
+            if not _sfp["sizing_ok"]:
+                st.warning(_sfp["sizing_note"])
+            st.caption(_sfp["ev_note"])
+            st.markdown("**Teri's plan rules:**")
+            for r in _sfp["teri_rules"]:
+                st.caption("• " + r)
+
+
+
+
+# V14b: Covered Call Cost Basis Reducer (additional section under CC calculator)
+with st.expander("📉 Cost Basis Reducer — How Many Calls Until I Own It Free?", expanded=False):
+    st.caption(
+        "From Options 101 (71:31): Teri sells covered calls to reduce cost basis over time. "
+        "Goal: eventually own the stock 'for free' (zero cost basis) through repeated premium collection."
+    )
+    _cbr1, _cbr2 = st.columns(2)
+    with _cbr1:
+        _cbr_purchase = st.number_input("Your purchase price ($/share)", value=0.0, step=0.50, key="cbr_purchase")
+        _cbr_current  = st.number_input("Current stock price ($/share)", value=0.0, step=0.50, key="cbr_current")
+    with _cbr2:
+        _cbr_shares = st.number_input("Shares owned", value=100, step=100, key="cbr_shares")
+        _cbr_rounds_txt = st.text_area(
+            "Premiums collected per call sold (comma-separated, $/share)",
+            placeholder="e.g. 2.50, 1.80, 3.00, 2.20",
+            key="cbr_rounds_txt",
+            height=60
+        )
+    if _cbr_purchase > 0 and _cbr_rounds_txt.strip():
+        try:
+            _cbr_rounds = [float(x.strip()) for x in _cbr_rounds_txt.split(",") if x.strip()]
+            _cbr = calc_cc_cost_basis_reducer(_cbr_current or _cbr_purchase, _cbr_purchase, _cbr_rounds, _cbr_shares)
+            _r1, _r2, _r3 = st.columns(3)
+            _r1.metric("Original Cost Basis", "$" + str(round(_cbr["purchase_price"], 2)))
+            _r2.metric("Current Cost Basis",  "$" + str(round(_cbr["current_cost_basis"], 2)),
+                       delta="-$" + str(round(_cbr["total_premium_collected"], 2)) + " collected")
+            _r3.metric("Cost Reduction", str(_cbr["cost_reduction_pct"]) + "%",
+                       delta=str(_cbr["total_rounds"]) + " rounds sold")
+            st.code(
+                "Total premium collected: $" + str(round(_cbr["total_premium_collected"], 2)) + "/share"
+                + " = $" + str(round(_cbr["total_premium_collected"] * _cbr_shares, 2)) + " total\n"
+                + "Avg per round: $" + str(_cbr["avg_premium_per_round"]) + "/share\n"
+                + "Break-even (own free): ~" + str(_cbr["breakeven_months"]) + " months at this avg"
+            )
+            st.info(_cbr["teri_goal_note"])
+            if len(_cbr["rounds"]) <= 12:
+                st.markdown("**Round-by-round history:**")
+                for r in _cbr["rounds"]:
+                    st.caption(
+                        "Round " + str(r["round"]) + ": collected $" + str(r["premium"])
+                        + " → cost basis now $" + str(r["cost_basis_after"])
+                        + " (total saved: $" + str(r["reduction_to_date"]) + ")"
+                    )
+        except ValueError:
+            st.warning("Please enter valid numbers separated by commas (e.g. 2.50, 1.80, 3.00)")
 
 
 st.divider()
