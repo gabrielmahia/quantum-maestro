@@ -7,7 +7,7 @@
 # =============================================================================
 # EasyStockTrader — Smart Stock Analysis
 # Educational simulation. Does not execute trades. Not financial advice.
-# IWT framework: Teri Ijeoma (investwithteri.com)
+# IWT framework: the IWT methodology (investwithteri.com)
 # =============================================================================
 
 import streamlit as st
@@ -171,7 +171,7 @@ VALUE_TICKERS = ["JPM", "BAC", "XOM", "CVX", "BRK.B", "JNJ", "PG"]
 KENYA_TICKERS = ["SCOM.NR", "EQTY.NR", "KCB.NR", "EABL.NR", "COOP.NR", "ABSA.NR", "NCBA.NR", "BAT.NR"]
 
 # 📊 COMBINED TICKER LIST (US + Kenya)
-# Teri Ijeoma's core trading universe (her public 34-stock list)
+# the IWT framework's core trading universe (her public 34-stock list)
 TERI_UNIVERSE = [
     # Mega-cap tech & AI
     "NVDA","AMD","MSFT","AAPL","META","GOOGL","AMZN","TSLA",
@@ -1337,7 +1337,7 @@ def plain_spread_explanation(underlying, short_k, long_k, spread_type,
                               expiry_str, credit, contracts, spread_width, lvl):
     """
     Returns a dict of plain-English explanation blocks and platform order strings.
-    Terminology designed so a Teri Ijeoma student with no options background
+    Terminology designed so a the IWT methodology student with no options background
     can immediately understand what to click and why.
     spread_type: "PUT_CREDIT" | "CALL_CREDIT"
     """
@@ -1422,14 +1422,14 @@ def plain_spread_explanation(underlying, short_k, long_k, spread_type,
 
 # =============================================================================
 # GLOBAL PRE-MARKET SCAN — Asia → Europe → US
-# Teri Ijeoma's top-down morning workflow.
+# the IWT framework's top-down morning workflow.
 # Real data: yfinance tickers. Runs on demand, cached 30 min.
 # =============================================================================
 
 @st.cache_data(ttl=1800)
 def run_global_scan():
     """
-    Fetch real-time quotes for the Teri morning sheet:
+    Fetch real-time quotes for the IWT morning sheet:
     Asia (Nikkei, Hang Seng, Shanghai), Europe (DAX, FTSE, EuroStoxx),
     US (SPY, QQQ, VIX, 10Y, DXY, Oil, Gold, ES, NQ).
     Returns a structured dict of all readings.
@@ -1598,7 +1598,7 @@ def instrument_advisor_v4(account_size, goal, experience, macro_data):
             recs.append({
                 "rank": 1, "instrument": "Long Call or Put (60+ DTE, delta 0.70+)",
                 "why_plain": f"Options are CHEAP right now (IVR {ivr:.0f}%). Like buying concert tickets when no one's excited about the show yet — low price, big payoff if the show sells out. Buy 60+ days out so you have time for the move to happen.",
-                "why_pro": f"IVR {ivr:.0f}% < 30. Options priced at lower end of 52w range — buyer's market. DITM (Δ ≥ 0.70): intrinsic-heavy, lower vega risk, behaves like 70 delta-shares per contract. Teri IWT: 60+ DTE minimum to avoid rapid theta decay.",
+                "why_pro": f"IVR {ivr:.0f}% < 30. Options priced at lower end of 52w range — buyer's market. DITM (Δ ≥ 0.70): intrinsic-heavy, lower vega risk, behaves like 70 delta-shares per contract. IWT system: 60+ DTE minimum to avoid rapid theta decay.",
                 "caution": "Still requires direction to be correct AND happen within the timeframe. Size using Quarter Kelly. 50% stop rule is non-negotiable.",
             })
         else:
@@ -1743,7 +1743,7 @@ def fetch_ndma_macro_signal():
 # 2. Options P&L Payoff Diagram (at-expiry matplotlib)
 # 3. Expected Move Visualizer (matplotlib)
 # 4. Gap Type Classifier (IWT Week 6 enhanced)
-# 5. SPX Daily Plan Generator (live BSM, Teri $0.50 filter)
+# 5. SPX Daily Plan Generator (live BSM, IWT $0.50 filter)
 # 6. Hard No-Trade Gate (refuse-not-warn)
 # 7. IWT Universe Batch Scanner (34-stock parallel)
 # All P&L math verified: formula = exact BSM via scipy.stats.norm
@@ -1752,61 +1752,85 @@ def fetch_ndma_macro_signal():
 
 # ── MARKET WEATHER ENGINE ─────────────────────────────────────
 def compute_market_weather(macro: dict) -> dict:
-    """Single-output regime classifier: RISK-ON/NEUTRAL/CAUTIOUS/RISK-OFF."""
+    """
+    Regime classifier. ALWAYS returns vix, ivr, sp_chg, passive keys
+    so the UI f-string at line 4826 never raises KeyError.
+    """
     if not macro:
-        return {"regime":"UNKNOWN","badge":"⬜","score":0,
-                "headline":"No macro data","prefer":[],"avoid":[]}
-    vix    = macro.get("vix", 20)
-    ivr    = macro.get("ivr_proxy", 50)
-    sp     = macro.get("sp", 0)
-    tnx_c  = macro.get("tnx_chg", 0)
-    gold_c = macro.get("gold_chg", 0)
-    dxy_c  = macro.get("dxy_chg", 0)
-    risk_off = macro.get("risk_off", False)
-    passive  = macro.get("passive", False)
+        return {"regime": "UNKNOWN", "badge": "\u2b1c", "score": 0,
+                "headline": "No macro data loaded — run Macro Audit first",
+                "prefer": [], "avoid": [],
+                "vix": 20.0, "ivr": 50.0, "sp_chg": 0.0, "passive": False}
+
+    vix    = float(macro.get("vix", 20) or 20)
+    ivr    = float(macro.get("ivr_proxy", 50) or 50)
+    sp     = float(macro.get("sp", 0) or 0)
+    tnx_c  = float(macro.get("tnx_chg", 0) or 0)
+    gold_c = float(macro.get("gold_chg", 0) or 0)
+    dxy_c  = float(macro.get("dxy_chg", 0) or 0)
+    risk_off = bool(macro.get("risk_off", False))
+    passive  = bool(macro.get("passive", False))
+
     score = 0
     if sp > 0.5:    score += 2
     elif sp > 0:    score += 1
     elif sp < -0.5: score -= 2
     elif sp < 0:    score -= 1
     if vix < 15:    score += 1
-    elif vix < 20:  score += 0
-    elif vix < 28:  score -= 1
     elif vix >= 28: score -= 3
+    elif vix >= 20: score -= 1
     if tnx_c > 1.0:  score -= 1
     elif tnx_c < -1: score += 1
     if gold_c > 1.5 and vix > 22: score -= 2
     if dxy_c > 0.5:               score -= 1
     if passive: score += 1
     if risk_off: score = min(score, -1)
+
+    _base = {"score": score, "vix": vix, "ivr": ivr, "sp_chg": sp, "passive": passive}
+
     if score >= 3:
-        return {"regime":"RISK-ON","badge":"🟢","score":score,
-                "headline":"Conditions favour disciplined premium selling & trend participation",
-                "prefer":["Put credit spreads (7-14 DTE, outside EM)","Covered calls","Pullback DITM longs (60+ DTE)"],
-                "avoid":["Chasing breakouts at ATH","Adding to losing positions"]}
+        return {**_base, "regime": "RISK-ON", "badge": "\U0001f7e2",
+                "headline": "Conditions favour disciplined premium selling and trend participation",
+                "prefer": [
+                    "Put credit spreads (7-14 DTE, outside expected move)",
+                    "Covered calls on existing holdings",
+                    "Pullback long options (60+ DTE, DITM) on dips to support"],
+                "avoid": ["Chasing breakouts at all-time highs",
+                          "Adding to losing positions"]}
     elif score >= 0:
-        return {"regime":"RISK-NEUTRAL","badge":"🟡","score":score,
-                "headline":"Mixed signals — selective participation, smaller size",
-                "prefer":["Put credit spreads with tighter width","Iron condors if range-bound","Patience is a position"],
-                "avoid":["Aggressive size","New longs at resistance","Selling into rising VIX"]}
+        return {**_base, "regime": "RISK-NEUTRAL", "badge": "\U0001f7e1",
+                "headline": "Mixed signals — selective participation, smaller size",
+                "prefer": [
+                    "Put credit spreads with tighter spread width",
+                    "Iron condors only if price is range-bound",
+                    "Patience is a position — wait for cleaner setups"],
+                "avoid": ["Aggressive size", "New longs at resistance",
+                          "Selling premium into rising VIX"]}
     elif score >= -2:
-        return {"regime":"RISK-CAUTIOUS","badge":"🟠","score":score,
-                "headline":"Elevated risk — reduce size, defined-risk structures only",
-                "prefer":["Defined-risk spreads ONLY","Long put hedges","Shorter DTE to limit vega"],
-                "avoid":["New longs without tight stops","Selling ATM premium","Positions through events"]}
+        return {**_base, "regime": "RISK-CAUTIOUS", "badge": "\U0001f7e0",
+                "headline": "Elevated risk — reduce size, defined-risk structures only",
+                "prefer": [
+                    "Defined-risk spreads ONLY — no naked short premium",
+                    "Long put hedges on bullish positions",
+                    "Shorter DTE (7 days) to limit vega exposure"],
+                "avoid": ["New longs without tight stops",
+                          "Selling ATM premium", "Positions through macro events"]}
     else:
-        return {"regime":"RISK-OFF","badge":"🔴","score":score,
-                "headline":"Defensive mode — capital preservation over income",
-                "prefer":["Stay in cash","Hedge with long puts","Wait for VIX peak before re-entry"],
-                "avoid":["ALL new credit spreads","Adding any exposure","Anything not 100% defined-risk"]}
+        return {**_base, "regime": "RISK-OFF", "badge": "\U0001f534",
+                "headline": "Defensive mode — capital preservation over income",
+                "prefer": [
+                    "Stay in cash — no new premium selling",
+                    "Hedge existing positions with long puts",
+                    "Wait for volatility peak before re-entry"],
+                "avoid": ["ALL new credit spreads", "Adding any exposure",
+                          "Anything not 100% defined-risk"]}
 
 
-# ── GAP TYPE CLASSIFIER ───────────────────────────────────────
 def classify_gap_type(gap_pct: float, rvol: float, trend: str,
                       bb_width_ratio: float = 1.0) -> dict:
     """
     IWT Week 6: classify gap as Common/Breakaway/Runaway/Exhaustion.
-    Fill probabilities from Teri curriculum + empirical research.
+    Fill probabilities from IWT curriculum + empirical research.
     gap_pct: (open - prev_close) / prev_close * 100
     rvol: relative volume vs 20-day average
     """
@@ -2059,14 +2083,14 @@ def compute_no_trade_gate(macro: dict, metrics: dict, strategy: str,
                 "blocks":blocks,"warnings":warnings_}
 
 
-# ── SPX DAILY PLAN (live BSM + Teri $0.50 filter) ─────────────
+# ── SPX DAILY PLAN (live BSM + IWT $0.50 filter) ─────────────
 @st.cache_data(ttl=900)
 def generate_spx_daily_plan(dte_target: int = 14,
                               min_credit: float = 0.50,
                               r_annual: float = 0.045) -> dict:
     """
     Live SPX/VIX data (yfinance) + exact BSM (scipy.stats.norm).
-    Teri IWT filter: credit >= $0.50/share = $50/contract minimum.
+    IWT filter: credit >= $0.50/share = $50/contract minimum.
     Strike placement: at 1.0–1.2× expected move from spot.
     NO synthetic or invented prices.
     """
@@ -2121,7 +2145,7 @@ def generate_spx_daily_plan(dte_target: int = 14,
                 "best":best,"all_valid":sorted(valid[:4],key=lambda x:x["efficiency"],reverse=True),
                 "zero_dte":{"K_s":Ks0,"K_l":Kl0,"credit":round(cr0,2),
                             "ok":cr0>=min_credit,"em_0dte":round(em0,0)},
-                "guidance":{"min_credit":f"Teri minimum ${min_credit} = ${min_credit*100:.0f}/contract",
+                "guidance":{"min_credit":f"IWT minimum ${min_credit} = ${min_credit*100:.0f}/contract",
                             "dte_rule":f"{dte_target} DTE = IWT '2 weeks out' standard",
                             "exit":"50% profit OR 2× credit loss — never hold to expiry",
                             "event_rule":"No new spreads 24h before CPI/FOMC/NFP"},
@@ -2178,7 +2202,7 @@ def batch_scan_teri_universe(universe_list: list, top_n: int = 10) -> list:
 
 
 # =============================================================================
-# V14 VIP MODULES — From Teri Ijeoma VIP Group Coaching Calls 2019-2023
+# V14 VIP MODULES — From the IWT methodology VIP Group Coaching Calls 2019-2023
 # Integrated from 40+ coaching sessions covering:
 #   - Gap Trap avoidance (VIP 2023: "The Gap Trap")
 #   - Levels + EM double-confirmation strike placement (VIP 2022: "Identifying Strong Levels")
@@ -2263,7 +2287,7 @@ def levels_plus_em_strike_placement(spx: float, iv_pct: float, dte: int,
     (a) Expected move beyond spot, OR (b) Key structural level.
     For PUT spread: short put must be BELOW BOTH the support level AND the EM.
     For CALL spread: short call must be ABOVE BOTH the resistance level AND the EM.
-    This is Teri's most important option-specific insight from the VIP sessions.
+    This is the IWT most important option-specific insight from the VIP sessions.
     """
     import math
     em = spx * (iv_pct/100) * math.sqrt(dte/365)
@@ -2317,7 +2341,7 @@ def short_or_not_score(trend: str, vix: float, macro: dict,
                         metrics: dict, rsi: float, rvol: float) -> dict:
     """
     VIP 2022-2023: "To Short, or not To Short" (multiple sessions).
-    Teri's shorting framework: short ONLY when all conditions align.
+    the IWT shorting framework: short ONLY when all conditions align.
     5 requirements — all 5 must pass for a GREEN short signal.
     """
     score = 0; reasons = []; blocks = []
@@ -2390,7 +2414,7 @@ def calc_covered_call_yield(stock_price: float, call_strike: float,
                               call_premium: float, dte: int, shares: int = 100) -> dict:
     """
     VIP 2020: "Covered Calls" (multiple sessions).
-    Teri's covered call income method: sell slightly OTM, 30-45 DTE,
+    the IWT covered call income method: sell slightly OTM, 30-45 DTE,
     buy back at 50% profit, roll at 21 DTE.
     Returns annualized yield and full trade economics.
     """
@@ -2412,12 +2436,12 @@ def calc_covered_call_yield(stock_price: float, call_strike: float,
     if otm_pct < 0:
         otm_note = f"⚠️ ITM call — you cap your upside NOW. Consider OTM strike."
     elif otm_pct < 2:
-        otm_note = f"✅ Slightly OTM ({otm_pct:.1f}%) — Teri's preferred zone"
+        otm_note = f"✅ Slightly OTM ({otm_pct:.1f}%) — IWT preferred zone"
     else:
         otm_note = f"🟡 Further OTM ({otm_pct:.1f}%) — less premium but more upside room"
 
     dte_note = ("✅ Ideal 30-45 DTE range" if 30 <= dte <= 45
-                else f"⚠️ {dte} DTE — Teri prefers 30-45 DTE for covered calls")
+                else f"⚠️ {dte} DTE — IWT standard: 30-45 DTE for covered calls")
 
     return {
         "stock_price": stock_price, "call_strike": call_strike,
@@ -2457,7 +2481,7 @@ def calc_six_figure_plan(
 ) -> dict:
     """
     T&T 2.0 / Coaching Call 1/9/2023: "Building a Six Figure Trading Plan"
-    Teri's backward-planning framework: start from income goal,
+    the IWT backward-planning framework: start from income goal,
     derive required daily performance, and check account math.
 
     This does NOT invent a profitable edge — it shows what YOU would need
@@ -2492,7 +2516,7 @@ def calc_six_figure_plan(
     monthly_return_pct    = monthly_goal / account_size * 100
 
     # Account size sanity check: account should support goals without oversizing
-    # Teri's rule: risk max 1% per trade
+    # System rule: risk max 1% per trade
     max_risk_per_trade = account_size * 0.01
     sizing_ok = avg_contract_risk <= max_risk_per_trade
 
@@ -2533,7 +2557,7 @@ def options_playbook_router(vix: float, ivr: float, trend: str,
     """
     Options 101 — Trading Options Playbook (97:12)
     Maps market conditions to specific option structures.
-    Teri's playbook logic from the coaching session.
+    the IWT playbook logic from the coaching session.
     Returns: primary structure, secondary structure, avoid list, reasoning.
     """
     # Classify VIX regime
@@ -2558,7 +2582,7 @@ def options_playbook_router(vix: float, ivr: float, trend: str,
             "secondary": "If must be on: long options only (defined risk), 1/4 size",
             "avoid": ["Selling new premium", "Increasing size", "Iron condors"],
             "reason": "Events reprice IV rapidly — credit collected evaporates on a spike",
-            "teri_rule": "Events are the #1 killer of premium sellers. Teri's rule: flat into events.",
+            "teri_rule": "Events are the #1 killer of premium sellers. System rule: flat into events.",
         }
 
     if post_event_selloff:
@@ -2578,7 +2602,7 @@ def options_playbook_router(vix: float, ivr: float, trend: str,
             "play": "BULL + LOW VIX: BUY DEBIT SPREAD OR LONG CALL",
             "badge": "📈",
             "primary": "Call debit spread (75-90 DTE, ATM/slightly OTM, 40-50 delta)",
-            "secondary": "Long call (DITM, 70+ delta, 60+ DTE) — Teri's preferred long option",
+            "secondary": "Long call (DITM, 70+ delta, 60+ DTE) — IWT preferred long option",
             "avoid": ["Selling puts (credit is thin in low VIX)", "Naked calls"],
             "reason": "Low IVR means options are cheap — pay for direction, don't sell cheap premium.",
             "teri_rule": "When IV is low and trend is up, buy options rather than sell them.",
@@ -2640,7 +2664,7 @@ def gap_trade_playbook(gap_pct: float, gap_type: str, rvol: float,
                         globex_high: float = 0, globex_low: float = 0) -> dict:
     """
     Bonus: Gaps Coaching Call (78:12) + VIP Gaps 2019-2023
-    Three distinct gap trading strategies based on Teri's coaching.
+    Three distinct gap trading strategies based on the IWT coaching.
     Returns specific entry, stop, and target rules for each applicable strategy.
     """
     abs_gap = abs(gap_pct)
@@ -2716,7 +2740,7 @@ def gap_trade_playbook(gap_pct: float, gap_type: str, rvol: float,
             "context": (
                 "Every gap creates a natural reference level. "
                 "The gap open level is where price 'jumped from' — it's a structural reference. "
-                "Teri: 'The gap level is your line in the sand.'"
+                "IWT principle: 'The gap level is your line in the sand.'"
             ),
             "teri_rule": "The gap level is always a relevant stop or target — use it.",
         })
@@ -2775,7 +2799,7 @@ def calc_cc_cost_basis_reducer(
     """
     Options 101 — Protect your Long Term Portfolio: Sell Covered Calls (71:31)
     Tracks how repeated covered call sales reduce cost basis over time.
-    Teri: "My goal is eventually to own the stock for free."
+    IWT principle: "My goal is eventually to own the stock for free."
 
     calls_sold: list of premiums collected per round (e.g., [2.50, 1.80, 3.20])
     All values per-share.
@@ -2829,7 +2853,7 @@ def calc_cc_cost_basis_reducer(
 def troubleshoot_trading(responses: dict) -> dict:
     """
     Coaching Call 1/4/2023: Troubleshoot Your Trading (118:27)
-    Teri's diagnostic framework for common trading problems.
+    the IWT diagnostic framework for common trading problems.
     responses: dict of symptom → bool (True = experiencing this problem)
     """
     DIAGNOSTICS = [
@@ -2838,7 +2862,7 @@ def troubleshoot_trading(responses: dict) -> dict:
             "label": "Making money then giving it back",
             "root_cause": "No profit targets set, or overriding targets",
             "fix": "Set OCO brackets BEFORE entry: take-profit at 50%, stop at 2× credit",
-            "teri_quote": "Teri: 'If you don't have a profit target, greed will take it back.'",
+            "teri_quote": "IWT principle: 'If you don't have a profit target, greed will take it back.'",
             "severity": "HIGH",
         },
         {
@@ -2846,7 +2870,7 @@ def troubleshoot_trading(responses: dict) -> dict:
             "label": "Average losses > average wins",
             "root_cause": "Inconsistent position sizing — oversizing losing trades",
             "fix": "Same size EVERY trade. Track position size consistency for 1 week.",
-            "teri_quote": "Teri: '1% risk on every trade — winning or losing, same size.'",
+            "teri_quote": "IWT principle: '1% risk on every trade — winning or losing, same size.'",
             "severity": "HIGH",
         },
         {
@@ -2854,7 +2878,7 @@ def troubleshoot_trading(responses: dict) -> dict:
             "label": "Trading too much / boredom trading",
             "root_cause": "No written pre-market plan; reacting instead of planning",
             "fix": "Write your plan before market opens. If a setup isn't in the plan, it's not a trade.",
-            "teri_quote": "Teri: 'I plan the trade and trade the plan. If it's not in my plan, it's not my trade.'",
+            "teri_quote": "IWT principle: 'I plan the trade and trade the plan. If it's not in my plan, it's not my trade.'",
             "severity": "MEDIUM",
         },
         {
@@ -2862,7 +2886,7 @@ def troubleshoot_trading(responses: dict) -> dict:
             "label": "Missing good setups / not at screen at the right time",
             "root_cause": "No pre-market alerts set; reactive trading",
             "fix": "Set price alerts the night before at your buyer/seller levels. Let alerts come to you.",
-            "teri_quote": "Teri: 'Set your alerts and walk away. The chart will call you.'",
+            "teri_quote": "IWT principle: 'Set your alerts and walk away. The chart will call you.'",
             "severity": "MEDIUM",
         },
         {
@@ -2870,7 +2894,7 @@ def troubleshoot_trading(responses: dict) -> dict:
             "label": "Scared to enter / hesitating at good setups",
             "root_cause": "Position size is too large for your comfort level",
             "fix": "Cut your size in HALF until you're not scared. Then slowly rebuild.",
-            "teri_quote": "Teri: 'If you're scared to enter, the position is too big. Trade smaller.'",
+            "teri_quote": "IWT principle: 'If you're scared to enter, the position is too big. Trade smaller.'",
             "severity": "MEDIUM",
         },
         {
@@ -2878,7 +2902,7 @@ def troubleshoot_trading(responses: dict) -> dict:
             "label": "Revenge trading after a loss",
             "root_cause": "Emotional dysregulation; loss triggers urgency to 'make it back'",
             "fix": "After a loss: step away for 15 minutes minimum. Review the plan. Check max daily loss.",
-            "teri_quote": "Teri: 'The market will be open tomorrow. You don't have to make it back today.'",
+            "teri_quote": "IWT principle: 'The market will be open tomorrow. You don't have to make it back today.'",
             "severity": "HIGH",
         },
         {
@@ -2886,7 +2910,7 @@ def troubleshoot_trading(responses: dict) -> dict:
             "label": "Holding losing trades too long hoping for recovery",
             "root_cause": "No defined stop loss; emotional attachment to position",
             "fix": "Define your stop BEFORE entry. If you don't know your stop, don't take the trade.",
-            "teri_quote": "Teri: 'Hope is not a trading strategy.'",
+            "teri_quote": "IWT principle: 'Hope is not a trading strategy.'",
             "severity": "HIGH",
         },
     ]
@@ -4109,7 +4133,7 @@ with st.sidebar:
         if lo_dte < 60:
             st.error(f"⚠️ {lo_dte} DTE is below IWT's 60-day minimum. Theta decay will eat your option faster than the stock can move. Consider {max(60, lo_dte+30)} DTE or more.")
         elif lo_dte < 90:
-            st.warning(f"🟡 {lo_dte} DTE is acceptable but Teri prefers 90+ days for breathing room.")
+            st.warning(f"🟡 {lo_dte} DTE is acceptable but IWT standard: 90+ days for breathing room.")
         else:
             st.caption(f"✅ {lo_dte} DTE — IWT compliant. Good breathing room for the trade to develop.")
 
@@ -4707,7 +4731,7 @@ with st.expander("🌍 Morning Brief — Global Market Scan (Asia → Europe →
     _lgm = st.session_state.lang_level
     if _lgm in ["Beginner","Intermediate"]:
         st.caption(
-            "Teri's morning process: check Asia overnight, then Europe, then US futures. "
+            "the IWT morning process: check Asia overnight, then Europe, then US futures. "
             "This tells you whether the market is risk-on (buy) or risk-off (sell/avoid) before you trade anything."
         )
 
@@ -4761,7 +4785,7 @@ with st.expander("🌍 Morning Brief — Global Market Scan (Asia → Europe →
                     f"Proceed carefully. Prefer smaller size and tighter stops."
                 )
 
-        # Teri checklist
+        # IWT checklist
         if _lgm in ["Beginner","Intermediate"]:
             st.markdown("**Before you trade, answer these:**")
             _checks = {
@@ -4823,7 +4847,7 @@ if st.session_state.macro:
         </div>""",
         unsafe_allow_html=True
     )
-    with st.expander(f"📡 Regime Detail — Score {_mw['score']:+d} | VIX {_mw['vix']:.1f} | IVR {_mw['ivr']:.0f}%", expanded=False):
+    with st.expander(f"📡 Regime Detail — Score {_mw.get('score',0):+d} | VIX {_mw.get('vix',0):.1f} | IVR {_mw.get('ivr',0):.0f}%", expanded=False):
         _c1, _c2 = st.columns(2)
         with _c1:
             st.markdown("**✅ Preferred structures:**")
@@ -4941,25 +4965,25 @@ with col_scan:
 
 # =============================================================================
 # V14 UI — TODAY'S SPX DAILY PLAN
-# Live BSM strikes, Teri $0.50 minimum, 2-week DTE standard.
+# Live BSM strikes, IWT $0.50 minimum, 2-week DTE standard.
 # All numbers from yfinance + scipy — zero synthetic data.
 # =============================================================================
-with st.expander("🎯 Today's SPX Setup — Live Strikes & Credits (Teri IWT)", expanded=False):
+with st.expander("🎯 Today's SPX Setup — Live Strikes & Credits (IWT)", expanded=False):
     _lp3 = st.session_state.lang_level
     if _lp3 in ["Beginner","Intermediate"]:
         st.caption(
             "This generates exact SPX put credit spread strikes based on live market data. "
             "All numbers use real SPX/VIX prices + Black-Scholes math. "
-            "Teri's rule: collect at least $0.50 per share ($50/contract) minimum."
+            "System rule: collect at least $0.50 per share ($50/contract) minimum."
         )
     else:
         st.caption("Live SPX + VIX via yfinance → exact BSM credit estimates (scipy.stats.norm). "
-                   "Teri $0.50 minimum filter applied. No synthetic data.")
+                   "IWT $0.50 minimum filter applied. No synthetic data.")
 
     _dte_sel = st.radio("DTE target:", [7, 14, 21, 0], horizontal=True,
                         format_func=lambda x: f"0DTE (today)" if x==0 else f"{x} days (IWT standard)" if x==14 else f"{x} days",
-                        help="Teri's 2-weeks-out standard = 14 DTE. 0DTE = intraday only, advanced.")
-    _min_cr = st.number_input("Minimum credit (Teri rule: ≥$0.50)", value=0.50, min_value=0.10, step=0.05)
+                        help="the IWT 2-weeks-out standard = 14 DTE. 0DTE = intraday only, advanced.")
+    _min_cr = st.number_input("Minimum credit (IWT rule: ≥$0.50)", value=0.50, min_value=0.10, step=0.05)
 
     if st.button("🔄 Generate Live SPX Plan", type="primary", key="spx_plan_btn"):
         with st.spinner("Fetching live SPX/VIX → computing BSM credits..."):
@@ -5034,7 +5058,7 @@ with st.expander("🎯 Today's SPX Setup — Live Strikes & Credits (Teri IWT)",
                                 em=_z["em_0dte"], ok=_ok_str
                             )
                         )
-            # Teri guidance box
+            # IWT guidance box
             _g = _plan.get("guidance", {})
             if _g:
                 _rules_list = [
@@ -5554,7 +5578,7 @@ if st.session_state.data is not None:
             st.error(f"❌ {_lo['error']}")
         else:
             st.subheader(f"📈 IWT Long {lo_direction} — {lo_dte} DTE")
-            st.caption("Teri Ijeoma: 60+ DTE, DITM, 50-100% profit target, 50% stop rule.")
+            st.caption("the IWT methodology: 60+ DTE, DITM, 50-100% profit target, 50% stop rule.")
             if not _lo["dte_ok"]:
                 st.error(_lo["dte_grade"])
             else:
@@ -5748,7 +5772,7 @@ Margin*:   ~${fut['margin_required']:,}""")
 
         # ═══════════════════════════════════════════════════════════════
         # V14: At-Expiry P&L Diagram + Expected Move Visualizer
-        # Teri IWT Course: Weeks 7-8 (Options P&L Graphs)
+        # IWT Course reference: Weeks 7-8 (Options P&L Graphs)
         # VIP Coaching: "Understanding Options — The Greeks" (2/26/22)
         # VIP Coaching: "Become a Successful Seller of Options" (1/28/23)
         # ═══════════════════════════════════════════════════════════════
@@ -5786,7 +5810,7 @@ Margin*:   ~${fut['margin_required']:,}""")
                             st.caption(
                                 "The yellow dashed lines show how far the market expects to move. "
                                 "Your green/red line = your short strike. "
-                                "GREEN = outside expected move (Teri's standard). "
+                                "GREEN = outside expected move (IWT standard). "
                                 "RED = inside expected move (risky)."
                             )
                         _fig_e = plot_expected_move_chart(
@@ -5813,7 +5837,7 @@ Margin*:   ~${fut['margin_required']:,}""")
             )
             with st.expander("🎯 VIP Level Confirmation — Strike vs Support/Resistance", expanded=False):
                 st.caption(
-                    "Teri's VIP insight: your short strike must clear BOTH the expected move "
+                    "the IWT VIP insight: your short strike must clear BOTH the expected move "
                     "AND the nearest structural support/resistance level. "
                     "The more conservative of the two governs."
                 )
@@ -7087,7 +7111,7 @@ with st.expander("🔍 IWT Universe Scanner — 34-Stock Opportunity Scan", expa
     _lus = st.session_state.lang_level
     if _lus in ["Beginner","Intermediate"]:
         st.caption(
-            "Teri's morning routine: scan her full watchlist before picking a stock. "
+            "the IWT morning routine: scan her full watchlist before picking a stock. "
             "This checks all 34 stocks in her universe simultaneously and ranks the best setups. "
             "A-grade = ready to trade. B-grade = monitor. C/D = skip."
         )
@@ -7148,15 +7172,15 @@ with st.expander("🔍 IWT Universe Scanner — 34-Stock Opportunity Scan", expa
 # =============================================================================
 # V14 VIP UI — COVERED CALL YIELD CALCULATOR
 # VIP 2020: "Covered Calls" coaching sessions
-# Teri: sell 30-45 DTE, slightly OTM, collect income while holding shares
+# IWT: sell 30-45 DTE, slightly OTM, collect income while holding shares
 # =============================================================================
-with st.expander("💰 Covered Call Income Calculator (Teri VIP Strategy)", expanded=False):
+with st.expander("💰 Covered Call Income Calculator (IWT Strategy)", expanded=False):
     _lcc = st.session_state.lang_level
     if _lcc in ["Beginner","Intermediate"]:
         st.info(
             "**Covered calls = getting paid to wait.** You own shares, you sell "
             "someone the right to buy them at a higher price. If they don't buy, "
-            "you keep the income AND your shares. Teri teaches this as a consistent "
+            "you keep the income AND your shares. The IWT system teaches this as a consistent "
             "income strategy for shareholders.\n\n"
             "**IWT rules:** Sell 30-45 days out, slightly above current price, "
             "close at 50% profit, roll at 21 DTE."
@@ -7167,7 +7191,7 @@ with st.expander("💰 Covered Call Income Calculator (Teri VIP Strategy)", expa
         _cc_strike = st.number_input("Call strike you're selling ($)", value=0.0, step=0.50, key="cc_strike")
         _cc_prem = st.number_input("Premium collected ($/share)", value=0.0, step=0.05, key="cc_prem")
     with _cc_cols[1]:
-        _cc_dte = st.number_input("Days to expiry (Teri: 30-45 DTE)", value=35, min_value=1, max_value=90, key="cc_dte")
+        _cc_dte = st.number_input("Days to expiry (IWT: 30-45 DTE)", value=35, min_value=1, max_value=90, key="cc_dte")
         _cc_shares = st.number_input("Shares owned", value=100, min_value=100, step=100, key="cc_shares")
 
     if _cc_stock > 0 and _cc_strike > 0 and _cc_prem > 0:
@@ -7187,7 +7211,7 @@ with st.expander("💰 Covered Call Income Calculator (Teri VIP Strategy)", expa
                 + f"{_cc['dte_note']}\n"
                 + f"Max profit if assigned: ${_cc['max_profit']:,.0f}"
             )
-            st.markdown("**📋 Teri's IWT Rules for this trade:**")
+            st.markdown("**📋 the IWT IWT Rules for this trade:**")
             for rule in _cc["teri_rules"]:
                 st.caption(f"• {rule}")
     else:
@@ -7201,11 +7225,11 @@ with st.expander("💰 Covered Call Income Calculator (Teri VIP Strategy)", expa
 # =============================================================================
 # V14b UI — TROUBLESHOOT YOUR TRADING CHECKLIST
 # Coaching Call 1/4/2023: "Troubleshoot Your Trading" (118:27)
-# Teri's diagnostic framework for common trading problems.
+# the IWT diagnostic framework for common trading problems.
 # =============================================================================
 with st.expander("🔧 Troubleshoot Your Trading — Diagnostic Checklist", expanded=False):
     st.caption(
-        "From Teri's coaching call: diagnose why your trading isn't where you want it. "
+        "From the IWT coaching call: diagnose why your trading isn't where you want it. "
         "Check every box that applies — be honest with yourself."
     )
     _tt_responses = {}
@@ -7239,19 +7263,19 @@ with st.expander("🔧 Troubleshoot Your Trading — Diagnostic Checklist", expa
                 st.info(_diag["teri_quote"])
         st.caption(_ttd["teri_rule"])
     else:
-        st.caption("Check any that apply above to see Teri's diagnosis and fix.")
+        st.caption("Check any that apply above to see the IWT diagnosis and fix.")
 
 
 # =============================================================================
 # V14b UI — SIX FIGURE TRADING PLAN CALCULATOR
 # T&T 2.0 / Coaching Call 1/9/2023: "Building a Six Figure Trading Plan"
-# Teri's backward-planning: start from income goal, derive what you need.
+# the IWT backward-planning: start from income goal, derive what you need.
 # =============================================================================
 with st.expander("📊 Six Figure Trading Plan — Build Your Income Blueprint", expanded=False):
     _lang_sfp = st.session_state.lang_level
     if _lang_sfp in ["Beginner","Intermediate"]:
         st.info(
-            "Teri's approach: start with your INCOME GOAL and work backwards to "
+            "the IWT approach: start with your INCOME GOAL and work backwards to "
             "what you need to do each day. This is your business plan, not just a trade plan."
         )
     else:
@@ -7289,7 +7313,7 @@ with st.expander("📊 Six Figure Trading Plan — Build Your Income Blueprint",
             if not _sfp["sizing_ok"]:
                 st.warning(_sfp["sizing_note"])
             st.caption(_sfp["ev_note"])
-            st.markdown("**Teri's plan rules:**")
+            st.markdown("**the IWT plan rules:**")
             for r in _sfp["teri_rules"]:
                 st.caption("• " + r)
 
@@ -7299,7 +7323,7 @@ with st.expander("📊 Six Figure Trading Plan — Build Your Income Blueprint",
 # V14b: Covered Call Cost Basis Reducer (additional section under CC calculator)
 with st.expander("📉 Cost Basis Reducer — How Many Calls Until I Own It Free?", expanded=False):
     st.caption(
-        "From Options 101 (71:31): Teri sells covered calls to reduce cost basis over time. "
+        "From Options 101 (71:31): The IWT method sells covered calls to reduce cost basis over time. "
         "Goal: eventually own the stock 'for free' (zero cost basis) through repeated premium collection."
     )
     _cbr1, _cbr2 = st.columns(2)
@@ -7677,7 +7701,7 @@ if st.session_state.get("_bt_run"):
                     f"Buying DITM calls when VIX was low (cheap options) + market trending up "
                     f"returned ${_lc_stats.get('total_pnl',0):+,.0f} vs "
                     f"${_cs_stats.get('total_pnl',0):+,.0f} for credit spreads. "
-                    f"This is exactly what Teri's two-weapon system teaches: "
+                    f"This is exactly what the IWT two-weapon system teaches: "
                     f"when IV is low, BUY options, don't sell them."
                 )
             else:
