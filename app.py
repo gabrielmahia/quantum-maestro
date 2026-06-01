@@ -3794,10 +3794,24 @@ with _T1:
                 with st.spinner("Fetching live data…"):
                     try:
                         _tkr = st.session_state.ticker
-                        engine.fetch_data(_tkr)
-                        st.session_state.data    = engine.data
-                        st.session_state.metrics = engine.compute_metrics()
-                        st.session_state.signals = engine.generate_signals()
+                        _fd = engine.fetch_data(_tkr)
+                        if _fd[0] is None:
+                            raise ValueError(_fd[2])
+                        _data, _mets, _name = _fd
+                        _mets['price']   = float(_data['Close'].iloc[-1])
+                        _mets['chg_pct'] = float(
+                            (_data['Close'].iloc[-1] - _data['Close'].iloc[-2])
+                            / _data['Close'].iloc[-2] * 100)
+                        _mets['gap']     = float(
+                            (_data['Open'].iloc[-1] - _data['Close'].iloc[-2])
+                            / _data['Close'].iloc[-2] * 100)
+                        _mets['rvol']    = float(_data['RVOL'].iloc[-1]) if 'RVOL' in _data.columns else 1.0
+                        _mets['atr']     = float((_data['High']-_data['Low']).ewm(alpha=1/14).mean().iloc[-1])
+                        _mets['supp']    = _mets.get('support', 0)
+                        _mets['res']     = _mets.get('resistance', 0)
+                        st.session_state.data    = _data
+                        st.session_state.metrics = _mets
+                        st.session_state.signals = engine.generate_signals(_data, _mets, _tkr)
                         # Macro
                         _mac = get_macro()
                         if _mac: st.session_state.macro = _mac
@@ -4397,9 +4411,13 @@ with st.expander("⚡ Power Tools — Market Brief · Backtest · Options Calcul
 # ── DISCLAIMER (compact footer) ───────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
-    '<div class="dim" style="text-align:center;font-size:0.72rem;padding:8px 0">'
-    '⚠️ <strong>Simulation only</strong> · Not financial advice · Not affiliated with Trade and Travel '
-    'or any trading organisation · Built by a student applying IWT methodology principles · '
-    'Data: Yahoo Finance · Trading involves substantial risk of loss'
-    '</div>', unsafe_allow_html=True)
+    """<div style="background:#0d1520;border:1px solid #1e3a5f;border-radius:8px;
+    padding:12px 16px;margin:8px 0;text-align:center;font-size:0.72rem;color:#7090b0;line-height:1.7">
+    ⚠️ <strong style="color:#90caf9">Simulation &amp; Education Only</strong><br/>
+    This tool is <strong>not affiliated with, endorsed by, or associated with</strong>
+    Invest With Teri (IWT), Trade and Travel, or any related organisation or individual.
+    It was built independently as an educational aid by a student studying income trading methodology.<br/>
+    Not financial advice · Trading involves substantial risk of loss ·
+    Data: Yahoo Finance (delays and inaccuracies may occur)
+    </div>""", unsafe_allow_html=True)
 
