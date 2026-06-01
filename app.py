@@ -3268,13 +3268,14 @@ class InstitutionalAnalyst:
 
             return {
                 "sp": sp_chg,
+                "spx_price": float(sp.iloc[-1]) if len(sp) > 0 else 0.0,
                 "vix": cur_vix,
                 "vix_52w_high": vix_52w_high,
                 "vix_52w_low": vix_52w_low,
                 "ivr_proxy": ivr_proxy,        # Auto-computed IVR from VIX 52w range
                 "gold": gold.iloc[-1] if len(gold) > 0 else 2000,
                 "gold_chg": gold_chg,
-                "oil_px": oil_px, "oil_chg": oil_chg,
+                "oil_px": oil_px, "oil": oil_px, "oil_chg": oil_chg,
                 "silv_px": silv_px, "ng_px": ng_px,
                 "dax": dax_chg,
                 "nikkei": nikkei_chg,
@@ -4193,15 +4194,13 @@ with _T3:
                     f'</div>', unsafe_allow_html=True)
 
         else:
-            # Non-income strategies: show signal summary
-            _sigs = st.session_state.signals or {}
-            # generate_signals returns {bullish, bearish, neutral, score}
-            # Derive verdict from score so data IS shown when loaded
+            # ── STRATEGY-CONTEXTUAL SETUP CARD ─────────────────────────────
+            # Shows exactly what to do based on selected strategy + loaded data
+            _sigs  = st.session_state.signals or {}
             _score = _sigs.get("score", None)
             _bulls = _sigs.get("bullish", [])
             _bears = _sigs.get("bearish", [])
 
-            # If signals dict is empty but metrics exist, build from metrics
             if _score is None and _m:
                 _tr = _m.get("trend_strength", "NEUTRAL")
                 _ri = _m.get("rsi", 50)
@@ -4210,38 +4209,159 @@ with _T3:
                 if _ri > 65: _score += 1
                 elif _ri < 35: _score -= 1
                 _bulls = [f"Trend: {_tr}"] + (["RSI overbought"] if _ri>65 else [])
-                _bears = [f"Trend: {_tr}"] + (["RSI oversold"] if _ri<35 else [])
-                if "BULL" in _tr: _bears = []
-                elif "BEAR" in _tr: _bulls = []
-                else: _bulls = []; _bears = []
+                _bears = [] if "BULL" in _tr else [f"Trend: {_tr}"]
 
-            if _score is not None:
-                if _score >= 4:   _verdict, _vc = "STRONG BULL ↑", "#00e676"
-                elif _score >= 2: _verdict, _vc = "BULLISH ↑",     "#69f0ae"
-                elif _score <= -4: _verdict, _vc = "STRONG BEAR ↓","#d50000"
-                elif _score <= -2: _verdict, _vc = "BEARISH ↓",    "#ff5252"
-                else:              _verdict, _vc = "NEUTRAL →",    "#ffd740"
-                st.markdown(
-                    "<div style='background:linear-gradient(135deg,#0d1a3b,#1a2e5e);"
-                    "border:1px solid #1e3a6e;border-radius:10px;padding:14px 18px;margin:8px 0'>"
-                    f"<div style='font-size:1.5rem;font-weight:800;color:{_vc}'>{_verdict}</div>"
-                    f"<div style='font-size:0.83rem;color:#90a8c0;margin-top:4px'>"
-                    f"Signal score: {_score:+d} &nbsp;·&nbsp; "
-                    f"{len(_bulls)} bullish · {len(_bears)} bearish</div>"
-                    "</div>",
-                    unsafe_allow_html=True)
+            if _price and _m:
+                _supp  = _m.get("supp", _m.get("support", _price*0.97))
+                _res   = _m.get("res",  _m.get("resistance", _price*1.03))
+                _atr_v = _m.get("atr", _price*0.01)
+                _rsi_v = _m.get("rsi", 50)
+
+                # ── SIGNAL VERDICT ─────────────────────────────────────────
+                if _score is not None:
+                    if _score >= 4:   _vrd, _vc = "STRONG BULL ↑", "#00e676"
+                    elif _score >= 2: _vrd, _vc = "BULLISH ↑",     "#69f0ae"
+                    elif _score <= -4: _vrd, _vc = "STRONG BEAR ↓","#d50000"
+                    elif _score <= -2: _vrd, _vc = "BEARISH ↓",    "#ff5252"
+                    else:              _vrd, _vc = "NEUTRAL →",     "#ffd740"
+                    st.markdown(
+                        f"<div style='background:linear-gradient(135deg,#0d1a3b,#1a2e5e);"
+                        f"border:1px solid #1e3a6e;border-radius:10px;padding:10px 16px;"
+                        f"margin-bottom:10px'>"
+                        f"<span style='font-size:1.3rem;font-weight:800;color:{_vc}'>"
+                        f"{_vrd}</span>"
+                        f"<span style='color:#90a8c0;font-size:0.8rem;margin-left:12px'>"
+                        f"Score {_score:+d} · {len(_bulls)}↑ {len(_bears)}↓</span>"
+                        f"</div>", unsafe_allow_html=True)
+
+                # ── SETUP CARD: varies by strategy ─────────────────────────
+                if "Long" in _strat or "long" in _strat.lower():
+                    # LONG STOCK / LONG CALL setup
+                    _entry_zone_lo = _supp
+                    _entry_zone_hi = _supp * 1.005
+                    _stop          = _supp - (_atr_v * 1.5)
+                    _tgt1          = _supp + (_res - _supp) * 0.5
+                    _tgt2          = _res
+                    _rr            = (_tgt2 - _supp) / max(_supp - _stop, 0.01)
+
+                    st.markdown('<div class="card-sm"><span class="card-label">Long Setup — Entry Rules</span></div>',
+                                unsafe_allow_html=True)
+                    st.markdown(
+                        f"<div class='order-block'>"
+                        f"ENTRY ZONE:  ${_entry_zone_lo:,.2f} – ${_entry_zone_hi:,.2f}\n"
+                        f"STOP LOSS:   ${_stop:,.2f}  (1.5× ATR below support)\n"
+                        f"TARGET 1:    ${_tgt1:,.2f}  (50% to resistance)\n"
+                        f"TARGET 2:    ${_tgt2:,.2f}  (resistance)\n"
+                        f"R:R to T2:   {_rr:.2f}:1  {'✅' if _rr >= 2 else '⚠️ Below 2:1'}"
+                        f"</div>", unsafe_allow_html=True)
+
+                    _shares = int(st.session_state.max_risk_per_trade / max(_supp - _stop, 0.01))
+                    st.markdown(f"**Position size:** {_shares} shares "
+                                f"(risking ${st.session_state.max_risk_per_trade:.0f})")
+
+                    if _lvl == "Beginner":
+                        st.caption("Wait for price to PULL BACK to the support zone. "
+                                   "Do not chase — if price is already above the zone, wait for the next setup.")
+
+                    if _rr < 2:
+                        st.warning(f"R:R is {_rr:.2f}:1 — below the 2:1 minimum. "
+                                   "Price is too close to resistance for a quality long entry. "
+                                   "Wait for a deeper pullback.")
+
+                elif "Short" in _strat:
+                    # SHORT SELL setup
+                    _short_entry   = _res
+                    _short_stop    = _res + (_atr_v * 1.5)
+                    _short_tgt1    = _res - (_res - _supp) * 0.5
+                    _short_tgt2    = _supp
+                    _short_rr      = (_res - _short_tgt2) / max(_short_stop - _res, 0.01)
+
+                    st.markdown('<div class="card-sm"><span class="card-label">Short Setup — Entry Rules</span></div>',
+                                unsafe_allow_html=True)
+                    st.markdown(
+                        f"<div class='order-block'>"
+                        f"SHORT ENTRY: ${_short_entry:,.2f}  (at resistance)\n"
+                        f"STOP LOSS:   ${_short_stop:,.2f}  (1.5× ATR above resistance)\n"
+                        f"TARGET 1:    ${_short_tgt1:,.2f}  (50% to support)\n"
+                        f"TARGET 2:    ${_short_tgt2:,.2f}  (support)\n"
+                        f"R:R to T2:   {_short_rr:.2f}:1  {'✅' if _short_rr >= 2 else '⚠️'}"
+                        f"</div>", unsafe_allow_html=True)
+
+                    _sh_shares = int(st.session_state.max_risk_per_trade / max(_short_stop - _res, 0.01))
+                    st.markdown(f"**Position size:** {_sh_shares} shares "
+                                f"(risking ${st.session_state.max_risk_per_trade:.0f})")
+
+                    if "BULL" in _m.get("trend_strength",""):
+                        st.error("⚠️ Trend is BULLISH — shorting into an uptrend is low-quality. "
+                                 "Wait for a confirmed reversal signal.")
+
+                elif "Option" in _strat or "Long Option" in _strat:
+                    # LONG OPTION (calls or puts) setup
+                    _direction = "CALL" if (_score or 0) >= 1 else "PUT"
+                    _target_delta = 0.70  # DITM (Teri standard)
+                    _rec_dte = 60
+                    st.markdown('<div class="card-sm"><span class="card-label">Long Option Setup — Entry Rules</span></div>',
+                                unsafe_allow_html=True)
+                    st.markdown(
+                        f"<div class='order-block'>"
+                        f"DIRECTION:   {_direction}  ({_vrd if _score is not None else 'check trend'})\n"
+                        f"DELTA:       ~0.70 (deep ITM = stock-like moves, less time decay risk)\n"
+                        f"DTE:         60-90 days minimum  (Teri standard: time to be right)\n"
+                        f"ENTRY:       At support for calls / at resistance for puts\n"
+                        f"EXIT:        100% profit on premium, OR if trend reverses\n"
+                        f"STOP:        50% loss on premium (defined risk)"
+                        f"</div>", unsafe_allow_html=True)
+                    if _lvl == "Beginner":
+                        st.caption(
+                            "Deep-in-the-money (DITM) options move almost like owning shares, "
+                            "but cost less. 0.70 delta means the option moves $0.70 for every "
+                            "$1.00 the stock moves. 60+ days gives you time for the trade to work.")
+                else:
+                    # Stock Only / catch-all
+                    st.markdown('<div class="card-sm"><span class="card-label">Stock Setup</span></div>',
+                                unsafe_allow_html=True)
+                    _rr2 = (_res - _price) / max(_price - _supp, 0.01)
+                    _dist_sup = (_price - _supp) / _price * 100
+                    _dist_res = (_res - _price) / _price * 100
+                    st.markdown(
+                        f"<div class='order-block'>"
+                        f"Current:     ${_price:,.2f}\n"
+                        f"Support:     ${_supp:,.2f}  ({_dist_sup:.1f}% below)\n"
+                        f"Resistance:  ${_res:,.2f}  ({_dist_res:.1f}% above)\n"
+                        f"R:R now:     {_rr2:.2f}:1  {'✅ Good entry zone' if _rr2 >= 2 else '⚠️ Not at level yet'}"
+                        f"</div>", unsafe_allow_html=True)
+                    if _rr2 < 2:
+                        st.caption(f"Wait for price to pull back toward ${_supp:,.2f} for a 2:1+ setup.")
+
+                st.markdown("---")
+                # ── SIGNAL DETAILS ─────────────────────────────────────────
                 if _bulls or _bears:
                     _bs1, _bs2 = st.columns(2)
                     with _bs1:
                         if _bulls:
                             st.markdown("**🟢 Bullish signals**")
-                            for _b in _bulls[:5]: st.caption(f"• {_b}")
+                            for _b in _bulls[:4]: st.caption(f"• {_b}")
                     with _bs2:
                         if _bears:
                             st.markdown("**🔴 Bearish signals**")
-                            for _b in _bears[:5]: st.caption(f"• {_b}")
+                            for _b in _bears[:4]: st.caption(f"• {_b}")
+
+                # ── AUTO-LOG BUTTON ────────────────────────────────────────
+                st.markdown("---")
+                if st.button("📓 Pre-fill Journal from this setup", key="auto_log_btn"):
+                    import datetime as _dt
+                    # Auto-populate session state journal form fields
+                    st.session_state["_journal_prefill"] = {
+                        "ticker":   st.session_state.ticker.replace("^GSPC","SPX"),
+                        "strategy": _strat,
+                        "entry":    _price,
+                        "stop":     (_supp - _atr_v*1.5) if "Long" in _strat else (_res + _atr_v*1.5),
+                        "target":   _res,
+                        "date":     str(_dt.date.today()),
+                    }
+                    st.success("✅ Journal pre-filled — go to 📓 Review to complete the entry")
             else:
-                st.caption("Click **Load Market Data** in Setup to analyse this ticker.")
+                st.caption("Click **Load Market Data** in Setup to see trade setup here.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — REVIEW (Journal + Troubleshoot + Income Plan)
@@ -4251,18 +4371,26 @@ with _T4:
     _rv_left, _rv_right = st.columns([1, 1], gap="large")
 
     with _rv_left:
+        # ── Quick journal entry (auto-filled when "Pre-fill Journal" clicked) ───────
+        _pf = st.session_state.get("_journal_prefill", {})
+        if _pf:
+            st.success(f"📋 Pre-filled from {_pf.get('ticker','')} setup — add result and P&L below")
         # ── Quick journal entry ───────────────────────────────────────────────
         st.markdown('<div class="card-sm"><span class="card-label">Log a Trade</span></div>',
                     unsafe_allow_html=True)
         _j1, _j2, _j3 = st.columns(3)
         with _j1:
-            _j_tkr    = st.text_input("Ticker", st.session_state.ticker.replace("^GSPC","SPX"),
+            _j_tkr    = st.text_input("Ticker", st.session_state.get("_journal_prefill",{}).get("ticker",st.session_state.ticker.replace("^GSPC","SPX")),
                                        key="j_tkr")
             _j_result = st.selectbox("Result", ["Win","Loss","Breakeven"], key="j_result")
         with _j2:
             _j_pnl = st.number_input("P&L ($)", value=0.0, step=10.0, key="j_pnl")
             _j_strat_j = st.selectbox("Type", ["Credit spread","Long option",
-                                                "Stock long","Short sell"], key="j_strat")
+                                                "Stock long","Short sell"], key="j_strat",
+                                                 index=["Credit spread","Long option","Stock long","Short sell"].index(
+                                                 st.session_state.get("_journal_prefill",{}).get("strategy","Credit spread")[:12].replace("Income","Credit spread").replace("Long","Long option").replace("Short","Short sell").replace("Stock","Stock long") 
+                                                 ) if st.session_state.get("_journal_prefill") else 0
+                                                 )
         with _j3:
             _j_plan   = st.checkbox("Followed the plan?", True, key="j_plan")
             _j_notes  = st.text_area("Notes (optional)", height=70, key="j_notes",
