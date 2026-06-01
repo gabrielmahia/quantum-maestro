@@ -2939,4939 +2939,908 @@ def troubleshoot_trading(responses: dict) -> dict:
         "teri_rule": "Fix one problem at a time. Trying to fix everything at once = fixing nothing.",
     }
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EASYSTOCKTRADER — COMPACT UI V15
+# Design philosophy: IWT in 4 tabs. Setup → Scan → Trade → Review.
+# Mobile-first. GO/NO-GO is the centrepiece. Everything else is progressive.
+# ═══════════════════════════════════════════════════════════════════════════════
+
 st.set_page_config(
-    page_title="EasyStockTrader — Smart Stock Analysis",
+    page_title="EasyStockTrader",
+    page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded",
-    page_icon="🏛️"
+    initial_sidebar_state="collapsed",
 )
 
+# ── DESIGN SYSTEM ──────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* ── Buttons ──────────────────────────────────────────────── */
-    .stButton > button {
-        width: 100%; border-radius: 4px; height: 3em;
-        font-weight: 600; letter-spacing: 0.5px;
-    }
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
-    /* ── Metric cards — LIGHT MODE ────────────────────────────── */
-    div[data-testid="stMetric"] {
-        background-color: #f0f2f6;
-        border: 1px solid #d0d3da;
-        border-radius: 8px;
-        padding: 12px 16px;
-    }
-    [data-testid="stMetricLabel"]  { color: #444444 !important; font-size: 0.8rem !important; }
-    [data-testid="stMetricValue"]  { color: #111111 !important; font-size: 1.25rem !important; font-weight: 700 !important; }
-    [data-testid="stMetricDelta"]  { color: #333333 !important; font-size: 0.82rem !important; }
+  html, body, [class*="css"] {
+    font-family: 'DM Sans', sans-serif !important;
+  }
 
-    /* ── Metric cards — DARK MODE (OS preference) ─────────────── */
-    @media (prefers-color-scheme: dark) {
-        div[data-testid="stMetric"] {
-            background-color: #1e2127 !important;
-            border-color: #30333d !important;
-        }
-        [data-testid="stMetricLabel"] { color: #aaaaaa !important; }
-        [data-testid="stMetricValue"] { color: #f0f0f0 !important; }
-        [data-testid="stMetricDelta"] { color: #cccccc !important; }
-    }
+  /* ── Reset & base ── */
+  .block-container { padding: 0.75rem 1rem 2rem 1rem !important; max-width: 100% !important; }
+  #MainMenu, footer, header { visibility: hidden; }
 
-    /* ── Metric cards — DARK MODE (Streamlit theme toggle) ─────── */
-    [data-theme="dark"] div[data-testid="stMetric"],
-    .stApp[data-theme="dark"] div[data-testid="stMetric"] {
-        background-color: #1e2127 !important;
-        border-color: #30333d !important;
-    }
-    [data-theme="dark"] [data-testid="stMetricLabel"],
-    .stApp[data-theme="dark"] [data-testid="stMetricLabel"] { color: #aaaaaa !important; }
-    [data-theme="dark"] [data-testid="stMetricValue"],
-    .stApp[data-theme="dark"] [data-testid="stMetricValue"] { color: #f0f0f0 !important; }
-    [data-theme="dark"] [data-testid="stMetricDelta"],
-    .stApp[data-theme="dark"] [data-testid="stMetricDelta"] { color: #cccccc !important; }
+  /* ── Top strip ── */
+  .est-topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #0c0f1a; border-bottom: 1px solid #1e2235;
+    padding: 10px 20px; margin: -0.75rem -1rem 1rem -1rem;
+  }
+  .est-topbar-brand { font-size: 1rem; font-weight: 700; color: #e8e8ff; letter-spacing: -0.5px; }
+  .est-topbar-brand span { color: #6c8cff; }
+  .est-topbar-metrics { display: flex; gap: 20px; }
+  .est-metric { text-align: right; }
+  .est-metric-val { font-size: 1rem; font-weight: 600; color: #e8e8ff;
+                    font-family: 'DM Mono', monospace; }
+  .est-metric-lbl { font-size: 0.65rem; color: #7080a0; text-transform: uppercase; }
+  .est-badge {
+    padding: 3px 10px; border-radius: 20px; font-size: 0.72rem;
+    font-weight: 600; letter-spacing: 0.3px;
+  }
+  .badge-on  { background: #1b5e20; color: #69f0ae; }
+  .badge-neu { background: #f57f17; color: #fff; }
+  .badge-cau { background: #bf360c; color: #fff; }
+  .badge-off { background: #b71c1c; color: #fff; }
+  .badge-unk { background: #263238; color: #90a4ae; }
 
-    /* ── Signal boxes ─────────────────────────────────────────── */
-    .signal-bull { background:#d4edda; color:#155724 !important; padding:8px 12px; border-radius:4px; margin:5px 0; border:1px solid #28a745; font-weight:500; }
-    .signal-bear { background:#f8d7da; color:#721c24 !important; padding:8px 12px; border-radius:4px; margin:5px 0; border:1px solid #dc3545; font-weight:500; }
-    .signal-neutral { background:#fff3cd; color:#856404 !important; padding:8px 12px; border-radius:4px; margin:5px 0; border:1px solid #ffc107; font-weight:500; }
-    @media (prefers-color-scheme: dark) {
-        .signal-bull    { background:#1e4620; color:#7dcea0 !important; border-color:#28a745; }
-        .signal-bear    { background:#4a1c1c; color:#f1948a !important; border-color:#dc3545; }
-        .signal-neutral { background:#4a3f1a; color:#f9e79f !important; border-color:#ffc107; }
-    }
+  /* ── Tabs ── */
+  .stTabs [data-baseweb="tab-list"] {
+    gap: 2px; background: #0c0f1a; padding: 0 !important;
+    border-bottom: 1px solid #1e2235;
+  }
+  .stTabs [data-baseweb="tab"] {
+    padding: 10px 20px; font-size: 0.85rem; font-weight: 600;
+    color: #7080a0; background: transparent !important; border: none;
+    border-bottom: 2px solid transparent;
+  }
+  .stTabs [aria-selected="true"] {
+    color: #6c8cff !important; border-bottom: 2px solid #6c8cff !important;
+  }
+  .stTabs [data-baseweb="tab-panel"] { padding: 1rem 0 0 0; }
 
-    /* ── Risk / info boxes ────────────────────────────────────── */
-    .risk-warning { background:#fff3cd; color:#333 !important; padding:15px; border-left:4px solid #ffc107; margin:10px 0; }
-    .success-box  { background:#d4edda; color:#333 !important; padding:15px; border-left:4px solid #28a745; margin:10px 0; }
+  /* ── Cards ── */
+  .card {
+    background: #111624; border: 1px solid #1e2235; border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 10px;
+  }
+  .card-sm {
+    background: #111624; border: 1px solid #1e2235; border-radius: 8px;
+    padding: 10px 13px; margin-bottom: 8px;
+  }
+  .card-label { font-size: 0.65rem; text-transform: uppercase; color: #7080a0;
+                letter-spacing: 0.5px; margin-bottom: 4px; }
+  .card-value { font-size: 1.4rem; font-weight: 700; color: #e8e8ff;
+                font-family: 'DM Mono', monospace; }
+  .card-delta { font-size: 0.75rem; color: #7080a0; margin-top: 2px; }
 
-    /* ── Key Levels ───────────────────────────────────────────── */
-    .key-levels-bar {
-        font-size: 0.97rem;
-        margin: 8px 0 16px 0;
-        line-height: 2;
-        color: #111111;
-    }
-    @media (prefers-color-scheme: dark) { .key-levels-bar { color: #f0f0f0; } }
-    [data-theme="dark"] .key-levels-bar { color: #f0f0f0 !important; }
+  /* ── Verdict banners ── */
+  .verdict-go {
+    background: linear-gradient(135deg, #0d3b1a 0%, #1b5e20 100%);
+    border: 1px solid #2e7d32; border-radius: 12px;
+    padding: 18px 22px; text-align: center; margin: 12px 0;
+  }
+  .verdict-no {
+    background: linear-gradient(135deg, #3b0d0d 0%, #5e1b1b 100%);
+    border: 1px solid #7d2e2e; border-radius: 12px;
+    padding: 18px 22px; text-align: center; margin: 12px 0;
+  }
+  .verdict-cond {
+    background: linear-gradient(135deg, #3b2c0d 0%, #5e4a1b 100%);
+    border: 1px solid #7d6220; border-radius: 12px;
+    padding: 18px 22px; text-align: center; margin: 12px 0;
+  }
+  .verdict-big { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.5px; }
+  .verdict-sub { font-size: 0.85rem; opacity: 0.85; margin-top: 4px; }
 
-    .key-levels-bar strong { color: inherit; font-size: 1rem; }
-    .kl-touches { font-size: 0.82rem; color: #555555; }
-    @media (prefers-color-scheme: dark) { .kl-touches { color: #bbbbbb; } }
-    [data-theme="dark"] .kl-touches { color: #bbbbbb !important; }
+  /* ── Score pills ── */
+  .score-pill {
+    display: inline-block; padding: 3px 12px; border-radius: 20px;
+    font-size: 0.78rem; font-weight: 600; margin: 2px;
+  }
+  .pill-green  { background:#1b5e20; color:#69f0ae; }
+  .pill-yellow { background:#f57f17; color:#fff; }
+  .pill-red    { background:#b71c1c; color:#fff; }
+  .pill-gray   { background:#263238; color:#90a4ae; }
 
-    .kl-support {
-        display: inline-block;
-        background: #0e7c4a; color: #ffffff !important;
-        padding: 3px 12px; border-radius: 5px;
-        font-family: monospace; font-weight: 700;
-        font-size: 0.97rem; letter-spacing: 0.03em;
-    }
-    .kl-resistance {
-        display: inline-block;
-        background: #c0392b; color: #ffffff !important;
-        padding: 3px 12px; border-radius: 5px;
-        font-family: monospace; font-weight: 700;
-        font-size: 0.97rem; letter-spacing: 0.03em;
-    }
-    @media (prefers-color-scheme: dark) {
-        .kl-support    { background: #27ae60; }
-        .kl-resistance { background: #e74c3c; }
-    }
+  /* ── Grade cards ── */
+  .grade-aplus { border-left: 4px solid #00e676; }
+  .grade-a     { border-left: 4px solid #69f0ae; }
+  .grade-b     { border-left: 4px solid #ffd740; }
+  .grade-c     { border-left: 4px solid #ff6d00; }
+  .grade-d     { border-left: 4px solid #d50000; }
 
-    /* ── Mobile: 768px ───────────────────────────────────────── */
-    @media (max-width: 768px) {
-        [data-testid="column"] { width:100% !important; flex:1 1 100% !important; min-width:100% !important; }
-        [data-testid="stMetricValue"] { font-size: 1.1rem !important; }
-        [data-testid="stMetricLabel"] { font-size: 0.72rem !important; }
-        [data-testid="stMetricDelta"] { font-size: 0.72rem !important; }
-        div[data-testid="stMetric"]   { padding: 8px 10px !important; margin-bottom: 6px !important; }
-        section[data-testid="stSidebar"] { min-width: 180px !important; }
-        [data-testid="stPlotlyChart"]    { width: 100% !important; }
-        [data-testid="stDataFrame"]      { overflow-x: auto !important; }
-        [data-testid="stPlotlyChart"] canvas { touch-action: pan-y !important; }
-        .stButton > button { width:100% !important; min-height:48px !important; font-size:0.95rem !important; }
-        .stSelectbox > div { font-size: 0.9rem !important; }
-        .risk-warning      { padding: 10px !important; font-size: 0.88rem !important; }
-        pre, code          { overflow-x: auto !important; font-size: 0.8rem !important; }
-        iframe             { width: 100% !important; max-width: 100% !important; }
-        .key-levels-bar    { font-size: 0.88rem; }
-        .kl-support, .kl-resistance { font-size: 0.88rem; padding: 2px 8px; }
-    }
-    /* ── Mobile: 480px ───────────────────────────────────────── */
-    @media (max-width: 480px) {
-        [data-testid="stMetricValue"] { font-size: 1rem !important; }
-        h1 { font-size: 1.4rem !important; }
-        h2 { font-size: 1.1rem !important; }
-        h3 { font-size: 1rem !important; }
-        .stButton > button { min-height: 52px !important; }
-    }
+  /* ── Buttons ── */
+  .stButton > button {
+    border-radius: 8px !important; font-weight: 600 !important;
+    font-family: 'DM Sans', sans-serif !important;
+  }
+  div[data-testid="stButton"] > button[kind="primary"] {
+    background: #6c8cff !important; color: #fff !important;
+    border: none !important;
+  }
 
-    @media (prefers-color-scheme: dark) {
-        .risk-warning { background: #3d3010 !important; color: #f0c060 !important; border-color: #ffc107 !important; }
-        .success-box  { background: #1a3d24 !important; color: #7dcea0 !important; border-color: #28a745 !important; }
-    }
-    [data-theme="dark"] .risk-warning, .stApp[data-theme="dark"] .risk-warning { background: #3d3010 !important; color: #f0c060 !important; border-color: #ffc107 !important; }
-    [data-theme="dark"] .success-box,  .stApp[data-theme="dark"] .success-box  { background: #1a3d24 !important; color: #7dcea0 !important; border-color: #28a745 !important; }
+  /* ── Mono text ── */
+  .mono { font-family: 'DM Mono', monospace; font-size: 0.88rem; }
+  .dim  { color: #7080a0; font-size: 0.82rem; }
 
+  /* ── Step row ── */
+  .step-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid #1a1f2e;
+  }
+  .step-num {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: #1e2a4a; color: #6c8cff; font-size: 0.75rem;
+    font-weight: 700; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .step-lbl { font-size: 0.85rem; color: #c0cce0; font-weight: 500; }
 
-    @media (prefers-color-scheme: dark) {
-        .signal-bear    { background-color: #4a1c1c !important; color: #f1948a !important; border-color: #dc3545 !important; }
-        .signal-neutral { background-color: #4a3f1a !important; color: #f9e79f !important; border-color: #ffc107 !important; }
-    }
-    [data-theme="dark"] .signal-bear,    .stApp[data-theme="dark"] .signal-bear    { background-color: #4a1c1c !important; color: #f1948a !important; border-color: #dc3545 !important; }
-    [data-theme="dark"] .signal-neutral, .stApp[data-theme="dark"] .signal-neutral { background-color: #4a3f1a !important; color: #f9e79f !important; border-color: #ffc107 !important; }
+  /* ── Dividers ── */
+  hr { border-color: #1e2235 !important; margin: 12px 0 !important; }
 
+  /* ── Compact inputs ── */
+  .stNumberInput, .stSelectbox, .stSlider { margin-bottom: 0 !important; }
+  .stSlider { padding-top: 0 !important; }
+  label { font-size: 0.8rem !important; color: #8090b0 !important; }
+
+  /* ── Copy code block ── */
+  .order-block {
+    background: #0a0d15; border: 1px solid #1e2235; border-radius: 8px;
+    padding: 12px 16px; font-family: 'DM Mono', monospace;
+    font-size: 0.82rem; color: #a0f0c0; margin: 8px 0;
+    white-space: pre-wrap;
+  }
+
+  /* ── Mobile ── */
+  @media (max-width: 768px) {
+    .est-topbar-metrics { gap: 10px; }
+    .est-metric-val { font-size: 0.88rem; }
+    .verdict-big { font-size: 1.3rem; }
+  }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. LEGAL & ONBOARDING ---
-st.title("🏛️ EasyStockTrader — Smart Stock Analysis")
-
-@st.cache_data(ttl=3600)
-def fetch_kes_rate():
-    """Live KES rate from open.er-api.com."""
-    import json as _qj
-    try:
-        with urllib.request.urlopen(
-            "https://open.er-api.com/v6/latest/USD", timeout=6
-        ) as r:
-            d = _qj.loads(r.read())
-        rates = d["rates"]
-        kes = rates["KES"]
-        return {
-            "kes": round(kes, 2),
-            "eur": round(rates["EUR"], 4),
-            "gbp": round(rates["GBP"], 4),
-            "updated": d.get("time_last_update_utc", "")[:16],
-            "live": True,
-        }
-    except Exception:
-        return {"kes": 129.0, "eur": 0.87, "gbp": 0.75, "updated": "fallback", "live": False}
-
-
-@st.cache_data(ttl=86400)
-def fetch_kenya_macro():
-    """World Bank Kenya macro indicators."""
-    import json as _qj2
-    results = {}
-    for code, label in [
-        ("FP.CPI.TOTL.ZG", "Kenya Inflation (%)"),
-        ("NY.GDP.PCAP.CD",  "GDP per capita (USD)"),
-        ("SL.UEM.TOTL.ZS",  "Unemployment (%)"),
-        ("BN.CAB.XOKA.GD.ZS", "Current account / GDP (%)"),
-    ]:
-        try:
-            url = (f"https://api.worldbank.org/v2/country/KE/indicator/{code}"
-                   f"?format=json&mrv=1&per_page=1")
-            with urllib.request.urlopen(url, timeout=15) as r:
-                data = _qj2.loads(r.read())
-            entries = [e for e in (data[1] if len(data) > 1 else []) if e.get("value")]
-            if entries:
-                e = entries[0]
-                results[code] = {"label": label, "value": round(e["value"], 2),
-                                  "year": e.get("date", "?")}
-        except Exception:
-            pass
-    return results
-
-# ── Live Kenya macro context ───────────────────────────────────────────────
-_kes = fetch_kes_rate()
-_wb  = fetch_kenya_macro()
-if _kes["live"] or _wb:
-    _mc = st.columns(5)
-    if _kes["live"]:
-        _mc[0].metric("USD/KES", f"{_kes['kes']:.2f}", help="open.er-api.com live")
-        _mc[1].metric("EUR/KES", f"{_kes['kes']/_kes['eur']:.2f}", help="Derived")
-        _mc[2].metric("GBP/KES", f"{_kes['kes']/_kes['gbp']:.2f}", help="Derived")
-    if _wb:
-        # Display the correct World Bank indicators by code. The prior version
-        # treated the first returned indicator (inflation) as GDP, which created
-        # impossible values like "Inflation 2132%".
-        _infl = _wb.get("FP.CPI.TOTL.ZG")
-        _gdp_pc = _wb.get("NY.GDP.PCAP.CD")
-        if _gdp_pc:
-            _mc[3].metric(f"GDP/capita {_gdp_pc['year']}",
-                         f"${_gdp_pc['value']:,.0f}", help="World Bank GDP per capita")
-        if _infl:
-            _mc[4].metric(f"Inflation {_infl['year']}",
-                         f"{_infl['value']:.2f}%", help="World Bank CPI inflation")
-    src = []
-    if _kes["live"]: src.append(f"FX: open.er-api.com ({_kes['updated']})")
-    if _wb: src.append("Macro: World Bank Open Data")
-    st.caption("📡 Live · " + " · ".join(src))
-
-# NDMA drought signal — food price pressure indicator
-_ndma_qm = fetch_ndma_macro_signal()
-if _ndma_qm:
-    with st.expander(f"📡 NDMA Drought Signal — Kenya commodity pressure ({_ndma_qm[0]['date']})", expanded=False):
-        st.caption("Drought → food price inflation → CPI pressure → BoK rate outlook")
-        for _nq in _ndma_qm:
-            st.markdown(f"**[{_nq['title'][:80]}]({_nq['link']})**  *{_nq['date']}*")
-            if _nq['summary']:
-                st.caption(_nq['summary'][:120] + "…")
-
-st.caption("Portfolio Risk Architecture | Volatility Regimes | Multi-Algorithm Fusion | IWT Execution Discipline | Performance Analytics")
-
-with st.expander("⚠️ READ FIRST: Legal Disclaimer", expanded=True):
-    st.markdown("""
-    **1. No Affiliation:** Independent tool. Not affiliated with Trade and Travel or any trading organization.
-    **2. Educational Use Only:** Not financial advice. For simulation and learning purposes.
-    **3. Risk Warning:** Trading involves substantial risk of loss. Past performance does not guarantee future results.
-    **4. Data Disclaimer:** Market data provided by Yahoo Finance. Delays and inaccuracies may occur.
-    """)
-    agree = st.checkbox("✅ I understand this is not financial advice and I am using this tool for educational purposes.")
-
-if not agree:
-    st.warning("🛑 Please accept the disclaimer above.")
-    st.stop()
-
-st.error(
-    "⚠️ **SIMULATION ONLY** — This tool analyses signals and scores setups. "
-    "It does not execute trades or connect to any broker. Not financial advice. "
-    "Trading involves substantial risk of loss.",
-    icon=None
-)
-st.divider()
-
-# --- 3. SESSION STATE ---
-if 'data' not in st.session_state: st.session_state.data = None
-if 'metrics' not in st.session_state: st.session_state.metrics = {}
-if 'macro' not in st.session_state: st.session_state.macro = None
-if 'signals' not in st.session_state: st.session_state.signals = {}
-if 'journal' not in st.session_state: st.session_state.journal = []
-if 'open_positions' not in st.session_state: st.session_state.open_positions = []
-if 'closed_trades' not in st.session_state: st.session_state.closed_trades = []
-if 'goal_met' not in st.session_state: st.session_state.goal_met = False
-if 'lang_level' not in st.session_state: st.session_state.lang_level = "Beginner"
-if 'advisor_goal' not in st.session_state: st.session_state.advisor_goal = "Weekly income (sell premium)" 
-if 'daily_pnl' not in st.session_state: st.session_state.daily_pnl = 0.0
-if 'total_risk_deployed' not in st.session_state: st.session_state.total_risk_deployed = 0.0
-if 'consecutive_losses' not in st.session_state: st.session_state.consecutive_losses = 0
-if 'day_trades_used' not in st.session_state: st.session_state.day_trades_used = 0
-if 'week_event_days' not in st.session_state: st.session_state.week_event_days = []
-
-# --- 4. INSTITUTIONAL ANALYST ENGINE ---
-class InstitutionalAnalyst:
-
-    def __init__(self):
-        self.vix_regimes = {
-            "EXTREME_LOW": (0, 12), "LOW": (12, 15), "NORMAL": (15, 20),
-            "ELEVATED": (20, 30), "HIGH": (30, 40), "EXTREME": (40, 100)
-        }
-        self.fib_levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
-
-    def get_market_hours_status(self):
-        try:
-            et = pytz.timezone('US/Eastern')
-            now = datetime.now(et)
-            current_time = now.time()
-
-            if current_time < time(9, 30):
-                return "PRE_MARKET", "⏰ Pre-Market (Higher volatility, lower liquidity)"
-            elif current_time < time(10, 0):
-                return "OPENING", "🔔 Opening Range (Wait for direction, avoid chasing)"
-            elif current_time < time(12, 0):
-                return "MORNING", "☀️ Morning Session (Prime trading window)"
-            elif current_time < time(14, 0):
-                return "LUNCH", "🍴 Lunch Hour (Reduced volume, avoid new positions)"
-            elif current_time < time(15, 0):
-                return "AFTERNOON", "🌤️ Afternoon Session (Trend continuation)"
-            elif current_time < time(16, 0):
-                return "POWER_HOUR", "⚡ Power Hour (Institutional positioning, high volume)"
-            else:
-                return "AFTER_HOURS", "🌙 After Hours (Extended hours risk)"
-        except:
-            return "UNKNOWN", "⚠️ Unable to determine market hours"
-
-    def classify_vix_regime(self, vix_level):
-        for regime, (low, high) in self.vix_regimes.items():
-            if low <= vix_level < high:
-                return regime
-        return "EXTREME"
-
-    def get_regime_guidance(self, regime):
-        guidance = {
-            "EXTREME_LOW": {
-                "desc": "Complacency Zone",
-                "action": "⚠️ Reduce size. Market pricing in no risk. Potential for sudden reversals.",
-                "size_multiplier": 0.7,
-                "stop_multiplier": 1.2
-            },
-            "LOW": {
-                "desc": "Calm Waters",
-                "action": "✅ Normal conditions. Standard position sizing appropriate.",
-                "size_multiplier": 1.0,
-                "stop_multiplier": 1.0
-            },
-            "NORMAL": {
-                "desc": "Healthy Volatility",
-                "action": "✅ Ideal environment. Markets functioning normally.",
-                "size_multiplier": 1.0,
-                "stop_multiplier": 1.0
-            },
-            "ELEVATED": {
-                "desc": "Heightened Uncertainty",
-                "action": "⚠️ Reduce size by 30%. Widen stops. Expect intraday swings.",
-                "size_multiplier": 0.7,
-                "stop_multiplier": 1.3
-            },
-            "HIGH": {
-                "desc": "Crisis Mode",
-                "action": "🛑 Reduce size by 50%. Consider cash. Only highest-conviction setups.",
-                "size_multiplier": 0.5,
-                "stop_multiplier": 1.5
-            },
-            "EXTREME": {
-                "desc": "Market Dislocation",
-                "action": "🚨 EXTREME VOLATILITY. Close non-essential positions. Preserve capital.",
-                "size_multiplier": 0.3,
-                "stop_multiplier": 2.0
-            }
-        }
-        return guidance.get(regime, guidance["NORMAL"])
-
-    def fetch_data(self, t):
-        try:
-            ticker_obj = yf.Ticker(t)
-            data = ticker_obj.history(period="1y")
-
-            if data.empty or len(data) < 50:
-                nse_hint = " NSE data via yfinance is often unavailable — check nse.co.ke directly." if t.endswith('.NR') else ""
-                return None, None, f"ERROR: Insufficient data for {t}. Need at least 50 trading days.{nse_hint}"
-
-            try:
-                full_name = ticker_obj.info.get('longName', t)
-                beta = ticker_obj.info.get('beta', 1.0)
-            except:
-                full_name = t
-                beta = 1.0
-
-            # Core indicators — pure numpy/pandas (no pandas_ta dependency)
-            _calc_indicators(data)
-
-            vol_sma = data['Volume'].rolling(20).mean()
-            data['RVOL'] = data['Volume'] / vol_sma
-
-            # Support/Resistance
-            swing_high = data['High'].rolling(20).max()
-            swing_low = data['Low'].rolling(20).min()
-
-            recent_high = swing_high.iloc[-1]
-            recent_low = swing_low.iloc[-1]
-            price_range = recent_high - recent_low
-
-            fib_levels = {}
-            for level in self.fib_levels:
-                fib_levels[f"fib_{level}"] = recent_high - (price_range * level)
-
-            try:
-                local_min_idx = argrelextrema(data['Close'].values, np.less_equal, order=5)[0]
-                local_max_idx = argrelextrema(data['Close'].values, np.greater_equal, order=5)[0]
-
-                if len(local_min_idx) > 0:
-                    recent_mins = data.iloc[local_min_idx[-3:]]['Close'].values if len(local_min_idx) >= 3 else data.iloc[local_min_idx]['Close'].values
-                    support_level = np.mean(recent_mins)
-                else:
-                    support_level = swing_low.iloc[-1]
-
-                if len(local_max_idx) > 0:
-                    recent_maxs = data.iloc[local_max_idx[-3:]]['Close'].values if len(local_max_idx) >= 3 else data.iloc[local_max_idx]['Close'].values
-                    resistance_level = np.mean(recent_maxs)
-                else:
-                    resistance_level = swing_high.iloc[-1]
-            except:
-                support_level = swing_low.iloc[-1]
-                resistance_level = swing_high.iloc[-1]
-
-            support_touches = 0
-            resistance_touches = 0
-            for i in range(max(0, len(data)-60), len(data)):
-                if abs(data['Low'].iloc[i] - support_level) / support_level < 0.01:
-                    support_touches += 1
-                if abs(data['High'].iloc[i] - resistance_level) / resistance_level < 0.01:
-                    resistance_touches += 1
-
-            # gap_pct computed in scan button section below
-
-            price = data['Close'].iloc[-1]
-            sma20 = data['SMA_20'].iloc[-1]
-            sma50 = data['SMA_50'].iloc[-1]
-            sma200 = data['SMA_200'].iloc[-1]
-
-            trend_score = 0
-            if price > sma20: trend_score += 1
-            if price > sma50: trend_score += 1
-            if price > sma200: trend_score += 1
-            if sma20 > sma50: trend_score += 1
-            if sma50 > sma200: trend_score += 1
-
-            trend_strength = "STRONG_BULL" if trend_score >= 4 else "BULL" if trend_score == 3 else \
-                           "NEUTRAL" if trend_score == 2 else "BEAR" if trend_score == 1 else "STRONG_BEAR"
-
-            patterns = self.detect_patterns(data)
-            divergences = self.detect_divergences(data)
-
-            metrics = {
-                "support": support_level,
-                "resistance": resistance_level,
-                "support_touches": support_touches,
-                "resistance_touches": resistance_touches,
-                "trend_strength": trend_strength,
-                "rsi": data['RSI_14'].iloc[-1] if 'RSI_14' in data.columns else 50,
-                "macd": data['MACD_12_26_9'].iloc[-1] if 'MACD_12_26_9' in data.columns else 0,
-                "macd_signal": data['MACDs_12_26_9'].iloc[-1] if 'MACDs_12_26_9' in data.columns else 0,
-                "macd_hist": data['MACDh_12_26_9'].iloc[-1] if 'MACDh_12_26_9' in data.columns else 0,
-                "bb_upper": data['BBU_20_2.0'].iloc[-1] if 'BBU_20_2.0' in data.columns else price * 1.02,
-                "bb_lower": data['BBL_20_2.0'].iloc[-1] if 'BBL_20_2.0' in data.columns else price * 0.98,
-                "bb_width": (data['BBU_20_2.0'].iloc[-1] - data['BBL_20_2.0'].iloc[-1]) if 'BBU_20_2.0' in data.columns else 0,
-                "stoch_k": data['STOCHk_14_3_3'].iloc[-1] if 'STOCHk_14_3_3' in data.columns else 50,
-                "stoch_d": data['STOCHd_14_3_3'].iloc[-1] if 'STOCHd_14_3_3' in data.columns else 50,
-                "adx": data['ADX_14'].iloc[-1] if 'ADX_14' in data.columns else 20,
-                "obv": data['OBV'].iloc[-1] if 'OBV' in data.columns else 0,
-                "mfi": data['MFI_14'].iloc[-1] if 'MFI_14' in data.columns else 50,
-                "willr": data['WILLR_14'].iloc[-1] if 'WILLR_14' in data.columns else -50,
-                "ich_position": "ABOVE_CLOUD" if price > max(data['ICH_SPAN_A'].iloc[-1], data['ICH_SPAN_B'].iloc[-1]) else \
-                               "BELOW_CLOUD" if price < min(data['ICH_SPAN_A'].iloc[-1], data['ICH_SPAN_B'].iloc[-1]) else "IN_CLOUD",
-                "fib_levels": fib_levels,
-                "beta": beta,
-                "patterns": patterns,
-                "divergences": divergences
-            }
-
-            return data, metrics, full_name
-
-        except Exception as e:
-            return None, None, f"ERROR: {str(e)}"
-
-    def detect_patterns(self, data):
-        patterns = []
-        if len(data) < 3:
-            return patterns
-
-        last_3 = data.iloc[-3:]
-        _c0, c1, c2 = last_3.iloc[0], last_3.iloc[1], last_3.iloc[2]
-
-        if c1['Close'] < c1['Open'] and c2['Close'] > c2['Open'] and \
-           c2['Open'] < c1['Close'] and c2['Close'] > c1['Open']:
-            patterns.append("🟢 Bullish Engulfing")
-
-        if c1['Close'] > c1['Open'] and c2['Close'] < c2['Open'] and \
-           c2['Open'] > c1['Close'] and c2['Close'] < c1['Open']:
-            patterns.append("🔴 Bearish Engulfing")
-
-        body = abs(c2['Close'] - c2['Open'])
-        lower_wick = min(c2['Open'], c2['Close']) - c2['Low']
-        upper_wick = c2['High'] - max(c2['Open'], c2['Close'])
-
-        if lower_wick > 2 * body and upper_wick < body:
-            patterns.append("🔨 Hammer (Bullish)")
-
-        if upper_wick > 2 * body and lower_wick < body:
-            patterns.append("💫 Shooting Star (Bearish)")
-
-        if body < (c2['High'] - c2['Low']) * 0.1:
-            patterns.append("➕ Doji (Indecision)")
-
-        return patterns
-
-    def detect_divergences(self, data):
-        divergences = []
-        if len(data) < 20:
-            return divergences
-
-        recent = data.iloc[-20:]
-
-        if 'RSI_14' in recent.columns:
-            price_highs = recent['High'].iloc[-10:].max()
-            price_lows = recent['Low'].iloc[-10:].min()
-            rsi_highs = recent['RSI_14'].iloc[-10:].max()
-            rsi_lows = recent['RSI_14'].iloc[-10:].min()
-
-            current_price = recent['Close'].iloc[-1]
-            current_rsi = recent['RSI_14'].iloc[-1]
-
-            if current_price < price_lows * 1.01 and current_rsi > rsi_lows * 1.05:
-                divergences.append("🟢 RSI Bullish Divergence")
-
-            if current_price > price_highs * 0.99 and current_rsi < rsi_highs * 0.95:
-                divergences.append("🔴 RSI Bearish Divergence")
-
-        if 'MACD_12_26_9' in recent.columns:
-            macd_current = recent['MACD_12_26_9'].iloc[-1]
-            macd_prev_high = recent['MACD_12_26_9'].iloc[-10:].max()
-
-            price_current = recent['Close'].iloc[-1]
-            price_prev_high = recent['High'].iloc[-10:].max()
-
-            if price_current > price_prev_high * 0.99 and macd_current < macd_prev_high * 0.95:
-                divergences.append("🔴 MACD Bearish Divergence")
-
-        return divergences
-
-    def get_macro(self):
-        try:
-            # Fetch 1-year VIX history first — used for IVR proxy (REAL calculation)
-            # IVR proxy = (current VIX - 52w low VIX) / (52w high VIX - 52w low VIX) * 100
-            # This is the correct formula. For SPX, VIX IS implied volatility.
-            try:
-                vix_1y = yf.download("^VIX", period="1y", progress=False, timeout=15)["Close"].dropna()
-                vix_52w_high = float(vix_1y.max())
-                vix_52w_low  = float(vix_1y.min())
-            except Exception:
-                vix_52w_high, vix_52w_low = 30.0, 12.0  # conservative fallback
-
-            # Commodities added: oil (CL=F), silver (SI=F), nat gas (NG=F), copper (HG=F)
-            tickers = ["ES=F", "^VIX", "GC=F", "CL=F", "SI=F", "NG=F",
-                       "^GDAXI", "^N225", "^TNX", "DX-Y.NYB", "^RUT", "^NDX"]
-            df = yf.download(tickers, period="5d", progress=False, timeout=10)['Close']
-
-            if df.empty:
-                return None
-
-            try:
-                sp = df["ES=F"].dropna()
-                vix = df["^VIX"].dropna()
-                gold = df["GC=F"].dropna()
-                dax = df["^GDAXI"].dropna()
-                nikkei = df["^N225"].dropna()
-                tnx = df["^TNX"].dropna()
-                dxy = df["DX-Y.NYB"].dropna() if "DX-Y.NYB" in df.columns else None
-            except KeyError:
-                return None
-
-            sp_chg = ((sp.iloc[-1]-sp.iloc[-2])/sp.iloc[-2])*100 if len(sp) >= 2 else 0
-            dax_chg = ((dax.iloc[-1]-dax.iloc[-2])/dax.iloc[-2])*100 if len(dax) >= 2 else 0
-            nikkei_chg = ((nikkei.iloc[-1]-nikkei.iloc[-2])/nikkei.iloc[-2])*100 if len(nikkei) >= 2 else 0
-            tnx_chg = ((tnx.iloc[-1]-tnx.iloc[-2])/tnx.iloc[-2])*100 if len(tnx) >= 2 else 0
-            dxy_chg = ((dxy.iloc[-1]-dxy.iloc[-2])/dxy.iloc[-2])*100 if dxy is not None and len(dxy) >= 2 else 0
-            gold_chg = ((gold.iloc[-1]-gold.iloc[-2])/gold.iloc[-2])*100 if len(gold) >= 2 else 0
-
-            day = datetime.now().day
-            passive_on = (1 <= day <= 5) or (15 <= day <= 20)
-
-            risk_off = gold_chg > 1.0 and vix.iloc[-1] > 25
-            dollar_headwind = dxy_chg > 0.5 if dxy is not None else False
-
-            # Commodities
-            _oil   = df.get("CL=F",  pd.Series(dtype=float)).dropna()
-            _silv  = df.get("SI=F",  pd.Series(dtype=float)).dropna()
-            _ng    = df.get("NG=F",  pd.Series(dtype=float)).dropna()
-            _rut   = df.get("^RUT",  pd.Series(dtype=float)).dropna()
-            _ndx   = df.get("^NDX",  pd.Series(dtype=float)).dropna()
-            oil_px    = float(_oil.iloc[-1])  if len(_oil)  > 0 else 0.0
-            oil_chg   = float((_oil.iloc[-1]-_oil.iloc[-2])/_oil.iloc[-2]*100) if len(_oil) >= 2 else 0.0
-            silv_px   = float(_silv.iloc[-1]) if len(_silv) > 0 else 0.0
-            ng_px     = float(_ng.iloc[-1])   if len(_ng)   > 0 else 0.0
-
-            # IVR proxy: WHERE current VIX sits in its 52-week range
-            # Formula: (current - 52w_low) / (52w_high - 52w_low) * 100
-            # This is real data — VIX IS SPX implied volatility.
-            cur_vix = vix.iloc[-1] if len(vix) > 0 else 18.0
-            ivr_proxy = round(
-                (cur_vix - vix_52w_low) / (vix_52w_high - vix_52w_low) * 100, 1
-            ) if vix_52w_high != vix_52w_low else 35.0
-
-            return {
-                "sp": sp_chg,
-                "vix": cur_vix,
-                "vix_52w_high": vix_52w_high,
-                "vix_52w_low": vix_52w_low,
-                "ivr_proxy": ivr_proxy,        # Auto-computed IVR from VIX 52w range
-                "gold": gold.iloc[-1] if len(gold) > 0 else 2000,
-                "gold_chg": gold_chg,
-                "oil_px": oil_px, "oil_chg": oil_chg,
-                "silv_px": silv_px, "ng_px": ng_px,
-                "dax": dax_chg,
-                "nikkei": nikkei_chg,
-                "tnx": tnx.iloc[-1] if len(tnx) > 0 else 4.0,
-                "tnx_chg": tnx_chg,
-                "dxy": dxy.iloc[-1] if dxy is not None and len(dxy) > 0 else 100,
-                "dxy_chg": dxy_chg,
-                "passive": passive_on,
-                "risk_off": risk_off,
-                "dollar_headwind": dollar_headwind,
-                "data_quality": "LIVE"
-            }
-        except Exception:
-            return None
-
-    def generate_signals(self, data, metrics, ticker):
-        signals = {"bullish": [], "bearish": [], "neutral": [], "score": 0}
-
-        if metrics['macd'] > metrics['macd_signal']:
-            signals['bullish'].append("MACD: Bullish crossover")
-            signals['score'] += 1
-        elif metrics['macd'] < metrics['macd_signal']:
-            signals['bearish'].append("MACD: Bearish crossover")
-            signals['score'] -= 1
-
-        if metrics['rsi'] < 30:
-            signals['bullish'].append("RSI: Oversold (<30)")
-            signals['score'] += 1
-        elif metrics['rsi'] > 70:
-            signals['bearish'].append("RSI: Overbought (>70)")
-            signals['score'] -= 1
-
-        price = data['Close'].iloc[-1]
-        if price < metrics['bb_lower']:
-            signals['bullish'].append("BB: Below lower band")
-            signals['score'] += 1
-        elif price > metrics['bb_upper']:
-            signals['bearish'].append("BB: Above upper band")
-            signals['score'] -= 1
-
-        avg_bb_width = (data['BBU_20_2.0'] - data['BBL_20_2.0']).mean() if 'BBU_20_2.0' in data.columns else 0
-        if metrics['bb_width'] < avg_bb_width * 0.7:
-            signals['neutral'].append("BB: Squeeze detected")
-
-        if metrics['stoch_k'] < 20:
-            signals['bullish'].append("Stochastic: Oversold")
-            signals['score'] += 1
-        elif metrics['stoch_k'] > 80:
-            signals['bearish'].append("Stochastic: Overbought")
-            signals['score'] -= 1
-
-        if metrics['adx'] > 25:
-            if metrics['trend_strength'] in ["STRONG_BULL", "BULL"]:
-                signals['bullish'].append(f"ADX: Strong uptrend ({metrics['adx']:.1f})")
-                signals['score'] += 1
-            elif metrics['trend_strength'] in ["STRONG_BEAR", "BEAR"]:
-                signals['bearish'].append(f"ADX: Strong downtrend ({metrics['adx']:.1f})")
-                signals['score'] -= 1
-        else:
-            signals['neutral'].append(f"ADX: Weak trend ({metrics['adx']:.1f})")
-
-        if metrics['ich_position'] == "ABOVE_CLOUD":
-            signals['bullish'].append("Ichimoku: Above cloud")
-            signals['score'] += 1
-        elif metrics['ich_position'] == "BELOW_CLOUD":
-            signals['bearish'].append("Ichimoku: Below cloud")
-            signals['score'] -= 1
-        else:
-            signals['neutral'].append("Ichimoku: Inside cloud")
-
-        if metrics['mfi'] < 20:
-            signals['bullish'].append("MFI: Money flowing in")
-        elif metrics['mfi'] > 80:
-            signals['bearish'].append("MFI: Money flowing out")
-
-        if metrics['willr'] < -80:
-            signals['bullish'].append("Williams %R: Oversold")
-        elif metrics['willr'] > -20:
-            signals['bearish'].append("Williams %R: Overbought")
-
-        sma20 = data['SMA_20'].iloc[-1]
-        sma50 = data['SMA_50'].iloc[-1]
-        if sma20 > sma50 and data['SMA_20'].iloc[-2] <= data['SMA_50'].iloc[-2]:
-            signals['bullish'].append("MA: Golden Cross")
-            signals['score'] += 2
-        elif sma20 < sma50 and data['SMA_20'].iloc[-2] >= data['SMA_50'].iloc[-2]:
-            signals['bearish'].append("MA: Death Cross")
-            signals['score'] -= 2
-
-        if data['ST_DIR'].iloc[-1] == 1:
-            signals['bullish'].append("SuperTrend: Long signal")
-            signals['score'] += 1
-        else:
-            signals['bearish'].append("SuperTrend: Short signal")
-            signals['score'] -= 1
-
-        for pattern in metrics['patterns']:
-            if "Bullish" in pattern or "Hammer" in pattern:
-                signals['bullish'].append(f"Pattern: {pattern}")
-                signals['score'] += 1
-            elif "Bearish" in pattern or "Shooting Star" in pattern:
-                signals['bearish'].append(f"Pattern: {pattern}")
-                signals['score'] -= 1
-            else:
-                signals['neutral'].append(f"Pattern: {pattern}")
-
-        for div in metrics['divergences']:
-            if "Bullish" in div:
-                signals['bullish'].append(div)
-                signals['score'] += 2
-            elif "Bearish" in div:
-                signals['bearish'].append(div)
-                signals['score'] -= 2
-
-        return signals
-
-    def detect_correlation_break(self, macro_data):
-        us = macro_data['sp']
-        eu = macro_data['dax']
-        jp = macro_data['nikkei']
-        return (us > 1.0 and (eu < -1.0 or jp < -1.0)) or (us < -1.0 and (eu > 1.0 or jp > 1.0))
-
-    def check_passive_intensity(self, day, rvol):
-        passive_window = (1 <= day <= 5) or (15 <= day <= 20)
-        if passive_window:
-            if rvol > 1.5: return "STRONG"
-            elif rvol > 1.0: return "MODERATE"
-            else: return "WEAK"
-        return "NEUTRAL"
-
-    def calculate_position_size(self, capital, risk_per_trade, risk_distance, method="FIXED",
-                               volatility_mult=1.0, beta=1.0, consecutive_losses=0):
-        if risk_distance <= 0:
-            return 0
-
-        drawdown_mult = 1.0
-        if consecutive_losses >= 5:
-            drawdown_mult = 0.25
-        elif consecutive_losses >= 3:
-            drawdown_mult = 0.5
-
-        beta_mult = 1.0 / max(beta, 0.5) if beta > 1.5 else 1.0
-
-        if method == "FIXED":
-            shares = int((risk_per_trade * volatility_mult * drawdown_mult * beta_mult) / risk_distance)
-        elif method == "VOLATILITY_ADJUSTED":
-            adjusted_risk = risk_per_trade * volatility_mult * drawdown_mult * beta_mult
-            shares = int(adjusted_risk / risk_distance)
-        elif method == "KELLY":
-            win_rate = 0.55
-            win_loss_ratio = 2.0
-            kelly_fraction = ((win_rate * win_loss_ratio) - (1 - win_rate)) / win_loss_ratio
-            kelly_fraction = max(0.1, min(kelly_fraction * 0.5 * drawdown_mult, 0.25))
-            adjusted_risk = capital * kelly_fraction
-            shares = int(adjusted_risk / risk_distance)
-
-        return max(0, shares)
-
-    def calculate_sharpe_ratio(self, trades):
-        if len(trades) < 5:
-            return None
-        returns = [t['actual_pnl'] / t['entry'] for t in trades if 'actual_pnl' in t and t['entry'] > 0]
-        if not returns:
-            return None
-        mean_return = np.mean(returns)
-        std_return = np.std(returns)
-        if std_return == 0:
-            return None
-        sharpe = (mean_return / std_return) * np.sqrt(252)
-        return sharpe
-
-    def calculate_expectancy(self, trades):
-        if not trades:
-            return 0
-        total_pnl = sum(t['actual_pnl'] for t in trades if 'actual_pnl' in t)
-        return total_pnl / len(trades)
-
-    def calculate_profit_factor(self, trades):
-        wins = [t['actual_pnl'] for t in trades if 'actual_pnl' in t and t['actual_pnl'] > 0]
-        losses = [abs(t['actual_pnl']) for t in trades if 'actual_pnl' in t and t['actual_pnl'] < 0]
-        if not losses or sum(losses) == 0:
-            return None
-        return sum(wins) / sum(losses)
-
-    def calculate_max_drawdown(self, trades):
-        if not trades:
-            return 0
-        cumulative = 0
-        peak = 0
-        max_dd = 0
-        for t in trades:
-            if 'actual_pnl' in t:
-                cumulative += t['actual_pnl']
-                if cumulative > peak:
-                    peak = cumulative
-                dd = peak - cumulative
-                if dd > max_dd:
-                    max_dd = dd
-        return max_dd
-
-engine = InstitutionalAnalyst()
-
-# --- 5. SIDEBAR (WITH V12 HELP NOTES) ---
-with st.sidebar:
-    _tdr_ok = _tradier_is_connected()
-    if _tdr_ok:
-        st.success("✅ Broker connected — real-time data active")
-    else:
-        if st.session_state.lang_level in ["Beginner","Intermediate"]:
-            st.caption("📡 Live market data active.")
-        else:
-            st.caption("📡 Live market data — options pricing auto-calculated. Contact your app admin to connect your broker account for-computed Greeks.")
-    st.divider()
-    st.header("🎯 Your Experience Level")
-    st.session_state.lang_level = st.selectbox(
-        "How do you like explanations?",
-        ["Beginner", "Intermediate", "Advanced", "Professional"],
-        index=["Beginner","Intermediate","Advanced","Professional"].index(st.session_state.lang_level),
-        help="Beginner = plain English. Professional = BSM/Bloomberg/ThinkScript level."
-    )
-    _lvl = st.session_state.lang_level
-    _lvl_captions = {
-        "Beginner": "💡 Plain English + analogies. No jargon — promise.",
-        "Intermediate": "📊 Standard options and trading terminology.",
-        "Advanced": "📐 Greeks, formulas, statistical concepts.",
-        "Professional": "🖥️ Bloomberg / ThinkScript / PineScript level. Full math.",
-    }
-    st.caption(_lvl_captions[_lvl])
-    st.divider()
-    st.header("1. Your Account")
-
-    _lp = st.session_state.lang_level
-
-    # Dual-account mode (Scout vs Production)
-    _acct_mode = st.radio(
-        "Which account are you trading today?",
-        ["Account A — Scout (learn & test)", "Account B — Production (income engine)"],
-        help=(
-            "Account A (Scout): small capital, test new setups, learn without big losses. "
-            "Account B (Production): your real income account — apply only proven strategies."
-        ),
-        horizontal=True
-    )
-    _is_production = "Production" in _acct_mode
-
-    if _is_production:
-        st.success("📊 **Production Account** — use proven strategies only. Higher size, tighter discipline.")
-    else:
-        st.info("🧪 **Scout Account** — test ideas here first. Small size. Fail cheaply.")
-
-    if _lp in ["Beginner","Intermediate"]:
-        st.caption("Fill in your actual account details so the app sizes trades correctly for you.")
-
-    capital = st.number_input(
-        "How much money is in your trading account? ($)",
-        value=10000, min_value=100,
-        help="Your total account size right now. If you have $10,000 set aside for trading, enter 10000."
-    )
-    # Smart 1% default for risk
-    _default_risk = max(50, int(capital * 0.01))
-    risk_per_trade = st.number_input(
-        "Most you'll risk on ONE trade ($)",
-        value=_default_risk, min_value=10,
-        help=(
-            f"IWT rule: risk only 1% per trade (${_default_risk:.0f} on your ${capital:,.0f} account). "
-            "This means if the trade goes wrong, you lose at most this amount."
-            if _lp in ["Beginner","Intermediate"] else
-            "Max $ risk per trade. Recommended: 1-2% of capital. Used for Kelly/position sizing."
-        )
-    )
-    max_portfolio_risk = st.number_input(
-        "Total risk allowed across ALL open trades (%)",
-        value=6.0, min_value=1.0, max_value=20.0, step=0.5,
-        help=(
-            "If you have 3 trades open, their combined risk shouldn't exceed this %. "
-            "Example: 6% of $10,000 = $600 max total risk at any time."
-            if _lp in ["Beginner","Intermediate"] else
-            "Portfolio heat cap. Max total risk across all concurrent positions."
-        )
-    )
-
-    daily_goal = capital * 0.01
-    st.success(f"🎯 Your 1% daily goal: **${daily_goal:,.2f}**  — stop trading once you hit this!")
-
-    st.divider()
-    account_type = st.selectbox(
-        "What kind of account is this?",
-        ["Margin < $25k (PDT rules apply)", "Margin ≥ $25k (no PDT limit)", "Cash Account", "IRA / Retirement Account"],
-        help=(
-            "Under $25,000? You can only make 3 same-day buy+sell trades every 5 business days (PDT rule). "
-            "Over $25,000? No restrictions. Cash accounts: no margin, no PDT issue."
-            if _lp in ["Beginner","Intermediate"] else
-            "Account classification for PDT/margin guidance."
-        ),
-        format_func=lambda x: x.replace("(PDT rules apply)","⚠️").replace("(no PDT limit)","✅")
-    )
-    pdt_framework = ("Legacy PDT" if "<" in account_type else
-                     "New Intraday Margin" if "≥" in account_type else "Broker Unknown / Conservative")
-
-    if "<$25k" in account_type or "< $25k" in account_type:
-        day_trades_used = st.number_input(
-            "Day trades already used this week (0-3)",
-            value=int(st.session_state.day_trades_used), min_value=0, max_value=3, step=1,
-            help=(
-                "A 'day trade' = opening AND closing the same position on the same day. "
-                "You only get 3 in any 5-day window. Track this carefully."
-                if _lp in ["Beginner","Intermediate"] else
-                "Rolling 5-day day-trade count for legacy PDT tracking."
-            )
-        )
-        _remaining = 3 - int(day_trades_used)
-        if _remaining == 0:
-            st.error("🔴 No day trades left this week. Hold positions overnight or wait.")
-        elif _remaining == 1:
-            st.warning(f"⚠️ {_remaining} day trade left. Use it on your best setup only.")
-        else:
-            st.caption(f"✅ {_remaining} day trades remaining this week.")
-    else:
-        day_trades_used = 0
-        st.caption("✅ No day-trade limit on your account type.")
-    st.session_state.day_trades_used = int(day_trades_used)
-    planned_same_day_exit = st.checkbox(
-        "Planned same-day exit?", value=False,
-        help="If checked, this setup may consume a day trade in a small margin account."
-    )
-    _pdt = pdt_guidance(capital, account_type, day_trades_used, planned_same_day_exit, pdt_framework)
-    if not _pdt["can_day_trade"]:
-        st.error("🛑 Trade-budget warning: no same-day exit capacity left. Preserve capital or use a non-day-trade plan.")
-    else:
-        st.caption(f"📌 {_pdt['status']}")
-
-    st.markdown("**🗓️ Weekly Trade Planner**")
-    preferred_trade_days = st.multiselect(
-        "Preferred trade days",
-        ["Monday", "Tuesday", "Wednesday", "Thursday"],
-        default=["Monday", "Tuesday", "Wednesday", "Thursday"],
-        help="Use this to plan Mon–Thu trading once your account/broker allows it. The app will still rank days by risk."
-    )
-    event_days = st.multiselect(
-        "Major macro event days this week",
-        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-        default=st.session_state.week_event_days,
-        help="Mark CPI, PPI, FOMC, NFP, major Treasury auctions, or high-risk geopolitical/event days."
-    )
-    st.session_state.week_event_days = event_days
-
-    portfolio_risk_pct = (st.session_state.total_risk_deployed / capital) * 100
-    if portfolio_risk_pct > max_portfolio_risk:
-        st.error(f"⚠️ Portfolio Risk: {portfolio_risk_pct:.1f}% (OVER LIMIT)")
-    else:
-        st.info(f"📊 Portfolio Risk: {portfolio_risk_pct:.1f}% / {max_portfolio_risk:.1f}%")
-
-    pnl_pct = (st.session_state.daily_pnl / capital) * 100
-    if st.session_state.goal_met:
-        st.success(f"✅ Goal Achieved: +${st.session_state.daily_pnl:.2f} ({pnl_pct:.2f}%)")
-    else:
-        st.info(f"📈 Session P&L: ${st.session_state.daily_pnl:.2f} ({pnl_pct:.2f}%)")
-
-    if st.session_state.consecutive_losses > 0:
-        st.warning(f"⚠️ Losing Streak: {st.session_state.consecutive_losses} trades")
-        st.caption("💡 After 3 losses, position size automatically reduced by 50%.")
-
-    st.divider()
-    st.header("🤖 What Do You Want to Do Today?")
-    _lg = st.session_state.lang_level
-    if _lg in ["Beginner","Intermediate"]:
-        st.caption("This tells the app what to recommend. Pick the one closest to your goal.")
-    _goal_opts = [
-        "Weekly income (sell premium)",
-        "Capture a big directional move",
-        "Trade commodities / futures",
-        "I'm not sure — show me options",
-    ]
-    _goal_labels = {
-        "Weekly income (sell premium)":
-            "💰 Earn weekly income — sell options and collect credit",
-        "Capture a big directional move":
-            "🚀 Ride a big move — buy options for leverage on a trend",
-        "Trade commodities / futures":
-            "🛢️ Trade futures — oil, gold, corn, S&P micro-contracts",
-        "I'm not sure — show me options":
-            "🤷 Not sure yet — show me what makes sense today",
-    }
-    st.session_state.advisor_goal = st.selectbox(
-        "Today's goal:" if _lg in ["Advanced","Professional"] else "What are you trying to accomplish?",
-        _goal_opts,
-        index=_goal_opts.index(st.session_state.advisor_goal),
-        format_func=lambda x: _goal_labels[x] if _lg in ["Beginner","Intermediate"] else x,
-        help="Drives the Instrument Advisor and strategy defaults. The app tailors everything to this goal."
-    )
-    st.divider()
-    st.header("2. What Are You Trading?")
-    _la = st.session_state.lang_level
-    input_mode = st.radio(
-        "Choose a stock/ETF:" if _la in ["Beginner","Intermediate"] else "Input:",
-        ["VIP List", "Manual Search"],
-        help=(
-            "VIP List = curated high-liquidity US stocks (safer for beginners). "
-            "Manual = enter any ticker symbol you want to analyse."
-        )
-    )
-    if input_mode == "VIP List":
-        ticker = st.selectbox(
-            "Pick from popular stocks & ETFs" if _la in ["Beginner","Intermediate"] else "Ticker",
-            ALL_TICKERS,
-            help="Curated list of high-liquidity US stocks (Nasdaq/NYSE). Start here if unsure what to trade."
-        )
-        if ticker.endswith(".NR"):
-            st.warning(
-                "⚠️ **NSE tickers (.NR) are not available via Yahoo Finance** — "
-                "yfinance returns no data for all 8 NSE listings. "
-                "For Nairobi Securities Exchange data use [nse.co.ke](https://nse.co.ke) directly. "
-                "Selecting a Kenya ticker will produce an error when you scan.",
-                icon=None
-            )
-    else:
-        ticker = st.text_input("Ticker", "NVDA", help="Enter any stock symbol (e.g., AAPL, TSLA, GME).").upper()
-
-    st.divider()
-    st.header("3. How Will You Trade?")
-    _ls = st.session_state.lang_level
-    _strat_opts = ['Income (SPX Vertical Credit Spread)', 'Income (Iron Condor — sideways market)',
-                   'IWT Long Option (60+ DTE)', 'Futures (Index/Commodity)',
-                   'Long (Buy)', 'Short (Sell)', 'Income (Cash-Secured Put)']
-    _strat_labels = {
-        'Income (SPX Vertical Credit Spread)': "💰 Sell a vertical spread — collect weekly income (SPX)",
-        'Income (Iron Condor — sideways market)':"🦅 Iron Condor — collect income when market moves sideways",
-        'IWT Long Option (60+ DTE)':           "🚀 Buy a DITM option — ride a big directional move (IWT)",
-        'Futures (Index/Commodity)':           "🛢️ Trade futures — oil, gold, S&P micro-contracts",
-        'Long (Buy)':                          "📈 Buy shares — profit when stock rises",
-        'Short (Sell)':                        "📉 Sell short — profit when stock falls",
-        'Income (Cash-Secured Put)':           "💵 Sell a cash-secured put — get paid to wait for a stock",
-    }
-    strategy = st.selectbox(
-        "How do you want to trade?" if _ls in ["Beginner","Intermediate"] else "Mode",
-        _strat_opts,
-        format_func=lambda x: _strat_labels[x] if _ls in ["Beginner","Intermediate"] else x,
-        help=(
-            "Not sure? If you want steady income → pick 'Sell a vertical spread'. "
-            "If you think a stock is about to move big → pick 'Buy a DITM option'. "
-            "The Instrument Advisor above will also guide you."
-            if _ls in ["Beginner","Intermediate"] else
-            "Determines which inputs and calculators appear below."
-        )
-    )
-
-    # Day-of-week risk throttle (Mon=observe, Tue=income, Wed=reduce, Thu=production)
-    import datetime as _dt
-    _dow = _dt.datetime.now().weekday()  # 0=Mon, 4=Fri
-    _dow_names = {0:"Monday",1:"Tuesday",2:"Wednesday",3:"Thursday",4:"Friday"}
-    _dow_guidance = {
-        0: ("🔵 MONDAY — Observe", "yellow",
-            "Monday is for scanning and planning, not trading. "
-            "Run the global scan, check the week's events, set alerts. Small size only if a perfect setup appears."),
-        1: ("🟢 TUESDAY — Best income day", "green",
-            "Tuesday is historically the best day for SPX credit spreads. "
-            "Full size on A+ setups. Run your IWT scorecard before entering."),
-        2: ("🟡 WEDNESDAY — Reduce size", "yellow",
-            "Wednesday has elevated event risk (Fed minutes, mid-week earnings). "
-            "Reduce size 50%. Avoid opening new spreads near major announcements."),
-        3: ("🟢 THURSDAY — Production day", "green",
-            "Post-event repricing. Volatility often elevated from Wednesday events, "
-            "meaning better premiums. One of the best days for 5-7 DTE income trades."),
-        4: ("🔴 FRIDAY — Caution / close", "red",
-            "Friday has elevated gamma risk near expiry. "
-            "Close any 0-1 DTE positions before noon. No new spreads expiring today."),
-    }
-    _today_label, _today_color, _today_note = _dow_guidance.get(_dow, _dow_guidance[4])
-    if _ls in ["Beginner","Intermediate"]:
-        _dow_display_fn = {
-            "yellow": st.warning, "green": st.success, "red": st.error
-        }.get(_today_color, st.info)
-        _dow_display_fn(f"**{_today_label}** — {_today_note}")
-    else:
-        st.caption(f"📅 {_today_label}: {_today_note[:80]}")
-
-    entry_mode = st.radio(
-        "When do you want to enter?" if _ls in ["Beginner","Intermediate"] else "Entry",
-        ["Auto-Limit (Zone)", "Market (Now)", "Manual Override"],
-        format_func=lambda x: {
-            "Auto-Limit (Zone)": "⏳ Wait for price to reach a zone (limit order — recommended)",
-            "Market (Now)":      "⚡ Enter right now at current price (market order)",
-            "Manual Override":   "🔧 Test a custom entry price (for scenario analysis)",
-        }[x] if _ls in ["Beginner","Intermediate"] else x,
-        help=(
-            "Limit orders wait for the best price. Market orders fill instantly but may cost more."
-            if _ls in ["Beginner","Intermediate"] else
-            "Auto-Limit: entry at zone boundary. Market: immediate fill. Manual: custom price."
-        )
-    )
-
-    manual_price = 0.0
-    if entry_mode == "Manual Override":
-        manual_price = st.number_input("Entry Price ($)", value=0.0, step=0.01,
-                                       help="Custom entry price for testing scenarios.")
-
-    stop_mode = st.selectbox("Stop Width", [1.0, 0.5, 0.2],
-                            format_func=lambda x: f"Wide ({x} ATR)" if x==1.0 else f"Medium ({x} ATR)" if x==0.5 else f"Tight ({x} ATR)",
-                            help="Stop distance in ATR multiples. Wide=swing trades, Tight=day trades.")
-
-    position_sizing_method = st.selectbox("Position Sizing", ["FIXED", "VOLATILITY_ADJUSTED", "KELLY"],
-                                         help="FIXED: Standard fixed risk. VOLATILITY_ADJUSTED: Scales down in high VIX. KELLY: Mathematical optimal sizing.")
-
-    premium = 0.0
-    spread_kind = "PUT"
-    short_strike = 0.0
-    long_strike = 0.0
-    spread_credit = 0.0
-    dte = 7
-    spx_reference_price = 0.0
-    iv_percent = 17.0
-    short_delta = 0.15
-    event_risk_48h = False
-    hold_through_event = False
-
-    fut_code = "MES"; fut_entry = 0.0; fut_stop = 0.0; fut_target = 0.0; fut_contracts = 1
-    lo_direction = "CALL"
-    lo_underlying = 0.0
-    lo_strike = 0.0
-    lo_premium = 0.0
-    lo_delta = 0.75
-    lo_dte = 90
-    lo_contracts_lo = 1
-    if strategy == "Income (Cash-Secured Put)":
-        premium = st.number_input(
-            "Put Premium ($/share)", value=0.0, step=0.05,
-            help="Per-share premium received. $2.50 = $250 per contract. CSP risk is assignment/cash-secured risk, not just a chart stop."
-        )
-
-    elif strategy == "IWT Long Option (60+ DTE)":
-        _lp2 = st.session_state.lang_level
-        if _lp2 in ["Beginner","Intermediate"]:
-            st.markdown("**📈 IWT Long Option — Buying a Call or Put**")
-            st.info(
-                "**What you're doing:** You're BUYING an option to capture a big price move.\n\n"
-                "**Example:** SPY is at $737. You think it's going higher. You buy a SPY $715 CALL "
-                "expiring in 90 days for $30/share ($3,000 per contract).\n\n"
-                "• If SPY rises to $775 by expiry, your $30 option could be worth $60+ → 100% gain\n"
-                "• If SPY falls sharply, the option decays → sell before you lose more than 50%\n\n"
-                "**IWT rules:** Buy at LEAST 60 days out. Choose a strike deep in-the-money (delta 0.70+)."
-            )
-        else:
-            st.markdown("**📈 IWT Long Option — 60+ DTE DITM**")
-
-        st.markdown("**① Are you bullish or bearish?**")
-        lo_direction = st.selectbox(
-            "Direction",
-            ["CALL (I think market goes UP)", "PUT (I think market goes DOWN)"],
-            format_func=lambda x: x,
-            help="CALL = profits when price rises. PUT = profits when price falls.",
-            key="lo_dir_select"
-        )
-        lo_direction = "CALL" if "CALL" in lo_direction else "PUT"
-
-        st.markdown("**② What is the stock/ETF priced at right now?**")
-        lo_underlying = st.number_input(
-            "Current price of the stock you're trading ($)",
-            value=0.0, step=1.0,
-            help="Check Google or your broker for the current price of SPY, AAPL, QQQ, etc."
-        )
-
-        # Auto-suggest DITM strike
-        _lo_suggested_k = 0.0
-        if lo_underlying > 0:
-            _lo_suggested_k = round(lo_underlying * (0.93 if lo_direction=="CALL" else 1.07))
-            _direction_word = "BELOW" if lo_direction=="CALL" else "ABOVE"
-            st.success(
-                f"**Suggested strike:** {_lo_suggested_k:.0f}  "
-                f"(≈7% {_direction_word} current price → DITM, acts like owning stock with leverage)"
-            )
-
-        st.markdown("**③ Which strike price will you buy?**")
-        lo_strike = st.number_input(
-            f"Strike price — {'BELOW' if lo_direction=='CALL' else 'ABOVE'} current price for DITM"
-            + (f" (suggested: {_lo_suggested_k:.0f})" if _lo_suggested_k > 0 else ""),
-            value=float(_lo_suggested_k) if _lo_suggested_k > 0 else 0.0,
-            step=1.0,
-            help=(
-                "DITM (Deep In The Money) = pick a strike price 5-10% BELOW the stock price for calls, "
-                "ABOVE for puts. Example: stock at $737 → buy the $690 call (DITM)."
-                if _lp2 in ["Beginner","Intermediate"] else
-                "DITM strike: delta ≥ 0.70. Mostly intrinsic value, lower theta risk."
-            )
-        )
-
-        st.markdown("**④ How many days until expiry?**")
-        lo_dte = st.number_input(
-            "Days to expiry (minimum 60 — IWT rule)",
-            value=90, min_value=1, max_value=400, step=1,
-            help="IWT minimum: 60 days. Why? Theta (time decay) barely touches the option this far out. Preferred: 90-120 days."
-        )
-        if lo_dte < 60:
-            st.error(f"⚠️ {lo_dte} DTE is below IWT's 60-day minimum. Theta decay will eat your option faster than the stock can move. Consider {max(60, lo_dte+30)} DTE or more.")
-        elif lo_dte < 90:
-            st.warning(f"🟡 {lo_dte} DTE is acceptable but IWT standard: 90+ days for breathing room.")
-        else:
-            st.caption(f"✅ {lo_dte} DTE — IWT compliant. Good breathing room for the trade to develop.")
-
-        st.markdown("**⑤ What does the option cost?**")
-        lo_premium = st.number_input(
-            "Premium per share ($) — get this from your broker's option chain",
-            value=0.0, step=0.05,
-            help=(
-                "Look at the 'Ask' price in your broker's option chain for that strike and expiry. "
-                "Example: $15.00 means ONE contract costs $1,500 (because each contract = 100 shares)."
-                if _lp2 in ["Beginner","Intermediate"] else
-                "Ask price per share. $15 = $1,500 per contract. Use mid-price for limit orders."
-            )
-        )
-        if lo_premium > 0 and lo_underlying > 0:
-            _lev = lo_underlying / lo_premium if lo_premium > 0 else 0
-            st.caption(
-                f"💡 ${lo_premium:.2f}/share × 100 = **${lo_premium*100:.0f} per contract** total cost. "
-                f"Leverage vs buying stock: **{_lev:.1f}× leverage**. "
-                f"IWT stop: if it loses 50% (falls to ${lo_premium*0.5:.2f}), sell immediately."
-            )
-
-        lo_delta = st.number_input(
-            "Delta of this option (from your broker)" if _lp2 in ["Beginner","Intermediate"] else "Option Delta",
-            value=0.75, min_value=0.10, max_value=0.99, step=0.01,
-            help=(
-                "Delta is shown in your broker's option chain next to each strike. "
-                "For DITM options, look for 0.70 or higher. "
-                "Delta 0.75 means the option moves $0.75 for every $1 the stock moves."
-                if _lp2 in ["Beginner","Intermediate"] else
-                "Target delta ≥ 0.70 for DITM. Δ ≈ probability ITM (risk-neutral measure)."
-            )
-        )
-        if lo_delta < 0.60:
-            st.warning(f"⚠️ Delta {lo_delta:.2f} is below DITM threshold. IWT prefers 0.70+ for leverage plays.")
-
-        lo_contracts_lo = st.number_input(
-            "Number of contracts (1 = 100 shares of exposure)",
-            value=1, min_value=1, max_value=50, step=1,
-            help="Start with 1 contract. Each contract controls 100 shares. Scale up only when consistently profitable."
-        )
-
-        if lo_premium > 0:
-            _total = lo_premium * 100 * lo_contracts_lo
-            st.info(
-                f"**Your total investment: ${_total:,.0f}**\n"
-                f"• Take profit at 50% gain: sell when worth ${_total*1.5:,.0f} (+${_total*0.5:,.0f})\n"
-                f"• Take profit at 100% gain: sell when worth ${_total*2:,.0f} (+${_total:,.0f})\n"
-                f"• Hard stop at 50% loss: sell if drops to ${_total*0.5:,.0f} — no exceptions"
-            )
-    
-
-    elif strategy == "Futures (Index/Commodity)":
-        _lpf = st.session_state.lang_level
-        if _lpf in ["Beginner","Intermediate"]:
-            st.info(
-                "**Futures = you control a large contract with a small deposit (margin).**\n\n"
-                "Example: MES (Micro S&P) — one contract controls ~$37,000 of S&P 500 value "
-                "but only requires ~$1,200 margin. Every 1-point S&P move = **$1.25 profit or loss**.\n\n"
-                "💡 Start with **Micro** contracts (MES, MNQ, MCL, MGC) until comfortable."
-            )
-
-        _FUT_SPECS = {
-            "MES — Micro S&P 500 ($1.25/tick)":    {"code":"MES","tick_val":1.25, "margin":1200},
-            "ES — E-mini S&P 500 ($12.50/tick)":   {"code":"ES", "tick_val":12.50,"margin":12000},
-            "MNQ — Micro NASDAQ ($0.50/tick)":      {"code":"MNQ","tick_val":0.50, "margin":1700},
-            "NQ — E-mini NASDAQ ($5.00/tick)":      {"code":"NQ", "tick_val":5.00, "margin":17000},
-            "MCL — Micro Crude Oil ($1.00/tick)":   {"code":"MCL","tick_val":1.00, "margin":600},
-            "CL — WTI Crude Oil ($10.00/tick)":     {"code":"CL", "tick_val":10.00,"margin":6000},
-            "MGC — Micro Gold ($1.00/tick)":        {"code":"MGC","tick_val":1.00, "margin":900},
-            "GC — Gold ($10.00/tick)":              {"code":"GC", "tick_val":10.00,"margin":9000},
-            "ZC — Corn ($12.50/tick)":              {"code":"ZC", "tick_val":12.50,"margin":1500},
-            "ZW — Wheat ($12.50/tick)":             {"code":"ZW", "tick_val":12.50,"margin":1700},
-            "ZS — Soybeans ($12.50/tick)":          {"code":"ZS", "tick_val":12.50,"margin":2000},
-            "NG — Natural Gas ($10.00/tick)":       {"code":"NG", "tick_val":10.00,"margin":2000},
-            "SI — Silver ($25.00/tick)":            {"code":"SI", "tick_val":25.00,"margin":8000},
-            "M2K — Micro Russell 2000 ($0.50/tick)":{"code":"M2K","tick_val":0.50,"margin":700},
-        }
-        _fl = st.selectbox(
-            "Which contract are you trading?",
-            list(_FUT_SPECS.keys()),
-            help="Each contract shown with its tick value — how much you make or lose per 0.25 point move."
-        )
-        _fspec = _FUT_SPECS[_fl]
-        fut_code = _fspec["code"]
-
-        # Show contract specs inline
-        st.info(
-            f"**{_fl.split('(')[0].strip()} specs:**  "
-            f"Each 0.25-point tick = **${_fspec['tick_val']:.2f}**  |  "
-            f"Approx margin needed: **~${_fspec['margin']:,}**"
-        )
-
-        fut_entry = st.number_input(
-            "Your entry price (where you buy/sell)",
-            value=0.0, step=0.25,
-            help="The price at which you opened (or plan to open) the position."
-        )
-        fut_stop = st.number_input(
-            "Stop price — where you EXIT if wrong (your max-loss point)",
-            value=0.0, step=0.25,
-            help=(
-                "Set this BEFORE entering. Example: entry at 5300, stop at 5270 = 30 points risk. "
-                f"For {_fl.split('(')[0].strip()}: 30 pts × ${_fspec['tick_val']/0.25:.0f}/pt = "
-                f"${30*_fspec['tick_val']/0.25:,.0f} risk per contract."
-                if _fspec['tick_val'] > 0 else "Your exit point if the trade goes wrong."
-            )
-        )
-        fut_target = st.number_input(
-            "Target price — where you EXIT if right (your profit goal)",
-            value=0.0, step=0.25
-        )
-
-        if fut_entry > 0 and fut_stop > 0 and fut_target > 0:
-            _stop_pts  = abs(fut_entry - fut_stop)
-            _tgt_pts   = abs(fut_target - fut_entry)
-            _pt_val    = _fspec['tick_val'] / 0.25
-            _risk_usd    = _stop_pts * _pt_val
-            _reward_usd  = _tgt_pts * _pt_val
-            _rr        = _reward_usd / _risk_usd if _risk_usd > 0 else 0
-            st.success(
-                f"**Risk:** {_stop_pts:.2f} pts = ${_risk_usd:,.0f}/contract  |  "
-                f"**Reward:** {_tgt_pts:.2f} pts = ${_reward_usd:,.0f}/contract  |  "
-                f"**R/R: {_rr:.1f}:1** {'✅' if _rr >= 2 else '⚠️ aim for 2:1+'}"
-            )
-
-        fut_contracts = st.number_input(
-            "Number of contracts",
-            value=1, min_value=1, max_value=20, step=1,
-            help=f"Start with 1. Each additional contract multiplies your profit AND loss by the same amount."
-        )
-        if _lpf in ["Beginner","Intermediate"]:
-            st.caption(
-                f"⚠️ Important: with {fut_contracts} contract(s), each 1-point move = "
-                f"±${_fspec['tick_val']/0.25*fut_contracts:,.2f}. "
-                f"Futures profit/loss happens instantly, every second the market is open."
-            )
-    elif strategy == "Income (Iron Condor — sideways market)":
-        _lic = st.session_state.lang_level
-        if _lic in ["Beginner","Intermediate"]:
-            st.info(
-                "**🦅 Iron Condor — getting paid when the market goes SIDEWAYS**\n\n"
-                "An iron condor combines TWO credit spreads: a put spread below the market "
-                "AND a call spread above the market. You profit if the market stays in the zone between them.\n\n"
-                "Example on SPX at 7423: sell 7200 put spread AND sell 7600 call spread. "
-                "As long as SPX stays between 7200-7600 at expiry, you keep both credits.\n\n"
-                "Best used when: VIX is moderate, no major events, market has been range-bound."
-            )
-
-        st.markdown("**① When does it expire?**")
-        _ic_dte = st.number_input("Days to expiry (DTE)", value=7, min_value=1, max_value=45, step=1,
-            help="7-14 DTE is standard for iron condors. Longer = more premium but more time for market to move.")
-
-        st.markdown("**② SPX level right now?**")
-        _ic_spx = st.number_input("SPX reference price",
-            value=float(st.session_state.get("_last_spx_entered", 0.0)), step=1.0)
-        if _ic_spx > 0: st.session_state["_last_spx_entered"] = _ic_spx
-
-        _ic_vix = st.number_input("VIX right now (%)", value=17.0, min_value=1.0, max_value=80.0, step=0.5)
-
-        # Auto-suggest wings
-        _ic_sugg = {}
-        if _ic_spx > 0 and _ic_vix > 0 and _ic_dte > 0:
-            import math as _m
-            _ic_em = _ic_spx * (_ic_vix/100) * _m.sqrt(_ic_dte/365)
-            _ic_put_short  = round((_ic_spx - _ic_em*0.75)/5)*5
-            _ic_put_long   = _ic_put_short - 25
-            _ic_call_short = round((_ic_spx + _ic_em*0.75)/5)*5
-            _ic_call_long  = _ic_call_short + 25
-            _ic_sugg = {"put_short":_ic_put_short,"put_long":_ic_put_long,
-                        "call_short":_ic_call_short,"call_long":_ic_call_long,"em":_ic_em}
-            st.success(
-                f"Expected move: ±{_ic_em:.0f} pts  |  "
-                f"**PUT side:** Sell {_ic_put_short}/Buy {_ic_put_long}  |  "
-                f"**CALL side:** Sell {_ic_call_short}/Buy {_ic_call_long}  |  "
-                f"Profit zone: {_ic_put_short}-{_ic_call_short}"
-            )
-
-        st.markdown("**③ PUT spread (below the market):**")
-        _c1, _c2 = st.columns(2)
-        with _c1:
-            _ic_ps = st.number_input("PUT you SELL (higher # below market)",
-                value=float(_ic_sugg.get("put_short",0)), step=5.0)
-        with _c2:
-            _ic_pl = st.number_input("PUT you BUY (protection, lower #)",
-                value=float(_ic_sugg.get("put_long",0)), step=5.0)
-        _ic_put_credit = st.number_input("Credit collected — put side ($/share)", value=0.0, step=0.05)
-
-        st.markdown("**④ CALL spread (above the market):**")
-        _c3, _c4 = st.columns(2)
-        with _c3:
-            _ic_cs = st.number_input("CALL you SELL (lower # above market)",
-                value=float(_ic_sugg.get("call_short",0)), step=5.0)
-        with _c4:
-            _ic_cl = st.number_input("CALL you BUY (protection, higher #)",
-                value=float(_ic_sugg.get("call_long",0)), step=5.0)
-        _ic_call_credit = st.number_input("Credit collected — call side ($/share)", value=0.0, step=0.05)
-
-        _ic_contracts = st.number_input("Contracts", value=1, min_value=1, max_value=20, step=1)
-
-        if _ic_put_credit > 0 and _ic_call_credit > 0:
-            _ic_total_credit = (_ic_put_credit + _ic_call_credit)
-            _ic_width = abs(_ic_ps - _ic_pl)
-            _ic_max_profit = _ic_total_credit * 100 * _ic_contracts
-            _ic_max_loss   = (_ic_width - _ic_total_credit) * 100 * _ic_contracts
-            st.info(
-                f"**Total credit: ${_ic_total_credit:.2f}/share = ${_ic_max_profit:,.0f} per {_ic_contracts} contract(s)**\n"
-                f"Profit zone: SPX stays between {_ic_ps:.0f} and {_ic_cs:.0f} at expiry\n"
-                f"Max loss: ${_ic_max_loss:,.0f} if SPX breaks either wing"
-            )
-            # Wire to spread variables so downstream calc works
-            short_strike = _ic_ps; long_strike = _ic_pl
-            spread_credit = _ic_put_credit; spread_kind = "PUT"
-            spx_reference_price = _ic_spx; iv_percent = _ic_vix; dte = _ic_dte
-            short_delta = 0.15; event_risk_48h = False; hold_through_event = False
-        else:
-            short_strike = 0.0; long_strike = 0.0; spread_credit = 0.0
-            spread_kind = "PUT"; spx_reference_price = _ic_spx; iv_percent = _ic_vix
-            dte = _ic_dte; short_delta = 0.15; event_risk_48h = False; hold_through_event = False
-
-
-    elif strategy == "Income (SPX Vertical Credit Spread)":
-        _lvl_v = st.session_state.lang_level
-        
-        # ── CHEAT SHEET (always visible, collapses for pros) ─────────────────
-        if _lvl_v in ["Beginner", "Intermediate"]:
-            st.markdown("**📖 Quick Guide — How to fill this in**")
-            st.info(
-                "**Example: you sold the 7395/7390 PUT spread**\n\n"
-                "• **7395** = the PUT you SOLD (higher number → enter this as your SELL strike)\n"
-                "• **7390** = the PUT you BOUGHT for protection (lower number → enter this as your BUY strike)\n"
-                "• **0.50** = the credit you collected (enter this as your Net Credit)\n\n"
-                "📌 Simple rule: HIGHER number = what you sold. LOWER number = your protection."
-            )
-
-        # ── Step 1: Spread direction ───────────────────────────────────────────
-        st.markdown("**① Spread direction**")
-        spread_kind = st.selectbox(
-            "Are you selling puts or calls?",
-            ["PUT", "CALL"],
-            help=(
-                "PUT spread: market stays flat or rises — you profit. "
-                "CALL spread: market stays flat or falls — you profit. "
-                "Most IWT income trades use PUT spreads."
-            ),
-            format_func=lambda x: (
-                "PUT spread (market stays above your sell strike)" if x=="PUT"
-                else "CALL spread (market stays below your sell strike)"
-            )
-        )
-
-        # ── Step 2: When does it expire? ──────────────────────────────────────
-        st.markdown("**② When does it expire?**")
-        dte = st.number_input(
-            "Days until expiry (DTE)",
-            value=7, min_value=0, max_value=60, step=1,
-            help=(
-                "0 DTE = today's expiry (very high risk, advanced traders only). "
-                "7 DTE = next weekly expiry (most common for IWT-style income). "
-                "30 DTE = standard for TastyTrade-style premium selling."
-            )
-        )
-        if dte == 0:
-            st.warning("⚠️ 0 DTE = extreme gamma risk. Positions can move from profit to full loss in minutes. For experienced traders only.")
-        elif dte < 7:
-            st.caption("⚡ Very short DTE. Monitor position closely — move fast.")
-        
-        # ── Step 3: Where is SPX now? (auto-fill from Macro Audit) ───────────
-        st.markdown("**③ What is SPX at right now?**")
-        # Auto-populate from macro scan (ES=F tracks SPX within ~1 point)
-        _macro_spx = 0.0
-        if st.session_state.macro:
-            # Use ES futures as SPX proxy (standard professional approach)
-            _es_pct = st.session_state.macro.get("sp", 0)  # sp = daily % change on ES
-            # We don't store the absolute level — prompt user but show VIX context
-            _macro_spx = st.session_state.get("_last_spx_entered", 0.0)
-        
-        spx_reference_price = st.number_input(
-            "SPX / S&P 500 level right now" + (" (from Macro Audit)" if _macro_spx > 0 else ""),
-            value=float(st.session_state.get("_last_spx_entered", 0.0)),
-            step=1.0,
-            help="Look up 'SPX' on Google, Yahoo Finance, or your broker. It's the current level of the S&P 500 index."
-        )
-        if spx_reference_price > 0:
-            st.session_state["_last_spx_entered"] = spx_reference_price
-
-        iv_percent = st.number_input(
-            "VIX right now (%)" if _lvl_v in ["Beginner","Intermediate"] else "IV / VIX Proxy (%)",
-            value=float(st.session_state.macro.get("vix", 17.0)) if st.session_state.macro else 17.0,
-            min_value=1.0, max_value=100.0, step=0.25,
-            help=(
-                "VIX is the market's fear gauge. Check cnbc.com/quotes/VIX or Google 'VIX today'. "
-                "Higher VIX = bigger expected moves = more premium collected."
-                if _lvl_v in ["Beginner","Intermediate"] else
-                "VIX as IV proxy. For SPX/SPY, VIX = 30-day implied vol by construction."
-            )
-        )
-
-        # ── Step 4: Suggested strikes (auto-computed from inputs) ─────────────
-        _show_suggestion = spx_reference_price > 0 and iv_percent > 0 and dte > 0
-        _sug_short = 0.0; _sug_long = 0.0; _sug_credit = 0.0; _sug_em = 0.0
-        if _show_suggestion:
-            import math as _m
-            _sug_em    = spx_reference_price * (iv_percent/100) * _m.sqrt(dte/365)
-            _spread_w  = 25   # standard SPX width
-            _sug_short = round((spx_reference_price - _sug_em*0.75)/_spread_w)*_spread_w if spread_kind=="PUT" else round((spx_reference_price + _sug_em*0.75)/_spread_w)*_spread_w
-            _sug_long  = _sug_short - _spread_w if spread_kind=="PUT" else _sug_short + _spread_w
-            # BSM credit estimate
-            try:
-                from scipy.stats import norm as _n
-                _r = float(st.session_state.macro.get("tnx",4.5)/100) if st.session_state.macro else 0.045
-                _T = dte/365; _IV = iv_percent/100; _S = spx_reference_price
-                def _bsm_p(S,K,T,r,sig):
-                    if T<=0: return max(0,K-S)
-                    d1=(_m.log(S/K)+(r+0.5*sig**2)*T)/(sig*_m.sqrt(T)); d2=d1-sig*_m.sqrt(T)
-                    return K*_m.exp(-r*T)*_n.cdf(-d2)-S*_n.cdf(-d1)
-                _ps = _bsm_p(_S,_sug_short,_T,_r,_IV)
-                _pl = _bsm_p(_S,_sug_long,_T,_r,_IV)
-                _sug_credit = max(0, _ps - _pl)
-            except: _sug_credit = 0
-
-            st.markdown("**④ Suggested strikes (based on what you entered):**")
-            _eff = _sug_credit/_spread_w*100 if _spread_w>0 else 0
-            _eff_label = "✅ Good" if _eff>=20 else "⚠️ Thin"
-            if spread_kind == "PUT":
-                st.success(
-                    f"Expected move: ±{_sug_em:.0f} points over {dte} DTE\n\n"
-                    f"**SELL (higher #):** {_sug_short:.0f}  ←  the PUT you collect premium from\n"
-                    f"**BUY protection (lower #):** {_sug_long:.0f}  ←  your safety net\n"
-                    f"Estimated credit: ~${_sug_credit:.2f}/point = ~${_sug_credit*100:.0f}/contract  {_eff_label}"
-                )
-            else:
-                st.success(
-                    f"Expected move: ±{_sug_em:.0f} points over {dte} DTE\n\n"
-                    f"**SELL (lower #):** {_sug_short:.0f}  ←  the CALL you collect premium from\n"
-                    f"**BUY protection (higher #):** {_sug_long:.0f}  ←  your safety net\n"
-                    f"Estimated credit: ~${_sug_credit:.2f}/point = ~${_sug_credit*100:.0f}/contract  {_eff_label}"
-                )
-
-        # ── Step 5: Enter your actual strikes ─────────────────────────────────
-        st.markdown("**⑤ Enter the strikes you are using:**")
-        if _lvl_v in ["Beginner","Intermediate"]:
-            st.caption("Use the suggested strikes above, or enter strikes from your broker's option chain.")
-
-        _short_default = float(_sug_short) if _sug_short > 0 else 0.0
-        _long_default  = float(_sug_long)  if _sug_long  > 0 else 0.0
-
-        if spread_kind == "PUT":
-            short_strike = st.number_input(
-                "PUT you SELL — the HIGHER number (e.g. 7395)",
-                value=_short_default, step=5.0,
-                help="In your broker: this is the 'Sell to Open' leg. Higher strike = further from danger in a PUT spread."
-            )
-            long_strike = st.number_input(
-                "PUT you BUY for protection — the LOWER number (e.g. 7390)",
-                value=_long_default, step=5.0,
-                help="In your broker: this is the 'Buy to Open' leg. This limits your maximum possible loss."
-            )
-        else:  # CALL
-            short_strike = st.number_input(
-                "CALL you SELL — the LOWER number",
-                value=_short_default, step=5.0,
-                help="In your broker: 'Sell to Open'. For a CALL spread, you sell the lower call strike."
-            )
-            long_strike = st.number_input(
-                "CALL you BUY for protection — the HIGHER number",
-                value=_long_default, step=5.0,
-                help="In your broker: 'Buy to Open'. This caps your loss if the market surges."
-            )
-
-        if short_strike > 0 and long_strike > 0:
-            _sw = abs(short_strike - long_strike)
-            _label = ("✅ Makes sense" 
-                      if (spread_kind=="PUT" and short_strike > long_strike) or
-                         (spread_kind=="CALL" and short_strike < long_strike)
-                      else "⚠️ Check: for a PUT spread, the SELL number should be HIGHER than the BUY number")
-            st.caption(f"Spread width: {_sw:.0f} points = ${_sw*100:.0f} max width per contract. {_label}")
-
-        # ── Step 6: Credit received ─────────────────────────────────────────
-        st.markdown("**⑥ Credit you collected (or are targeting):**")
-        _credit_default = float(_sug_credit) if _sug_credit > 0 else 0.0
-        spread_credit = st.number_input(
-            "Net credit per share (e.g. 0.50 = $50 per contract)" 
-            if _lvl_v in ["Beginner","Intermediate"] else "Net Credit ($/spread)",
-            value=_credit_default, step=0.05,
-            help=(
-                "This is the money you receive immediately when you sell the spread. "
-                "$0.50 credit × 100 = $50 in your account right now. "
-                "Check your broker's option chain for the current mid-price."
-                if _lvl_v in ["Beginner","Intermediate"] else
-                "Net credit in index points. $1.00 = $100/contract. Use mid-price (bid+ask)/2."
-            )
-        )
-
-        if spread_credit > 0 and short_strike > 0:
-            _w = abs(short_strike-long_strike)
-            if _w > 0:
-                _eff2 = spread_credit/_w*100
-                if _eff2 < 15:
-                    st.error(f"🔴 Credit ({_eff2:.1f}% of width) is very thin. You're risking ${_w*100:.0f} to make ${spread_credit*100:.0f}. Consider a wider spread or different strikes.")
-                elif _eff2 < 20:
-                    st.warning(f"⚠️ Credit ({_eff2:.1f}% of width) is below the 20% IWT minimum. Try to collect at least ${_w*0.20:.2f} per share.")
-                else:
-                    _ev2 = spread_credit*100 - (1-spread_credit/_w)*(_w-spread_credit)*100
-                    st.success(f"✅ Credit ({_eff2:.1f}% of width). Max profit ${spread_credit*100:.0f} | Max loss ${(_w-spread_credit)*100:.0f} per contract.")
-
-        # ── Remaining inputs ─────────────────────────────────────────────────
-        short_delta = st.number_input(
-            "Delta of the strike you sold (from your broker)" if _lvl_v in ["Beginner","Intermediate"] else "Approx Short Strike Delta",
-            value=0.15, min_value=0.01, max_value=0.60, step=0.01,
-            help=(
-                "Delta is shown on your broker's option chain. Look at the strike you sold. "
-                "A delta of 0.15 means the option has about 15% chance of expiring in the money (and about 85% chance of expiring worthless — profit for you)."
-                if _lvl_v in ["Beginner","Intermediate"] else
-                "Short strike delta. POP ≈ 1 − |delta|. POT ≈ 2 × |delta|."
-            )
-        )
-        event_risk_48h = st.checkbox(
-            "⚠️ Big news event in the next 2 days?" if _lvl_v in ["Beginner","Intermediate"] else "Major event within 48h?",
-            value=False,
-            help=(
-                "Examples: Fed interest rate decision, jobs report (NFP), inflation data (CPI). "
-                "These can cause large sudden moves that hurt your spread. When in doubt, wait until after."
-                if _lvl_v in ["Beginner","Intermediate"] else
-                "CPI/PPI/FOMC/NFP/Treasury auction. App penalizes new premium entry near catalysts."
-            )
-        )
-        hold_through_event = st.checkbox(
-            "Are you planning to hold through that event?" if _lvl_v in ["Beginner","Intermediate"] else "Would hold through event?",
-            value=False,
-            help=(
-                "Holding a spread through a news event is risky — the market can gap far in one direction. "
-                "IWT teaches: when unsure, close before the event or don't open it."
-                if _lvl_v in ["Beginner","Intermediate"] else
-                "Holding short premium through catalysts materially increases tail risk."
-            )
-        )
-
-
-    # === IV RANK — auto-computed from live VIX 52w history ===
-    _ivr_auto = float(st.session_state.macro.get("ivr_proxy", 35.0)) if st.session_state.macro else 35.0
-    _vix_hi   = float(st.session_state.macro.get("vix_52w_high", 30.0)) if st.session_state.macro else 30.0
-    _vix_lo   = float(st.session_state.macro.get("vix_52w_low", 12.0))  if st.session_state.macro else 12.0
-    _vix_now  = float(st.session_state.macro.get("vix", 18.0)) if st.session_state.macro else 18.0
-    if st.session_state.macro:
-        st.caption(f"✅ LIVE: VIX {_vix_now:.1f} | 52w {_vix_lo:.1f}–{_vix_hi:.1f} → IVR **{_ivr_auto:.0f}%** (auto)")
-    else:
-        st.caption("📡 Click **Macro Audit** above → IVR auto-computed from live VIX data.")
-    ivr_manual = st.number_input(
-        "IV Rank % (auto-filled | override ok)",
-        value=_ivr_auto, min_value=0.0, max_value=100.0, step=1.0,
-        help="Computed from live VIX vs its 52-week range. Override if your broker shows a more precise number."
-    )
-    st.caption("🔑 This number decides: should you BUY or SELL options today?" if st.session_state.lang_level in ["Beginner","Intermediate"] else "🔑 IVR drives the IV Arbiter. ≥50 = seller's market. <30 = buyer's market.")
-
-    st.divider()
-    st.header("4. IWT Scorecard")
-    st.caption("💡 Hover over (?) for definitions of each element")
-
-    if st.session_state.metrics:
-        m = st.session_state.metrics
-        if "Long" in strategy:
-            suggested_fresh = 2 if m.get('support_touches', 0) == 0 else 1 if m.get('support_touches', 0) <= 2 else 0
-        else:
-            suggested_fresh = 2 if m.get('resistance_touches', 0) == 0 else 1 if m.get('resistance_touches', 0) <= 2 else 0
-        st.caption(f"💡 Data suggests: Freshness = {suggested_fresh} ({m.get('support_touches' if 'Long' in strategy else 'resistance_touches', 0)} historical touches)")
-
-    _lps = st.session_state.lang_level
-    if _lps in ["Beginner","Intermediate"]:
-        st.caption("Rate each question 0-2. Total of 7+ means trade is ready. Below 5 = skip it.")
-
-    fresh = st.selectbox(
-        "① Is this price level FRESH? (never tested before = best)" if _lps in ["Beginner","Intermediate"] else "Freshness",
-        [2, 1, 0],
-        format_func=lambda x: {
-            2: "2 — Fresh ✅ Never been tested. Strong orders likely waiting here.",
-            1: "1 — Used once 🟡 Touched 1-2 times. Some orders already filled.",
-            0: "0 — Stale ❌ Hit 3+ times. Most orders gone. Weak level."
-        }[x] if _lps in ["Beginner","Intermediate"] else {2:'2-Fresh', 1:'1-Used', 0:'0-Stale'}[x],
-        help="Fresh levels have unfilled orders waiting (like a magnet). Stale levels have been picked clean. Fresh = stronger reaction expected."
-    )
-
-    speed = st.selectbox(
-        "② When price left this level, did it move FAST or slow?" if _lps in ["Beginner","Intermediate"] else "Speed Out",
-        [2, 1, 0],
-        format_func=lambda x: {
-            2: "2 — Fast ✅ Price exploded away (2+ bars, big candles). Strong interest.",
-            1: "1 — Average 🟡 Moved away but took a while.",
-            0: "0 — Slow ❌ Price crept away or barely moved. Weak level."
-        }[x] if _lps in ["Beginner","Intermediate"] else {2:'2-Fast', 1:'1-Avg', 0:'0-Slow'}[x],
-        help="Fast departure = strong institutional orders filled and price moved. Slow = weak hands, little conviction."
-    )
-
-    time_z = st.selectbox(
-        "③ How long did price LINGER at this level?" if _lps in ["Beginner","Intermediate"] else "Time in Zone",
-        [2, 1, 0],
-        format_func=lambda x: {
-            2: "2 — Short ✅ 1-3 candles then gone. Sharp rejection. Strong.",
-            1: "1 — Medium 🟡 4-6 candles. Acceptable.",
-            0: "0 — Long ❌ 7+ candles. Market was undecided. Weak level."
-        }[x] if _lps in ["Beginner","Intermediate"] else {2:'2-Short', 1:'1-Med', 0:'0-Long'}[x],
-        help="Short time = orders filled fast and price moved. Long time = too many sellers/buyers, level is contested."
-    )
-
-    st.divider()
-    if st.button("🔄 Reset Session", help="Clears all positions, P&L, and goal status to start fresh."):
-        st.session_state.goal_met = False
-        st.session_state.daily_pnl = 0.0
-        st.session_state.total_risk_deployed = 0.0
-        st.session_state.open_positions = []
-        st.session_state.consecutive_losses = 0
-        st.success("✅ Session reset!")
-        st.rerun()
-
-# ============================================================================
-# BEGINNER'S GUIDE
-# ============================================================================
-
-with st.expander("🎓 Beginner's Guide (Read This First)", expanded=False):
-    st.markdown("""
-### 🎓 How to Use Quantum Maestro — Start Here
-
-#### 5 Steps, Every Single Day
-
-**① Set your account details** (Sidebar → Your Account)
-- Enter your actual trading capital
-- Risk per trade auto-sets to 1% (never risk more)
-- Your daily goal = 1% of capital — stop trading once you hit it
-
-**② Get live market data** (click the big "Get Live Market Data" button)
-- This loads VIX (fear gauge), interest rates, and macro signals
-- If VIX > 25: reduce your trade size or skip the day entirely
-- If VIX > 35: stand aside — too dangerous for most strategies
-
-**③ Choose your goal** (Sidebar → What Do You Want to Do Today?)
-- Earn income this week? → Pick "Sell a vertical spread"
-- Betting on a big move? → Pick "Buy a DITM option"
-- Not sure? → Pick "Not sure — show me options" and read the Instrument Advisor
-
-**④ Scan the market** (click "Scan [ticker]" button)
-- 15+ indicators load automatically
-- The IWT Scorecard tells you how strong the setup is
-- Score 7-8: take the trade. Score 5-6: half size. Score 0-4: skip.
-
-**⑤ Enter your trade in your broker**
-- Vertical spread? Use the Platform Order Translator section
-- It generates the exact order string for thinkorSwim, Fidelity, IBKR, tastytrade
-- Log the trade here so your journal tracks it
-
----
-
-#### The Three Golden Rules
-
-1. **1% per trade, 6% total.** Never risk more than 1% of your account on a single trade or 6% combined across all open trades.
-2. **Stop at your daily goal.** When you're up 1%, close the screen. Greed after a win destroys consistency.
-3. **Defined risk only.** Use vertical spreads or options where your max loss is known before you enter. Never sell naked options.
-
----
-
-#### Cheat Sheet: SPX Vertical PUT Spread (most common IWT income trade)
-
-| What you see in broker | What it means |
-|------------------------|---------------|
-| Sell 7395 PUT (higher #) | You COLLECT the premium (income) |
-| Buy 7390 PUT (lower #) | Your protection (limits max loss) |
-| Credit $0.50/share | You receive $50 immediately |
-| Max profit: $50 | If SPX stays above 7395 at expiry |
-| Max loss: $450 | If SPX falls below 7390 |
-| Breakeven: 7394.50 | SPX must stay above this |
-1) Stop trading when daily goal met
-2) Don't stack too many positions
-3) Trade WITH the trend
-4) High VIX = smaller size or sit out
-5) Journal every trade (wins + losses)
-""")
-
-
-
-# --- 6. MAIN UI ---
-st.subheader("📊 Market Intelligence Dashboard")
-_ld = st.session_state.lang_level
-if not st.session_state.macro and _ld in ["Beginner","Intermediate"]:
-    st.info(
-        "**👋 Start here:** Click **Get Live Market Data** below to load today's "
-        "VIX, interest rates, and market conditions. The app will then tell you "
-        "exactly what to trade and how to trade it."
-    )
-
-
-# =============================================================================
-# GLOBAL PRE-MARKET SCAN — Asia → Europe → US Morning Brief
-# =============================================================================
-
-with st.expander("🌍 Morning Brief — Global Market Scan (Asia → Europe → US)", expanded=False):
-    _lgm = st.session_state.lang_level
-    if _lgm in ["Beginner","Intermediate"]:
-        st.caption(
-            "the IWT morning process: check Asia overnight, then Europe, then US futures. "
-            "This tells you whether the market is risk-on (buy) or risk-off (sell/avoid) before you trade anything."
-        )
-
-    if st.button("🔄 Run Global Scan Now", key="global_scan_btn"):
-        with st.spinner("Fetching live data across 16 markets..."):
-            _gs = run_global_scan()
-        st.session_state["_global_scan"] = _gs
-
-    _gs = st.session_state.get("_global_scan")
-    if _gs:
-        # Colour-code each change
-        def _fmt(entry, label):
-            v = entry.get("value"); chg = entry.get("chg_pct")
-            if v is None: return f"{label}: N/A"
-            chg_str = f" ({chg:+.2f}%)" if chg is not None else ""
-            icon = "🟢" if (chg or 0) > 0 else ("🔴" if (chg or 0) < 0 else "⬜")
-            return f"{icon} **{label}**: {v:,.2f}{chg_str}"
-
-        risk_on_count = 0; risk_off_count = 0; total_count = 0
-
-        for region, data in _gs.items():
-            st.markdown(f"**{region}**")
-            cols = st.columns(min(len(data), 4))
-            for j, (name, entry) in enumerate(data.items()):
-                with cols[j % min(len(data), 4)]:
-                    chg = entry.get("chg_pct") or 0
-                    v   = entry.get("value")
-                    if v is not None:
-                        total_count += 1
-                        if chg > 0: risk_on_count += 1
-                        elif chg < 0: risk_off_count += 1
-                    st.markdown(_fmt(entry, name))
-
-        # Overall regime signal
-        st.markdown("---")
-        _risk_score = risk_on_count - risk_off_count
-        if total_count > 0:
-            if _risk_score >= 4:
-                st.success(
-                    f"🟢 **Risk-ON globally** ({risk_on_count}/{total_count} markets up) — "
-                    f"Favourable for SPX income trades and directional calls."
-                )
-            elif _risk_score <= -4:
-                st.error(
-                    f"🔴 **Risk-OFF globally** ({risk_off_count}/{total_count} markets down) — "
-                    f"Avoid new income trades. Reduce size. Consider protective puts."
-                )
-            else:
-                st.warning(
-                    f"🟡 **Mixed signals** ({risk_on_count} up / {risk_off_count} down) — "
-                    f"Proceed carefully. Prefer smaller size and tighter stops."
-                )
-
-        # IWT checklist
-        if _lgm in ["Beginner","Intermediate"]:
-            st.markdown("**Before you trade, answer these:**")
-            _checks = {
-                "Is SPY above its 20-day average (trending up)?": None,
-                "Is VIX below 25 (calm enough to sell premium)?":
-                    "below_25" if (_gs.get("US Market",{}).get("VIX",{}).get("value") or 99) < 25 else None,
-                "Did Asia close positive overnight?":
-                    "asia_positive" if (_gs.get("Asia",{}).get("🇯🇵 Nikkei",{}).get("chg_pct") or 0) > 0 else None,
-                "Is Oil stable (no big moves)?":
-                    "oil_stable" if abs((_gs.get("US Market",{}).get("Oil (WTI)",{}).get("chg_pct") or 5)) < 2 else None,
-            }
-            for q, answered in _checks.items():
-                icon = "✅" if answered else "❓"
-                st.caption(f"{icon} {q}")
-    else:
-        st.caption("Click 'Run Global Scan Now' to load live data from 16 global markets.")
-
-# === INSTRUMENT ADVISOR ===
-with st.expander("🤖 Instrument Advisor — What Should I Trade Today?", expanded=True):
-    _adv = instrument_advisor_v4(
-        capital,
-        st.session_state.advisor_goal,
-        st.session_state.lang_level,
-        st.session_state.macro
-    )
-    if _adv["warnings"]:
-        for _w in _adv["warnings"]:
-            st.info(_w)
-    if _adv["recommendations"]:
-        for _r in _adv["recommendations"]:
-            st.markdown(f"### {'🥇' if _r['rank']==1 else '🥈'} {_r['instrument']}")
-            lvl = st.session_state.lang_level
-            why_text = _r["why_plain"] if lvl in ["Beginner","Intermediate"] else _r["why_pro"]
-            st.success(why_text)
-            if _r.get("caution"):
-                st.warning(f"⚠️ {_r['caution']}")
-    if _adv.get("blocked"):
-        with st.expander("🚫 Not recommended for your profile", expanded=False):
-            for _b in _adv["blocked"]:
-                st.caption(f"• {_b}")
-    st.caption("📡 Based on live market data. Refreshes when you click Get Live Market Data." if st.session_state.lang_level in ["Beginner","Intermediate"] else "📡 Advisor uses live VIX/IVR. Click Macro Audit to refresh.")
-
-
-
-# =============================================================================
-# V14 UI — MARKET WEATHER ENGINE
-# Top-of-page regime summary. Becomes the cognitive anchor for all decisions.
-# =============================================================================
-if st.session_state.macro:
-    _mw = compute_market_weather(st.session_state.macro)
-    _mw_colors = {"RISK-ON":"#1b5e20","RISK-NEUTRAL":"#f57f17",
-                  "RISK-CAUTIOUS":"#e65100","RISK-OFF":"#b71c1c","UNKNOWN":"#37474f"}
-    _mw_bg = _mw_colors.get(_mw["regime"], "#37474f")
-    st.markdown(
-        f"""<div style="background:{_mw_bg};color:#fff;padding:14px 18px;
-        border-radius:8px;margin-bottom:8px;border-left:6px solid rgba(255,255,255,0.4)">
-        <span style="font-size:1.4rem;font-weight:700;">{_mw["badge"]} MARKET WEATHER: {_mw["regime"]}</span><br/>
-        <span style="opacity:0.9;font-size:0.95rem">{_mw["headline"]}</span>
-        </div>""",
-        unsafe_allow_html=True
-    )
-    with st.expander(f"📡 Regime Detail — Score {_mw.get('score',0):+d} | VIX {_mw.get('vix',0):.1f} | IVR {_mw.get('ivr',0):.0f}%", expanded=False):
-        _c1, _c2 = st.columns(2)
-        with _c1:
-            st.markdown("**✅ Preferred structures:**")
-            for p in _mw["prefer"]:
-                st.markdown(f"• {p}")
-        with _c2:
-            st.markdown("**🚫 Avoid:**")
-            for a in _mw["avoid"]:
-                st.markdown(f"• {a}")
-
-
-    # V14b: Options Playbook Router — T&T Options 101 / Coaching Playbook session
-    if st.session_state.macro:
-        _opb_macro = st.session_state.macro
-        _opb_vix   = _opb_macro.get("vix", 20)
-        _opb_ivr   = _opb_macro.get("ivr_proxy", 50)
-        _opb_trend = _opb_macro.get("sp_trend", "NEUTRAL")
-        _pre_evt   = st.session_state.get("event_risk_48h", False)
-        _post_evt  = (_opb_macro.get("sp", 0) < -2 and _opb_vix > 22)
-
-        _play = options_playbook_router(_opb_vix, _opb_ivr, _opb_trend, _pre_evt, _post_evt)
-        _play_color = {
-            "PRE-EVENT: STAND ASIDE": "#455a64",
-            "POST-SELLOFF: SELL PREMIUM AGGRESSIVELY": "#1b5e20",
-            "BULL + LOW VIX: BUY DEBIT SPREAD OR LONG CALL": "#0d47a1",
-            "BULL + ELEVATED VIX: SELL PUT CREDIT SPREAD": "#1b5e20",
-            "BEAR + HIGH VIX: SELL CALL CREDIT SPREAD OR BUY PUTS": "#b71c1c",
-            "RANGE-BOUND + ELEVATED VIX: IRON CONDOR": "#4a148c",
-            "HIGH VIX CRISIS: DEFINED RISK ONLY": "#b71c1c",
-            "NEUTRAL CONDITIONS: WAIT OR SMALL SIZE": "#f57f17",
-        }.get(_play["play"], "#37474f")
-        st.markdown(
-            "<div style='background:" + _play_color + ";color:#fff;padding:10px 14px;"
-            "border-radius:6px;margin:6px 0'>"
-            "<strong>" + _play["badge"] + " OPTIONS PLAYBOOK: " + _play["play"] + "</strong><br/>"
-            "<em style='opacity:0.9;font-size:0.88rem'>" + _play["primary"] + "</em>"
-            "</div>",
-            unsafe_allow_html=True
-        )
-        with st.expander("📖 Full Playbook Entry", expanded=False):
-            st.caption("**Primary:** " + _play["primary"])
-            if _play.get("secondary"):
-                st.caption("**Secondary:** " + _play["secondary"])
-            st.caption("**Why:** " + _play["reason"])
-            if _play.get("avoid"):
-                st.caption("**Avoid:** " + ", ".join(_play["avoid"]))
-            st.info(_play["teri_rule"])
-
-
-
-col_macro, col_scan = st.columns([1, 1])
-
-
-# === IV ENVIRONMENT ARBITER — master strategy selector ===
-with st.expander("🧠 IV Arbiter — BUY or SELL Options Today?", expanded=True):
-    st.caption("High IV: sell premium (spreads). Low IV: buy options (DITM 60+ DTE). One number tells you which strategy to use today." if st.session_state.lang_level in ["Beginner","Intermediate"] else "High IV → Sell premium. Low IV → Buy 60+ DTE options. IVR drives strategy selection.")
-    _vix_now = st.session_state.macro['vix'] if st.session_state.macro else 18.0
-    _ivenv = classify_iv_environment(ivr_manual, _vix_now)
-    col_iv1, col_iv2 = st.columns([1, 2])
-    with col_iv1:
-        st.markdown(f"### {_ivenv['badge']} {_ivenv['regime']}")
-        st.metric("IVR", f"{ivr_manual:.0f}%", delta=f"Grade: {_ivenv['grade']}")
-        st.markdown(f"**→ {_ivenv['recommendation']}**")
-    with col_iv2:
-        st.info(_ivenv['rationale'])
-        st.markdown("**Best strategies now:**")
-        for _s in _ivenv['strategies']:
-            st.markdown(f"• {_s}")
-        if _ivenv.get('avoid'):
-            st.warning(f"🚫 {_ivenv['avoid']}")
-    st.caption(f"📡 VIX context: {_ivenv['vix_overlay']}")
-    st.caption("⚠️ SIMULATION ONLY — no real trades are placed until you connect a broker." if st.session_state.lang_level in ["Beginner","Intermediate"] else "⚠️ SIMULATION: IVR auto-computed from live VIX. Override with broker IV rank for precision.")
-
-
-
-with col_macro:
-    if st.button("🌍 Macro Audit", use_container_width=True,
-                help="Scan global markets: VIX, yields, dollar strength, international indices."):
-        with st.spinner("Scanning global markets..."):
-            st.session_state.macro = engine.get_macro()
-            if st.session_state.macro:
-                st.success("✅ Macro data loaded")
-            else:
-                st.error("❌ Macro fetch failed")
-
-with col_scan:
-    if st.button(f"🔎 Scan {ticker}", type="primary", use_container_width=True,
-                help=f"Load 1 year of data for {ticker} with 15+ technical indicators."):
-        with st.spinner(f"Analyzing {ticker}..."):
-            df, metrics, fname = engine.fetch_data(ticker)
-
-            if df is None:
-                st.error(f"🚫 **{ticker}:** {metrics}")
-                st.session_state.data = None
-            else:
-                price = df['Close'].iloc[-1]
-                gap_pct = ((df['Open'].iloc[-1] - df['Close'].iloc[-2]) / df['Close'].iloc[-2]) * 100 if len(df) >= 2 else 0
-
-                st.session_state.data = df
-                st.session_state.metrics = {
-                    "price": price,
-                    "atr": df['ATRr_14'].iloc[-1],
-                    "supp": metrics['support'],
-                    "res": metrics['resistance'],
-                    "rvol": df['RVOL'].iloc[-1],
-                    "gap": gap_pct,
-                    "name": fname,
-                    **metrics
-                }
-
-                st.session_state.signals = engine.generate_signals(df, metrics, ticker)
-                st.success(f"✅ {fname} loaded successfully")
-
-
-
-# =============================================================================
-# V14 UI — TODAY'S SPX DAILY PLAN
-# Live BSM strikes, IWT $0.50 minimum, 2-week DTE standard.
-# All numbers from yfinance + scipy — zero synthetic data.
-# =============================================================================
-with st.expander("🎯 Today's SPX Setup — Live Strikes & Credits (IWT)", expanded=False):
-    _lp3 = st.session_state.lang_level
-    if _lp3 in ["Beginner","Intermediate"]:
-        st.caption(
-            "This generates exact SPX put credit spread strikes based on live market data. "
-            "All numbers use real SPX/VIX prices + Black-Scholes math. "
-            "System rule: collect at least $0.50 per share ($50/contract) minimum."
-        )
-    else:
-        st.caption("Live SPX + VIX via yfinance → exact BSM credit estimates (scipy.stats.norm). "
-                   "IWT $0.50 minimum filter applied. No synthetic data.")
-
-    _dte_sel = st.radio("DTE target:", [7, 14, 21, 0], horizontal=True,
-                        format_func=lambda x: f"0DTE (today)" if x==0 else f"{x} days (IWT standard)" if x==14 else f"{x} days",
-                        help="the IWT 2-weeks-out standard = 14 DTE. 0DTE = intraday only, advanced.")
-    _min_cr = st.number_input("Minimum credit (IWT rule: ≥$0.50)", value=0.50, min_value=0.10, step=0.05)
-
-    if st.button("🔄 Generate Live SPX Plan", type="primary", key="spx_plan_btn"):
-        with st.spinner("Fetching live SPX/VIX → computing BSM credits..."):
-            _plan = generate_spx_daily_plan(dte_target=_dte_sel if _dte_sel > 0 else 14, min_credit=_min_cr)
-        st.session_state["_spx_plan"] = _plan
-
-    _plan = st.session_state.get("_spx_plan")
-    if _plan:
-        if _plan.get("error"):
-            st.error(f"❌ {_plan['error']}")
-        else:
-            _col1, _col2, _col3, _col4 = st.columns(4)
-            _col1.metric("SPX Now", f"{_plan['S']:,.0f}")
-            _col2.metric("VIX", f"{_plan['vix']:.1f}%")
-            _col3.metric(f"EM ({_plan['dte']} DTE)", f"±{_plan['em']:.0f} pts",
-                         delta=f"±{_plan['em_pct']:.1f}% of SPX")
-            _col4.metric("10Y Yield", f"{_plan['tnx']:.2f}%")
-
-            st.caption(f"📡 Data: {_plan.get('source','yfinance+BSM')}")
-
-            # Best spread
-            _b = _plan.get("best", {})
-            if _b:
-                _ok_cr = _b.get("ok_credit", False)
-                _ok_em = _b.get("outside_em", False)
-                _status_icon = "✅" if (_ok_cr and _ok_em) else "⚠️"
-                st.markdown(f"#### {_status_icon} Recommended Setup ({_plan['dte']} DTE)")
-                _bc1, _bc2, _bc3 = st.columns(3)
-                with _bc1:
-                    st.markdown("**Strikes**")
-                    st.code("SELL {k1:.0f} PUT\nBUY  {k2:.0f} PUT\nWidth: {w} pts".format(k1=_b["K_s"], k2=_b["K_l"], w=_b["width"]))
-                with _bc2:
-                    st.markdown("**Economics**")
-                    st.code(
-                        "Credit:    " + str(round(_b["credit"],2)) + "/share\n"
-                        "           = $" + str(round(_b["max_profit"])) + "/contract\n"
-                        "Max loss:  $" + str(round(_b["max_loss"])) + "/contract\n"
-                        "Breakeven: " + str(round(_b["breakeven"],2)) + "\n"
-                        "Efficiency:" + str(round(_b["efficiency"]*100,1)) + "% of width"
-                    )
-                    st.markdown("**Quality**")
-                    st.markdown("**Quality**")
-                    st.code(
-                        "POP:       " + str(round(_b["pop"]*100)) + "%\n"
-                        "Distance:  " + str(round(_b["distance_otm"])) + " pts OTM\n"
-                        "EM ratio:  " + str(round(_b["em_ratio"],2)) + "x EM\n"
-                        "Min $0.50: " + ("YES" if _b["ok_credit"] else "NO") + "\n"
-                        "Outside EM:" + ("YES" if _b["outside_em"] else "NO")
-                    )
-                if not _b.get("ok_credit"):
-                    st.error("🔴 Short strike is inside the expected move. "
-                             "This is below IWT standard — wait for better conditions or reduce size significantly.")
-
-            # 0DTE box
-            _z = _plan.get("zero_dte", {})
-            if _z:
-                with st.expander("⚡ 0DTE Setup (advanced — intraday management required)", expanded=False):
-                    st.warning(
-                        "**0DTE requires:** Range-bound tape only. Exit by 2pm ET. "
-                        "Hard stop at 1.5× credit. Never hold 0DTE overnight."
-                    )
-                    _zc1, _zc2 = st.columns(2)
-                    with _zc1:
-                        st.code("SELL {k1:.0f} PUT\nBUY  {k2:.0f} PUT (5-pt width)".format(k1=_z["K_s"], k2=_z["K_l"]))
-                    with _zc2:
-                        _ok_str = "✅" if _z["ok"] else "❌"
-                        st.code(
-                            "Est. credit: ${c:.2f}/share = ${ct:.0f}/contract\n"
-                            "0DTE EM:  \xb1{em:.0f} pts\n"
-                            "Meets $0.50 min: {ok}".format(
-                                c=_z["credit"], ct=_z["credit"]*100,
-                                em=_z["em_0dte"], ok=_ok_str
-                            )
-                        )
-            # IWT guidance box
-            _g = _plan.get("guidance", {})
-            if _g:
-                _rules_list = [
-                    _g.get("min_credit_rule",""),
-                    _g.get("dte_rule",""),
-                    "Exit: " + _g.get("exit",""),
-                    _g.get("event_rule","")
-                ]
-                st.info("IWT Rules:" + "\n" + "\n".join("• " + r for r in _rules_list if r))
-
-
-
-# MACRO DISPLAY
-if st.session_state.macro:
-    m = st.session_state.macro
-
-    if m.get('data_quality') == 'DEGRADED':
-        st.warning("⚠️ Data quality degraded. Using cached/estimated values.")
-
-    vix_regime = engine.classify_vix_regime(m['vix'])
-    regime_guide = engine.get_regime_guidance(vix_regime)
-
-    market_phase, phase_desc = engine.get_market_hours_status()
-
-    if vix_regime in ["EXTREME", "HIGH"]:
-        st.error(f"🚨 **VIX REGIME: {regime_guide['desc']} ({m['vix']:.1f})**")
-        st.caption(f"{regime_guide['action']}")
-    elif vix_regime == "ELEVATED":
-        st.warning(f"⚠️ **VIX REGIME: {regime_guide['desc']} ({m['vix']:.1f})**")
-        st.caption(f"{regime_guide['action']}")
-    else:
-        st.success(f"✅ **VIX REGIME: {regime_guide['desc']} ({m['vix']:.1f})**")
-        st.caption(f"{regime_guide['action']}")
-
-    st.caption(f"**Market Hours:** {phase_desc}")
-
-    if m.get('risk_off'):
-        st.error("🚨 **RISK-OFF REGIME DETECTED:** Gold + VIX both rising = Flight to safety. Avoid aggressive longs.")
-
-    if m.get('dollar_headwind') and ticker in COMMODITY_TICKERS:
-        st.warning("💵 **DOLLAR HEADWIND:** DXY rising hurts commodities (gold, silver, oil).")
-
-    # 🇰🇪 KENYA-SPECIFIC MACRO FILTER
-    if ticker.endswith('.NR'):
-        st.info(
-            "🇰🇪 **NSE Ticker Note** — Nairobi Securities Exchange data via yfinance "
-            "has irregular coverage and may be delayed by days or unavailable. "
-            "For reliable NSE data use the [NSE website](https://www.nse.co.ke) or "
-            "[CBK financial markets portal](https://www.centralbank.go.ke). "
-            "Technical indicators below are only meaningful when data has ≥50 trading days.",
-            icon=None
-        )
-    if ticker.endswith('.NR') and m.get('dxy_chg', 0) > 0.5:
-        st.warning("💵 🇰🇪 **KENYA ALERT:** Strong Dollar (DXY rising) typically triggers foreign outflows from NSE. Consider defensive sizing.")
-        st.caption("💡 Frontier markets are highly sensitive to USD strength. Watch USD/KES exchange rate closely.")
-
-    flow_strength = engine.check_passive_intensity(
-        datetime.now().day,
-        st.session_state.metrics.get('rvol', 0) if st.session_state.metrics else 0
-    )
-
-    if flow_strength == "STRONG":
-        st.success("🌊 **STRONG PASSIVE INFLOWS** (Calendar window + High volume)")
-        st.caption("💡 $48T in index funds rebalancing. Bullish tailwind.")
-    elif flow_strength == "MODERATE":
-        st.info("🌊 **MODERATE PASSIVE INFLOWS** (Calendar window + Normal volume)")
-    elif flow_strength == "WEAK":
-        st.warning("🌊 **WEAK PASSIVE INFLOWS** (Calendar window but Low volume)")
-    else:
-        st.info("⏸️ **PASSIVE FLOWS NEUTRAL**")
-
-    if engine.detect_correlation_break(m):
-        st.error("🌍 **GLOBAL CORRELATION BREAK:** US/Europe/Asia markets diverging. Elevated volatility risk.")
-
-    # === LIVE COMMODITY PRICES (from macro scan) ===
-    if st.session_state.macro and st.session_state.macro.get("oil_px"):
-        _m = st.session_state.macro
-        _mc1, _mc2, _mc3 = st.columns(3)
-        _mc1.metric("Crude Oil (WTI)", f"${_m.get('oil_px',0):.2f}/bbl",
-                    delta=f"{_m.get('oil_chg',0):+.2f}%",
-                    help="Live price from Yahoo Finance futures (CL=F). ±1% matters for energy traders.")
-        _mc2.metric("Gold (Spot proxy)", f"${_m.get('gold',0):.0f}/oz",
-                    delta=f"{_m.get('gold_chg',0):+.2f}%",
-                    help="GC=F futures. Gold rising with VIX = risk-off signal.")
-        _mc3.metric("Natural Gas", f"${_m.get('ng_px',0):.3f}/MMBtu" if _m.get('ng_px') else "N/A",
-                    help="NG=F front-month. Highly seasonal commodity.")
-    with st.expander("🌍 Global Macro Dashboard", expanded=False):
-        col1, col2, col3, col4, col5, col6 = st.columns(6)
-        col1.metric("🇺🇸 S&P 500", f"{m['sp']:.2f}%",
-                   help="S&P 500 futures. Heartbeat of US markets. Green=risk-on, Red=risk-off.")
-        col2.metric("🔥 VIX", f"{m['vix']:.1f}",
-                   help="Fear Index. <15=calm, 15-20=normal, 20-30=elevated, >30=crisis mode.")
-        col3.metric("🇩🇪 DAX", f"{m['dax']:.2f}%",
-                   help="German stock index. Represents European equities. Should correlate with US.")
-        col4.metric("🇯🇵 Nikkei", f"{m['nikkei']:.2f}%",
-                   help="Japanese stock index. Represents Asian markets. Should correlate with US/EU.")
-        col5.metric("💵 DXY", f"{m['dxy']:.1f}", delta=f"{m['dxy_chg']:.2f}%", delta_color="inverse",
-                   help="US Dollar Index. UP=Strong dollar=Bad for commodities. DOWN=Weak dollar=Good for gold/oil.")
-        col6.metric("📈 10Y Yield", f"{m['tnx']:.2f}%", delta=f"{m['tnx_chg']:.2f}%", delta_color="inverse",
-                   help="10-Year Treasury yield. UP=Rising rates=Bad for growth stocks. DOWN=Falling rates=Good for growth.")
-
-    # Weekly trade-day ranking for small-account / Mon-Thu planning
-    with st.expander("🗓️ Mon–Thu Trade-Day Planner", expanded=False):
-        _pdt_plan = pdt_guidance(capital, account_type, day_trades_used, planned_same_day_exit, pdt_framework)
-        ranked_days = rank_trade_days(
-            vix_regime,
-            m.get('passive', False),
-            st.session_state.week_event_days,
-            preferred_trade_days,
-            _pdt_plan.get('remaining') if isinstance(_pdt_plan.get('remaining'), int) else 99,
-            pdt_framework,
-        )
-        st.caption("Ranks days by volatility regime, passive flows, event risk, and remaining day-trade budget. This is a permission filter, not a prediction.")
-        for row in ranked_days:
-            st.write(f"**{row['day']}** — {row['label']} | Score {row['score']} | {row['reasons']}")
-        best = ranked_days[0] if ranked_days else None
-        if best:
-            st.info(f"Best current candidate day: **{best['day']}**. Avoid wasting limited day trades on YELLOW/RED conditions.")
-
-# ASSET ANALYSIS
-if st.session_state.data is not None:
-    m = st.session_state.metrics
-    df = st.session_state.data
-
-    st.divider()
-    st.header(f"📈 {m['name']} ({ticker})")
-    st.caption("💡 Key metrics showing current state of the asset")
-
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-
-    col1.metric("Price", f"${m['price']:.2f}", help="Current closing price")
-
-    if abs(m['gap']) > 2.0:
-        if m['rvol'] > 1.5:
-            col2.metric("Gap %", f"{m['gap']:.2f}%", delta="🚀 PRO",
-                       help="Large price gap with strong volume = major institutions drove this move. Gap likely to hold and trend continues.")
-        else:
-            col2.metric("Gap %", f"{m['gap']:.2f}%", delta="⚠️ NOVICE",
-                       help="Large price gap but weak volume = mostly retail traders, not institutions. Gap often closes within days.")
-    else:
-        col2.metric("Gap %", f"{m['gap']:.2f}%", help="Gap = (Today's Open - Yesterday's Close) / Yesterday's Close")
-
-    vol_status = "🔥 HOT" if m['rvol'] > 1.5 else "✅ NORMAL" if m['rvol'] > 0.8 else "💤 THIN"
-    col3.metric("Volume (RVOL)", f"{m['rvol']:.1f}x", delta=vol_status,
-               help="Relative Volume. >1.5x = HIGH interest. <0.8x = LOW interest (thin/dangerous).")
-
-    # 🇰🇪 DATA QUALITY WARNING FOR KENYA
-    if ticker.endswith('.NR') and m['rvol'] < 0.5:
-        st.caption("⚠️ 🇰🇪 **Kenya Data Note:** Yahoo Finance volume for NSE can be delayed. If showing near-zero, ignore RVOL signal.")
-
-    trend_emoji = {"STRONG_BULL": "🚀", "BULL": "📈", "NEUTRAL": "➡️", "BEAR": "📉", "STRONG_BEAR": "🔻"}
-    col4.metric("Trend", m['trend_strength'], delta=trend_emoji.get(m['trend_strength'], "➡️"),
-               help="Multi-timeframe trend strength (20/50/200 SMAs). Trade WITH the trend.")
-
-    rsi_status = "⚠️OB" if m['rsi'] > 70 else "⚠️OS" if m['rsi'] < 30 else "✅"
-    col5.metric("RSI", f"{m['rsi']:.0f}", delta=rsi_status,
-               help="Relative Strength Index. >70 = Overbought. <30 = Oversold. 50 = Neutral.")
-
-    col6.metric("ADX (Trend Strength)", f"{m['adx']:.0f}", delta="STRONG" if m['adx'] > 25 else "WEAK",
-               help="Average Directional Index. >25 = Strong trend. <20 = Weak/choppy.")
-
-
-
-    # V14: Gap Type Classification (IWT Week 6 enhanced)
-    if abs(m.get("gap", 0)) > 0.05:
-        _bb_ratio = (m.get("bb_width", 1) /
-                     (st.session_state.data['BBU_20_2.0'] - st.session_state.data['BBL_20_2.0']).mean()
-                     if st.session_state.data is not None and 'BBU_20_2.0' in st.session_state.data.columns
-                     else 1.0)
-        _gclass = classify_gap_type(
-            m["gap"], m.get("rvol", 1.0), m.get("trend_strength", "NEUTRAL"), float(_bb_ratio))
-        _gcols = {"Common":"#1565c0","Breakaway":"#6a1b9a","Runaway":"#1b5e20","Exhaustion":"#e65100","Micro":"#455a64"}
-        _gc = _gcols.get(_gclass["type"], "#37474f")
-        st.markdown(
-            f"""<div style="background:{_gc};color:#fff;padding:10px 14px;
-            border-radius:6px;margin:6px 0">
-            <strong>📊 Gap: {_gclass['type']} ({_gclass['direction']}, {_gclass['abs_pct']:.2f}%)</strong><br/>
-            Fill probability: {_gclass['fill_pct']}% within ~{_gclass['sessions']} sessions  |  
-            Volume signal: {_gclass.get('pro_novice','')}<br/>
-            <em style="opacity:0.9;font-size:0.88rem">{_gclass['action']}</em>
-            </div>""",
-            unsafe_allow_html=True
-        )
-
-    st.markdown(
-        f"""<div class='key-levels-bar'>
-        <strong>Key Levels:</strong>&nbsp;
-        <span class='kl-support'>&#9660;&nbsp;${m['supp']:.2f}</span>
-        <span class='kl-touches'>&nbsp;support &bull; {m.get('support_touches',0)} touches</span>
-        &nbsp;&nbsp;&nbsp;
-        <span class='kl-resistance'>&#9650;&nbsp;${m['res']:.2f}</span>
-        <span class='kl-touches'>&nbsp;resistance &bull; {m.get('resistance_touches',0)} touches</span>
-        </div>""",
-        unsafe_allow_html=True
-    )
-
-
-
-    # V14 VIP: Gap Trap Detection (VIP 2023 "The Gap Trap")
-    if abs(m.get("gap", 0)) > 0.2 and st.session_state.data is not None:
-        _bb_sq = (m.get("bb_width", 1) <
-                  (st.session_state.data['BBU_20_2.0'] - st.session_state.data['BBL_20_2.0']).mean() * 0.70
-                  if 'BBU_20_2.0' in st.session_state.data.columns else False)
-        _trap = detect_gap_trap(
-            gap_pct=m["gap"], rvol=m.get("rvol", 1.0),
-            trend=m.get("trend_strength", "NEUTRAL"),
-            bb_squeeze=bool(_bb_sq)
-        )
-        _trap_colors = {"LOW RISK — Clean Gap": "#1b5e20",
-                        "MODERATE RISK": "#f57f17",
-                        "HIGH RISK — Gap Trap": "#b71c1c", "None": "#37474f"}
-        _tc = _trap_colors.get(_trap["trap_type"], "#37474f")
-        st.markdown(
-            f"""<div style="background:{_tc};color:#fff;padding:8px 14px;
-            border-radius:5px;margin:4px 0;font-size:0.92rem">
-            ⚠️ <strong>Gap Trap Risk: {_trap['trap_type']}</strong>
-            ({_trap['trap_prob']}%)<br/>
-            <em style="opacity:0.9">{_trap['action'][:120]}</em>
-            </div>""",
-            unsafe_allow_html=True
-        )
-
-
-
-    # V14b: Gap Trade Playbook — 3 strategies (Coaching Call + VIP sessions)
-    if abs(m.get("gap", 0)) > 0.1 and st.session_state.get("_gclass"):
-        _gclass_v = st.session_state.get("_gclass", {})
-        _gtp = gap_trade_playbook(
-            gap_pct=m["gap"], gap_type=_gclass_v.get("type","Common"),
-            rvol=m.get("rvol", 1.0), trend=m.get("trend_strength","NEUTRAL"),
-            spx_price=m.get("price", 0)
-        )
-        if _gtp["strategies"]:
-            with st.expander("📋 Gap Trade Playbook — " + str(len(_gtp["strategies"])) + " applicable strategy(ies)", expanded=False):
-                for _strat in _gtp["strategies"]:
-                    _sbg = {"FADE":"#1565c0","RIDE":"#1b5e20","STOP LEVEL":"#37474f",
-                            "NO CLEAR PLAY":"#455a64"}.get(_strat["name"],"#37474f")
-                    st.markdown(
-                        "<div style='background:" + _sbg + ";color:#fff;"
-                        "padding:8px 12px;border-radius:5px;margin:4px 0'>"
-                        "<strong>" + _strat["badge"] + " " + _strat["name"] + " (" + _strat["confidence"] + ")</strong>"
-                        "</div>",
-                        unsafe_allow_html=True
-                    )
-                    st.caption("**Entry:** " + _strat["entry_rule"])
-                    st.caption("**Stop:** " + _strat["stop_rule"])
-                    st.caption("**Target:** " + _strat["target_rule"])
-                    st.info(_strat["teri_rule"])
-                if _gtp["globex_note"]:
-                    st.warning("Globex Context: " + _gtp["globex_note"])
-
-
-    # SIGNALS
-    if st.session_state.signals:
-        st.divider()
-        st.subheader("📡 Market Signals — What Are the Indicators Saying?")
-        st.caption("💡 Combines RSI, MACD, Bollinger Bands, Stochastic, ADX, Ichimoku, MFI, Williams %R, Moving Averages, SuperTrend, Patterns, Divergences")
-
-        sig = st.session_state.signals
-
-        col_bull, col_bear, col_neut = st.columns(3)
-
-        with col_bull:
-            st.markdown("### 🟢 Bullish Signals")
-            if sig['bullish']:
-                for s in sig['bullish']:
-                    st.markdown(f"<div class='signal-bull'>• {s}</div>", unsafe_allow_html=True)
-            else:
-                st.caption("No bullish signals detected")
-
-        with col_bear:
-            st.markdown("### 🔴 Bearish Signals")
-            if sig['bearish']:
-                for s in sig['bearish']:
-                    st.markdown(f"<div class='signal-bear'>• {s}</div>", unsafe_allow_html=True)
-            else:
-                st.caption("No bearish signals detected")
-
-        with col_neut:
-            st.markdown("### 🟡 Neutral/Watch Signals")
-            if sig['neutral']:
-                for s in sig['neutral']:
-                    st.markdown(f"<div class='signal-neutral'>• {s}</div>", unsafe_allow_html=True)
-            else:
-                st.caption("No neutral signals")
-
-        score = sig['score']
-        if score >= 3:
-            st.success(f"### 🟢 OVERALL MULTI-ALGO VERDICT: BULLISH (+{score} points)")
-            st.caption("💡 Most indicators agree this is a BUY setup.")
-        elif score <= -3:
-            st.error(f"### 🔴 OVERALL MULTI-ALGO VERDICT: BEARISH ({score} points)")
-            st.caption("💡 Most indicators agree this is a SELL/SHORT setup.")
-        else:
-            st.warning(f"### 🟡 OVERALL MULTI-ALGO VERDICT: NEUTRAL ({score} points)")
-            st.caption("💡 Indicators are mixed. No clear direction.")
-
-    # CHART
-    st.divider()
-
-    # ── LIVE OPTIONS GREEKS ─────────────────────────────────────────────────
-    if st.session_state.metrics:
-        _r_rate = st.session_state.macro.get("tnx",4.5)/100 if st.session_state.macro else 0.045
-        with st.spinner("Loading live options chain..."):
-            _opt = live_options_greeks_v2(ticker, dte_target=30, r_annual=_r_rate)
-        if _opt and not _opt.get("no_options") and not _opt.get("error"):
-            _ivr_str = f"IVR~{_opt['ivr_proxy']:.0f}% | " if _opt.get('ivr_proxy') else ""
-            with st.expander(
-                f"📊 Live Options Greeks — {ticker} | ATM IV {_opt['atm_iv']:.1f}% | {_ivr_str}Sell zone" if _opt.get('ivr_proxy',0)>=50 else
-                f"📊 Live Options Greeks — {ticker} | ATM IV {_opt['atm_iv']:.1f}% | {_ivr_str}Buy zone" if _opt.get('ivr_proxy',0)<30 else
-                f"📊 Live Options Greeks — {ticker} | ATM IV {_opt['atm_iv']:.1f}% | {_ivr_str}Selective",
-                expanded=False
-            ):
-                _lvl = st.session_state.lang_level
-                _oc1, _oc2, _oc3, _oc4 = st.columns(4)
-                _oc1.metric("ATM IV", f"{_opt['atm_iv']:.1f}%")
-                _oc2.metric("IVR (proxy)", f"{_opt['ivr_proxy']:.0f}%",
-                    delta="SELL" if _opt['ivr_proxy']>=50 else "BUY 60+DTE" if _opt['ivr_proxy']<30 else "Selective")
-                _oc3.metric("Realized Vol 30d", f"{_opt['rv_current']:.1f}%")
-                _oc4.metric("Chain Expiry", _opt['expiry'], delta=f"{_opt['dte']} DTE")
-
-                if _lvl == "Beginner":
-                    import math as _m
-                    _daily_move_pct = _opt['atm_iv']/100/math.sqrt(252)*100
-                    st.info(
-                        f"💡 ATM IV {_opt['atm_iv']:.1f}% means the market expects "
-                        f"roughly ±{_daily_move_pct:.1f}% daily moves. "
-                        f"**Delta**: how much the option price moves per $1 stock move. "
-                        f"**Theta**: dollars lost (if you OWN the option) or gained (if you SOLD it) each day. "
-                        f"**POP**: the chance this option expires worthless — high POP = sellers win more often (but their losses can be bigger)."
-                    )
-                elif _lvl in ["Advanced","Professional"]:
-                    st.caption(
-                        f"VRP = IV − RV = {_opt['atm_iv']-_opt['rv_current']:+.1f}pp. "
-                        f"Greeks: exact BSM (scipy.stats.norm). "
-                        f"IVR proxy: (ATM_IV − RV_52wLow) / (RV_52wHigh − RV_52wLow). "
-                        f"r = {_r_rate*100:.2f}% (^TNX). Single expiry snapshot — no vol surface."
-                    )
-
-                if _opt.get("greeks_table"):
-                    _gdf = pd.DataFrame(_opt["greeks_table"])
-                    _puts  = _gdf[_gdf["type"]=="P"].sort_values("strike",ascending=False)
-                    _calls = _gdf[_gdf["type"]=="C"].sort_values("strike")
-                    _col_disp = ["strike","iv_pct","delta","gamma","theta_day","vega_1pct","pop","oi"]
-                    _col_names = ["Strike","IV%","Delta","Gamma","Theta/d","Vega/1%","POP","OI"]
-                    _fmt = {"IV%":"{:.1f}","Delta":"{:.3f}","Gamma":"{:.5f}",
-                            "Theta/d":"{:.3f}","Vega/1%":"{:.3f}","POP":"{:.0%}","OI":"{:,.0f}"}
-                    _cp1, _cp2 = st.columns(2)
-                    with _cp1:
-                        st.markdown(f"**Puts — {ticker}** ({_opt['expiry']})")
-                        _pd2 = _puts[_col_disp].head(12).copy(); _pd2.columns = _col_names
-                        st.dataframe(_pd2.style.format(_fmt), use_container_width=True, height=280)
-                    with _cp2:
-                        st.markdown(f"**Calls — {ticker}** ({_opt['expiry']})")
-                        _cd2 = _calls[_col_disp].head(12).copy(); _cd2.columns = _col_names
-                        st.dataframe(_cd2.style.format(_fmt), use_container_width=True, height=280)
-
-                    st.markdown("**⚡ Quick-Fill → Spread Calculator (OTM Puts, POP ≥ 65%):**")
-                    _otm = _puts[_puts["pop"]>=0.65][["strike","iv_pct","delta","pop","oi"]].head(5)
-                    for _, _or in _otm.iterrows():
-                        _qc1,_qc2 = st.columns([4,1])
-                        _qc1.caption(
-                            f"PUT {_or['strike']:.0f} | IV {_or['iv_pct']:.1f}% | "
-                            f"Δ {_or['delta']:.3f} | POP {_or['pop']:.0%} | OI {int(_or['oi']):,}"
-                        )
-                        if _qc2.button(f"Use →", key=f"qf_{ticker}_{_or['strike']:.0f}"):
-                            st.session_state["_af_strike"] = float(_or['strike'])
-                            st.session_state["_af_delta"]  = abs(float(_or['delta']))
-                            st.session_state["_af_iv"]     = float(_or['iv_pct'])
-                            st.success(f"✅ Strike {_or['strike']:.0f} queued. Switch to Vertical Spread mode and re-scan.")
-
-                if st.session_state.lang_level in ["Beginner","Intermediate"]:
-                    st.caption("📡 Live market data. Greeks auto-calculated from current option prices.")
-                else:
-                    st.caption("📡 IV: delayed market bid/ask. Greeks: BSM formula. IVR: realized vol proxy. Broker connection enables real-time data.")
-        elif _opt and _opt.get("no_options"):
-            st.caption(f"ℹ️ {ticker} has no listed options. Try SPY, QQQ, AAPL, GLD, or any major optionable stock/ETF.")
-
-
-    st.subheader("📊 Price Chart (Last 60 Days)")
-    st.caption("💡 Blue=SMA20, Orange=SMA50, Red=SMA200, Gray=Bollinger Bands, Green/Red lines=Support/Resistance")
-
-    try:
-        chart_data = df.iloc[-60:]
-
-        addplots = []
-
-        if 'SMA_20' in chart_data.columns:
-            addplots.append(mpf.make_addplot(chart_data['SMA_20'], color='blue', width=1.5))
-
-        if 'SMA_50' in chart_data.columns:
-            addplots.append(mpf.make_addplot(chart_data['SMA_50'], color='orange', width=1.5))
-
-        if 'SMA_200' in chart_data.columns:
-            addplots.append(mpf.make_addplot(chart_data['SMA_200'], color='red', width=2))
-
-        bb_cols = [col for col in chart_data.columns if 'BB' in col]
-        bb_upper = None
-        bb_lower = None
-
-        for col in bb_cols:
-            if 'U' in col or 'upper' in col.lower():
-                bb_upper = col
-            elif 'L' in col or 'lower' in col.lower():
-                bb_lower = col
-
-        if bb_upper and bb_upper in chart_data.columns:
-            addplots.append(mpf.make_addplot(chart_data[bb_upper], color='gray', linestyle='--', width=1))
-
-        if bb_lower and bb_lower in chart_data.columns:
-            addplots.append(mpf.make_addplot(chart_data[bb_lower], color='gray', linestyle='--', width=1))
-
-        fig, axes = mpf.plot(
-            chart_data,
-            type='candle',
-            style='yahoo',
-            volume=True,
-            addplot=addplots if addplots else None,
-            hlines=dict(hlines=[m['supp'], m['res']], colors=['green', 'red'], linestyle='-.', linewidths=2),
-            returnfig=True,
-            figsize=(14, 8),
-            title=f"{ticker} - Multi-Indicator Technical Analysis"
-        )
-
-        st.pyplot(fig)
-
-    except Exception as e:
-        st.error(f"⚠️ Chart rendering error: {str(e)}")
-        st.caption("💡 Try AAPL or NVDA (most reliable data).")
-
-    with st.expander("📐 Fibonacci Retracement Levels", expanded=False):
-        st.caption("💡 Mathematical support/resistance based on golden ratio")
-        fib = m['fib_levels']
-        for level, price in fib.items():
-            st.caption(f"{level}: ${price:.2f}")
-
-    # TRADE CALCULATION
-    st.divider()
-    st.subheader("📐 Your Trade Details")
-    st.caption("💡 Calculates entry, stop, target, position size, and REAL costs")
-
-    if entry_mode == "Manual Override":
-        entry = manual_price
-    elif "Short" in strategy:
-        entry = m['res'] if "Auto" in entry_mode else m['price']
-    else:
-        entry = m['supp'] if "Auto" in entry_mode else m['price']
-
-    if st.session_state.macro:
-        vix_regime = engine.classify_vix_regime(st.session_state.macro['vix'])
-        regime_guide = engine.get_regime_guidance(vix_regime)
-        vol_multiplier = regime_guide['size_multiplier']
-        stop_multiplier = regime_guide['stop_multiplier']
-    else:
-        vol_multiplier = 1.0
-        stop_multiplier = 1.0
-
-    # === OPTIONS INCOME CALCULATION ===
-    # Directional stock math and options-income math are intentionally separated.
-    # A cash-secured put is assignment/cash risk. A vertical credit spread is
-    # defined-risk options math: max loss = (width - credit) * 100 * contracts.
-
-    is_vertical = strategy == "Income (SPX Vertical Credit Spread)"
-    is_csp = strategy == "Income (Cash-Secured Put)"
-    option_details = {}
-
-    if is_vertical:
-        # Use user-entered strikes/credit. We do not infer strikes from stock support/resistance
-        # because SPX spread risk must be calculated from option chain values.
-        v0 = calc_vertical_credit_spread(short_strike, long_strike, spread_credit, spread_kind, contracts=0)
-        if v0["errors"]:
-            stop = target = entry = 0.0
-            risk = reward = 0.0
-            shares = 0
-            option_details = v0
-        else:
-            ref_price = spx_reference_price if spx_reference_price > 0 else m.get('price', 0)
-            expected_move = estimate_expected_move(ref_price, iv_percent, dte)
-            em_status, em_multiple = expected_move_check(spread_kind, short_strike, ref_price, expected_move)
-            approx_pop, approx_pot = approx_pop_from_delta(short_delta)
-            max_loss_per_contract = v0["max_loss_per_contract"]
-            contracts_by_trade_risk = contracts_for_defined_risk(risk_per_trade, max_loss_per_contract)
-            contracts_by_portfolio = contracts_for_defined_risk(
-                max(0, (capital * max_portfolio_risk / 100) - st.session_state.total_risk_deployed),
-                max_loss_per_contract
-            )
-            contracts = max(0, min(contracts_by_trade_risk, contracts_by_portfolio))
-            v = calc_vertical_credit_spread(short_strike, long_strike, spread_credit, spread_kind, contracts=contracts)
-            v.update({
-                "reference_price": ref_price,
-                "iv_percent": iv_percent,
-                "dte": dte,
-                "expected_move": expected_move,
-                "expected_move_status": em_status,
-                "expected_move_multiple": em_multiple,
-                "short_delta": short_delta,
-                "approx_pop": approx_pop,
-                "approx_probability_touch": approx_pot,
-                "event_risk_48h": event_risk_48h,
-                "hold_through_event": hold_through_event,
-            })
-            entry = short_strike
-            stop = long_strike
-            target = v["breakeven"]
-            risk = v["max_loss_per_contract"]
-            reward = v["max_profit_per_contract"]
-            shares = contracts  # UI label switches to contracts below
-            option_details = v
-
-
-    elif strategy == "IWT Long Option (60+ DTE)":
-        _lo = calc_long_option_iwt(
-            lo_underlying, lo_strike, lo_premium,
-            lo_direction, lo_delta, lo_dte, lo_contracts_lo
-        )
-        if _lo.get("error"):
-            st.error(f"❌ {_lo['error']}")
-        else:
-            st.subheader(f"📈 IWT Long {lo_direction} — {lo_dte} DTE")
-            st.caption("the IWT methodology: 60+ DTE, DITM, 50-100% profit target, 50% stop rule.")
-            if not _lo["dte_ok"]:
-                st.error(_lo["dte_grade"])
-            else:
-                st.success(_lo["dte_grade"])
-            st.info(_lo["delta_grade"])
-            col_lo1, col_lo2, col_lo3 = st.columns(3)
-            with col_lo1:
-                st.markdown("**💰 Position Cost & Leverage**")
-                st.code(f"""Total Cost:   ${_lo['cost_total']:.2f}
-Per Contract: ${_lo['cost_per_contract']:.2f}
-Delta:        {lo_delta:.2f} ({_lo['delta_label']})
-Leverage:     {_lo['leverage_ratio']:.1f}x vs stock
-Equiv Shares: {_lo['shares_equiv']:.0f}""")
-            with col_lo2:
-                st.markdown("**🎯 IWT Profit Targets**")
-                st.code(f"""50% Target:   ${_lo['target_50_val']:.2f}
-              @ ${_lo['target_50_price']:.2f}/share
-100% Target:  ${_lo['target_100_val']:.2f}
-              @ ${_lo['target_100_price']:.2f}/share
-Breakeven:    ${_lo['breakeven']:.2f} at expiry""")
-            with col_lo3:
-                st.markdown("**🛑 IWT Hard Stop**")
-                st.code(f"""Stop Value:   ${_lo['stop_loss_total']:.2f}
-Stop Price:   ${_lo['stop_price']:.2f}/share
-Intrinsic:    ${_lo['intrinsic']:.2f}
-Time Value:   ${_lo['time_val']:.2f} ({_lo['time_val_pct']:.0%})
-Daily Theta:  ~${_lo['daily_theta']:.2f}/day""")
-            st.warning(f"⏰ {_lo['theta_note']}")
-
-
-            # V14: Long option payoff diagram
-            if lo_premium > 0 and lo_strike > 0 and lo_underlying > 0:
-                with st.expander("📈 P&L Payoff Diagram — Long Option (IWT Course: Week 7)", expanded=True):
-                    _fig_lo = plot_payoff_diagram(
-                        structure="LONG_OPTION",
-                        short_k=lo_strike, long_k=0,
-                        credit_or_debit=-lo_premium,
-                        option_type=lo_direction,
-                        underlying=lo_underlying,
-                        contracts=lo_contracts_lo
-                    )
-                    if _fig_lo:
-                        st.pyplot(_fig_lo)
-                        st.caption(
-                            f"Max loss: ${lo_premium*100*lo_contracts_lo:,.0f} (premium paid) | "
-                            f"50% IWT stop: ${lo_premium*100*lo_contracts_lo*0.5:,.0f} | "
-                            f"100% target: ${lo_premium*100*lo_contracts_lo:,.0f} gain"
-                        )
-
-
-            st.info(
-                "📌 IWT Long Options Rules: (1) Min 60 DTE. (2) DITM delta 0.70+. "
-                "(3) Exit at 50% gain — do not overstay. (4) NEVER hold past 50% loss. "
-                "(5) Avoid before earnings/major events. (6) Only buy when IVR < 30%."
-            )
-
-    is_futures = strategy == "Futures (Index/Commodity)"
-
-    if is_futures:
-        fut = calc_futures_v4(fut_code, fut_entry, fut_stop, fut_target, fut_contracts)
-        if fut.get("error"):
-            st.error(f"❌ {fut['error']}")
-        else:
-            lvl = st.session_state.lang_level
-            st.subheader(f"📦 {fut['spec']['name']} — {fut['direction']} {fut_contracts} Contract{'s' if fut_contracts > 1 else ''}")
-            col_f1, col_f2, col_f3 = st.columns(3)
-            with col_f1:
-                st.markdown("**📍 Trade Levels**")
-                st.code(f"""Entry:   {fut_entry:.2f}
-Stop:    {fut_stop:.2f}
-Target:  {fut_target:.2f}
-R/R:     {fut['rr_ratio']:.2f}""")
-            with col_f2:
-                st.markdown("**💰 Risk in Dollars**")
-                st.code(f"""Stop dist:  {fut['stop_pts']:.2f} pts  ({fut['stop_ticks']:.0f} ticks)
-Max loss:   ${fut['total_risk']:,.2f}  ({fut_contracts}c)
-Max gain:   ${fut['total_reward']:,.2f}
-1pt move:  ${fut['point_value_per_contract']:,.2f}/contract""")
-            with col_f3:
-                st.markdown("**📐 Contract Specs**")
-                st.code(f"""Contract:  {fut['code']} ({fut['spec']['exch']})
-Tick size: {fut['tick_size']}
-Tick value: ${fut['tick_value']:.2f}
-Notional:  ${fut['notional']:,.0f}
-Margin*:   ~${fut['margin_required']:,}""")
-            # Language-aware explanation
-            if lvl == "Beginner":
-                st.info(
-                    f"💡 Each tick this {fut['code']} moves in your direction, you make ${fut['tick_value']:.2f}. "
-                    f"Each tick against you, you lose ${fut['tick_value']:.2f}. "
-                    f"Your stop is {fut['stop_ticks']:.0f} ticks away = max loss ${fut['total_risk']:,.0f}."
-                )
-            elif lvl in ["Advanced","Professional"]:
-                st.caption(
-                    f"Contract specs: {fut['spec']['name']} | Multiplier ×{fut['spec']['mult']} | "
-                    f"Tick {fut['tick_size']} = ${fut['tick_value']:.2f} | "
-                    f"Notional ${fut['notional']:,.0f} | Exchange: {fut['spec']['exch']} | "
-                    f"Approx SPAN initial margin: ~${fut['margin_required']:,}"
-                )
-            st.caption("⚠️ SIMULATION ONLY. Margin figures are approximate CME initial margin. Actual margin varies by broker and market conditions. Not financial advice.")
-        # Skip rest of trade setup for futures
-        entry = fut_entry; stop = fut_stop; target = fut_target; shares = fut_contracts
-        risk = fut.get("total_risk", 0); reward = fut.get("total_reward", 0)
-        rr = fut.get("rr_ratio", 0); gross_reward = reward; net_reward = reward
-        slippage = 0; commissions = 0; total_trade_risk = risk
-        can_trade = risk > 0
-
-    elif is_csp:
-        # Cash-secured put philosophy:
-        # Max cash-secured exposure = (strike - premium) * 100 per contract.
-        # Technical risk-to-stop is shown separately, but cash must be available for assignment.
-        stop = entry - (m['atr'] * 2)
-        target = entry
-        technical_risk_per_contract = max(0, (entry - stop - premium) * 100)
-        cash_secured_risk_per_contract = max(0, (entry - premium) * 100)
-        reward_per_contract = premium * 100
-        contracts = contracts_for_defined_risk(risk_per_trade, technical_risk_per_contract) if technical_risk_per_contract > 0 else 0
-        shares = contracts
-        risk = technical_risk_per_contract
-        reward = reward_per_contract
-        option_details = {
-            "cash_secured_risk_per_contract": cash_secured_risk_per_contract,
-            "technical_risk_per_contract": technical_risk_per_contract,
-            "max_profit_per_contract": reward_per_contract,
-            "breakeven": entry - premium,
-            "errors": [] if premium > 0 else ["Premium must be positive for a cash-secured put."],
-        }
-
-    elif "Short" in strategy:
-        stop = entry + (m['atr'] * stop_mode * stop_multiplier)
-        target = m['supp']
-        risk = stop - entry
-        reward = entry - target
-    else:  # Long
-        stop = entry - (m['atr'] * stop_mode * stop_multiplier)
-        target = m['res']
-        risk = entry - stop
-        reward = target - entry
-
-    rr = reward / risk if risk > 0 else 0
-
-    # Position sizing (skip for Income since already calculated)
-    if "Income" not in strategy:
-        shares = engine.calculate_position_size(
-            capital, risk_per_trade, risk, position_sizing_method,
-            vol_multiplier, m.get('beta', 1.0), st.session_state.consecutive_losses
-        )
-
-    total_trade_risk = shares * risk if shares > 0 else 0
-
-    # Costs & Net Reward
-    if is_vertical:
-        slippage = 0
-        commissions = option_details.get("commission", shares * OPTION_COMMISSION_PER_CONTRACT * 2)
-        gross_reward = option_details.get("total_credit", shares * reward)
-    elif is_csp:
-        slippage = 0
-        commissions = shares * OPTION_COMMISSION_PER_CONTRACT
-        gross_reward = shares * reward
-    else:
-        slippage = entry * (SLIPPAGE_BPS / 10000) * shares
-        commissions = shares * COMMISSION_PER_SHARE * 2
-        gross_reward = shares * reward
-
-    net_reward = gross_reward - slippage - commissions
-
-    if is_vertical and option_details.get("errors"):
-        for _err in option_details["errors"]:
-            st.error(f"❌ Vertical spread input error: {_err}")
-    if is_vertical and not option_details.get("errors"):
-        st.info(
-            f"📐 Vertical math: width ${option_details['width']:.2f} = ${option_details['gross_width_per_contract']:.0f} gross width/contract; "
-            f"credit ${spread_credit:.2f} = ${option_details['max_profit_per_contract']:.0f} max profit/contract; "
-            f"max loss ${option_details['max_loss_per_contract']:.0f}/contract; breakeven {option_details['breakeven']:.2f}."
-        )
-        st.caption(
-            f"📊 Expected move ≈ ±{option_details.get('expected_move', 0):.1f} points over {option_details.get('dte', dte)} DTE; "
-            f"short strike is {option_details.get('expected_move_status', 'UNKNOWN')} expected move "
-            f"({option_details.get('expected_move_multiple', 0):.2f}x EM). Approx POP {option_details.get('approx_pop', 0):.0%}; touch risk {option_details.get('approx_probability_touch', 0):.0%}."
-        )
-        if option_details.get('expected_move_status') == 'INSIDE':
-            st.warning("⚠️ Short strike is inside the expected move. That is lower-quality for income selling unless intentional and tightly managed.")
-        if option_details.get('event_risk_48h'):
-            st.warning("⚠️ Major event within 48h. Defined-risk only; consider waiting until after the event volatility clears.")
-        if option_details.get('hold_through_event'):
-            st.error("🛑 Holding through a major event materially increases gap/volatility risk. Reduce size or stand aside.")
-        if option_details['credit_pct_width'] < 0.20:
-            st.warning("⚠️ Credit is under 20% of spread width. Premium may be too thin for the defined risk.")
-        elif option_details['credit_pct_width'] >= 0.25:
-            st.success("✅ Credit efficiency meets the preferred 25%+ of width threshold.")
-
-        # ═══════════════════════════════════════════════════════════════
-        # V14: At-Expiry P&L Diagram + Expected Move Visualizer
-        # IWT Course reference: Weeks 7-8 (Options P&L Graphs)
-        # VIP Coaching: "Understanding Options — The Greeks" (2/26/22)
-        # VIP Coaching: "Become a Successful Seller of Options" (1/28/23)
-        # ═══════════════════════════════════════════════════════════════
-        if spread_credit > 0 and short_strike > 0 and long_strike > 0:
-            _ref_px = spx_reference_price if spx_reference_price > 0 else m.get("price", 5400)
-            _c_spread, _c_em = st.columns(2)
-            with _c_spread:
-                with st.expander("📈 P&L Payoff Diagram — At Expiry", expanded=True):
-                    _lpp = st.session_state.lang_level
-                    if _lpp in ["Beginner","Intermediate"]:
-                        st.caption(
-                            "This shows your maximum profit, maximum loss, and breakeven point — "
-                            "the three numbers every options trader must know BEFORE entering. "
-                            "Green zone = you make money. Red zone = you lose money."
-                        )
-                    _fig_p = plot_payoff_diagram(
-                        structure="CREDIT_SPREAD",
-                        short_k=short_strike, long_k=long_strike,
-                        credit_or_debit=spread_credit, option_type=spread_kind,
-                        underlying=_ref_px, contracts=max(1, int(contracts))
-                    )
-                    if _fig_p:
-                        st.pyplot(_fig_p)
-                    _w = abs(short_strike - long_strike)
-                    st.caption(
-                        f"Pure contract math: max profit ${spread_credit*100*max(1,int(contracts)):,.0f} | "
-                        f"max loss ${(_w-spread_credit)*100*max(1,int(contracts)):,.0f} | "
-                        f"be {short_strike - spread_credit if spread_kind=='PUT' else short_strike + spread_credit:.2f}"
-                    )
-            with _c_em:
-                with st.expander("🎯 Expected Move — Strike Placement Quality", expanded=True):
-                    if spx_reference_price > 0 and iv_percent > 0 and dte > 0:
-                        _lpe = st.session_state.lang_level
-                        if _lpe in ["Beginner","Intermediate"]:
-                            st.caption(
-                                "The yellow dashed lines show how far the market expects to move. "
-                                "Your green/red line = your short strike. "
-                                "GREEN = outside expected move (IWT standard). "
-                                "RED = inside expected move (risky)."
-                            )
-                        _fig_e = plot_expected_move_chart(
-                            spx=spx_reference_price, iv_pct=iv_percent, dte=dte,
-                            short_k=short_strike if short_strike > 0 else None,
-                            long_k=long_strike if long_strike > 0 else None,
-                            spread_type=spread_kind
-                        )
-                        if _fig_e:
-                            st.pyplot(_fig_e)
-
-
-
-
-        # V14 VIP: Double-Confirmation Strike Placement
-        # VIP May 2022: "Understanding Options — Identifying Strong Levels"
-        if spx_reference_price > 0 and st.session_state.metrics and short_strike > 0:
-            _m2 = st.session_state.metrics
-            _dc = levels_plus_em_strike_placement(
-                spx=spx_reference_price, iv_pct=iv_percent, dte=dte,
-                support_level=_m2.get("supp", spx_reference_price - 200),
-                resistance_level=_m2.get("res", spx_reference_price + 200),
-                spread_type=spread_kind
-            )
-            with st.expander("🎯 VIP Level Confirmation — Strike vs Support/Resistance", expanded=False):
-                st.caption(
-                    "the IWT VIP insight: your short strike must clear BOTH the expected move "
-                    "AND the nearest structural support/resistance level. "
-                    "The more conservative of the two governs."
-                )
-                _dc1, _dc2 = st.columns(2)
-                with _dc1:
-                    st.metric("EM Boundary", f"{_dc['em_boundary']:.0f}",
-                              help="1σ expected move boundary")
-                    st.metric("Level Boundary", f"{_dc['level_boundary']:.2f}",
-                              help="Nearest support (puts) or resistance (calls)")
-                with _dc2:
-                    st.metric("Recommended Short Strike", f"{_dc['recommended_short']:.0f}")
-                    st.metric("Recommended Long Strike",  f"{_dc['recommended_long']:.0f}")
-                st.info(f"**Binding constraint:** {_dc['binding_constraint']}")
-                st.caption(_dc["note"])
-                if abs(short_strike - _dc["recommended_short"]) > 30:
-                    st.warning(
-                        f"⚠️ Your entered short strike ({short_strike:.0f}) differs by "
-                        f"{abs(short_strike - _dc['recommended_short']):.0f} pts from "
-                        f"the VIP double-confirmation recommendation ({_dc['recommended_short']:.0f}). "
-                        "Double-check your level work."
-                    )
-
-
-    # ── PLATFORM ORDER TRANSLATOR (vertical spreads only) ─────────────────────
-    if is_vertical and not option_details.get("errors") and spread_credit > 0 and short_strike > 0:
-        _lvl_now = st.session_state.lang_level
-        _spread_t = "PUT_CREDIT" if spread_kind == "PUT" else "CALL_CREDIT"
-        _exp_str  = "2026-06-19"  # placeholder; user enters their expiry date
-        _p = plain_spread_explanation(
-            underlying=ticker if ticker else "SPX",
-            short_k=short_strike, long_k=long_strike,
-            spread_type=_spread_t,
-            expiry_str=option_details.get("expiry_str", "2026-06-19"),
-            credit=spread_credit, contracts=contracts,
-            spread_width=option_details.get("width", abs(short_strike-long_strike)),
-            lvl=_lvl_now
-        )
-
-        with st.expander("📋 How to Enter This Trade on Your Platform", expanded=True):
-            # Plain English first
-            st.markdown("#### What you're doing:")
-            c_a, c_b = st.columns(2)
-            with c_a:
-                st.success(f"**SELL (collect premium)**\n\n{_p['sell_action']}")
-            with c_b:
-                st.info(f"**BUY (your protection)**\n\n{_p['buy_action']}")
-
-            st.markdown(f"**Goal:** {_p['market_view']}")
-            st.error(f"**Danger zone:** {_p['danger_zone']}")
-
-            col_pm, col_pl, col_pb = st.columns(3)
-            col_pm.metric("Max Profit",   f"${_p['max_profit']:,.0f}", f"Keep premium if trade wins")
-            col_pl.metric("Max Loss",     f"${_p['max_loss']:,.0f}",   f"Spread goes full width")
-            col_pb.metric("Breakeven",    f"{_p['breakeven']:.2f}",    f"SPX must stay {'above' if 'PUT' in _spread_t else 'below'} this")
-
-            st.markdown("---")
-            st.markdown("#### Exact order to enter on your platform:")
-
-            _ptab1, _ptab2, _ptab3, _ptab4, _ptab5 = st.tabs(
-                ["thinkorSwim", "Fidelity", "Interactive Brokers", "tastytrade", "Webull"])
-
-            with _ptab1:
-                st.code(_p['tos'], language=None)
-                st.caption("thinkorSwim: Trade → All Products → SPX → Options → Spread → Vertical  |  OR paste the code above into the Order Entry bar.")
-            with _ptab2:
-                st.code(_p['fidelity'], language=None)
-                st.caption("Fidelity ATP: Options → Spreads → Vertical  |  Select both legs as shown.")
-            with _ptab3:
-                st.code(_p['ibkr'], language=None)
-                st.caption("IBKR: Options Chain → right-click → Create Combination  |  Add both legs as shown.")
-            with _ptab4:
-                st.code(_p['tastytrade'], language=None)
-                st.caption("tastytrade: Trade → Options → Select both strikes → Trade → Sell Vertical")
-            with _ptab5:
-                st.code(_p['webull'], language=None)
-                st.caption("Webull: Options → select the two strikes → Sell Spread")
-
-            st.markdown("---")
-            st.markdown("#### What it should look like when filled:")
-            st.info(
-                f"Your broker's order history will show something like:\n\n"
-                f"**{_p['tos'].replace('@ ', '@')}**\n\n"
-                f"Filled = you received ${_p['max_profit']:,.0f} in your account immediately. "
-                f"That money is yours to keep IF SPX stays {'above' if 'PUT' in _spread_t else 'below'} "
-                f"{short_strike:.0f} until expiry."
-            )
-
-            lang_cap(
-                f"Credit efficiency: {_p['credit_eff']:.1f}% of spread width. "
-                f"IWT minimum: 25%. TastyTrade minimum: 20%.",
-                "Intermediate"
-            )
-
-    
-    
-    if is_csp and option_details.get("errors"):
-        for _err in option_details["errors"]:
-            st.error(f"❌ Cash-secured put input error: {_err}")
-    if is_csp and not option_details.get("errors"):
-        st.warning(
-            f"💵 CSP cash-secured exposure is approximately ${option_details['cash_secured_risk_per_contract']:.0f} per contract. "
-            "This is not the same as a defined-risk vertical spread."
-        )
-
-    col_setup1, col_setup2, col_setup3 = st.columns(3)
-
-    with col_setup1:
-        st.markdown("**📍 Price Levels**")
-        st.code(f"""
-Entry:  ${entry:.2f}
-Stop:   ${stop:.2f}
-Target: ${target:.2f}
-        """)
-        st.caption("💡 Entry=where you buy/sell. Stop=exit if wrong. Target=exit if right.")
-
-    with col_setup2:
-        st.markdown("**💰 Position Sizing**")
-        qty_label = "Contracts" if "Income" in strategy else "Shares"
-        st.code(f"""
-Size:    {shares} {qty_label}
-Risk:    ${total_trade_risk:.2f}
-Reward:  ${gross_reward:.2f}
-R/R:     {rr:.2f}
-        """)
-        if is_vertical:
-            st.caption("💡 Contracts are rounded down so max theoretical loss stays inside your risk budget and portfolio-risk cap.")
-        elif is_csp:
-            st.caption(f"💡 Each contract = 100 shares. Premium = ${premium:.2f}/share = ${premium*100:.2f}/contract; assignment exposure must be cash-secured.")
-        else:
-            st.caption(f"💡 Size calculated using {position_sizing_method}. Risk = max loss if stopped out.")
-
-    with col_setup3:
-        st.markdown("**💸 Real Costs**")
-        st.code(f"""
-Slippage:     ${slippage:.2f}
-Commissions:  ${commissions:.2f}
-Net Reward:   ${net_reward:.2f}
-Net R/R:      {(net_reward/(total_trade_risk if total_trade_risk>0 else 1)):.2f}
-        """)
-        st.caption("💡 Real costs reduce your profit. This is why high-frequency trading is hard.")
-
-    # VERDICT
-    st.divider()
-    st.subheader("🚦 Should You Take This Trade?")
-    _lv2 = st.session_state.lang_level
-    if _lv2 in ["Beginner","Intermediate"]:
-        st.caption("The app scores your setup on multiple filters. 7-8 = take the trade. 5-6 = reduce size. 0-4 = skip.")
-    else:
-        st.caption("IWT score + 13 institutional penalty filters. Max 8, adjusted for PDT/macro/volatility/event risk.")
-
-    if is_vertical:
-        # For short verticals, raw reward/risk is usually below 1.0. Score credit efficiency
-        # instead of forcing stock-style 3:1 reward/risk. Preferred: credit >=25% of width.
-        credit_eff = option_details.get("credit_pct_width", 0)
-        score_rr = 2 if credit_eff >= 0.25 else 1 if credit_eff >= 0.20 else 0
-    elif is_csp:
-        score_rr = 2 if rr >= 0.25 else 1 if rr >= 0.10 else 0
-    else:
-        score_rr = 2 if rr >= 3 else 1 if rr >= 2 else 0
-    total_score = fresh + time_z + speed + score_rr
-
-    penalties = []
-    fed_penalty = False
-
-    _pdt_now = pdt_guidance(capital, account_type, day_trades_used, planned_same_day_exit)
-    if planned_same_day_exit and not _pdt_now["can_day_trade"]:
-        total_score -= 3
-        penalties.append("Trade Budget (-3): no same-day exit capacity left under small-account day-trade limits")
-    elif planned_same_day_exit and isinstance(_pdt_now.get("remaining"), int) and _pdt_now["remaining"] <= 1 and total_score < 7:
-        total_score -= 1
-        penalties.append("Trade Budget (-1): preserve last day trade for only A+ setups")
-
-    if is_vertical and dte > 7 and total_score < 7:
-        total_score -= 1
-        penalties.append("DTE Discipline (-1): >7 DTE requires stronger setup quality")
-    if is_vertical and option_details.get('expected_move_status') == 'INSIDE':
-        total_score -= 2
-        penalties.append("Expected Move (-2): short strike is inside expected move")
-    if is_vertical and option_details.get('approx_pop', 1) < 0.65:
-        total_score -= 1
-        penalties.append("POP (-1): probability of profit estimate below 65%")
-    if is_vertical and option_details.get('event_risk_48h'):
-        total_score -= 2
-        penalties.append("Event Risk (-2): major event within 48h")
-    if is_vertical and option_details.get('hold_through_event'):
-        total_score -= 2
-        penalties.append("Event Hold (-2): holding short premium through major event")
-
-    if st.session_state.macro and st.session_state.macro['tnx_chg'] > 1.0 and ticker in GROWTH_TICKERS and "Long" in strategy:
-        total_score -= 2
-        fed_penalty = True
-        penalties.append("Fed/Rates (-2): 10Y yield rising >1% pressures growth stocks")
-
-    market_phase, _ = engine.get_market_hours_status()
-    if market_phase in ["LUNCH", "PRE_MARKET", "AFTER_HOURS"]:
-        total_score -= 1
-        penalties.append(f"Market Hours (-1): {market_phase} (low liquidity)")
-
-    if "Long" in strategy and m['trend_strength'] in ["BEAR", "STRONG_BEAR"]:
-        total_score -= 1
-        penalties.append("Trend Misalignment (-1): Long in downtrend")
-    elif "Short" in strategy and m['trend_strength'] in ["BULL", "STRONG_BULL"]:
-        total_score -= 1
-        penalties.append("Trend Misalignment (-1): Short in uptrend")
-
-    sector = SECTOR_MAP.get(ticker, "Unknown")
-    sector_exposure = sum(1 for p in st.session_state.open_positions if SECTOR_MAP.get(p['ticker'], '') == sector)
-    if sector_exposure >= 2:
-        total_score -= 1
-        penalties.append(f"Concentration Risk (-1): {sector_exposure+1} positions in {sector}")
-
-    if st.session_state.macro and st.session_state.macro.get('risk_off') and "Long" in strategy:
-        total_score -= 1
-        penalties.append("Risk-Off (-1): Gold+VIX rising")
-
-    if st.session_state.macro and st.session_state.macro.get('dollar_headwind') and ticker in COMMODITY_TICKERS and "Long" in strategy:
-        total_score -= 1
-        penalties.append("Dollar Headwind (-1): DXY rising hurts commodities")
-
-    if 'ST_DIR' in df.columns:
-        if "Long" in strategy and df['ST_DIR'].iloc[-1] == -1:
-            total_score -= 1
-            penalties.append("SuperTrend Conflict (-1): Indicator is bearish")
-        elif "Short" in strategy and df['ST_DIR'].iloc[-1] == 1:
-            total_score -= 1
-            penalties.append("SuperTrend Conflict (-1): Indicator is bullish")
-
-    if "Long" in strategy and m['rsi'] > 70:
-        total_score -= 1
-        penalties.append("RSI Extreme (-1): Overbought (>70)")
-    elif "Short" in strategy and m['rsi'] < 30:
-        total_score -= 1
-        penalties.append("RSI Extreme (-1): Oversold (<30)")
-
-    if st.session_state.signals:
-        sig_score = st.session_state.signals['score']
-        if "Long" in strategy and sig_score < -2:
-            total_score -= 1
-            penalties.append("Multi-Algo Conflict (-1): Signals overwhelmingly bearish")
-        elif "Short" in strategy and sig_score > 2:
-            total_score -= 1
-            penalties.append("Multi-Algo Conflict (-1): Signals overwhelmingly bullish")
-
-
-
-    # V14: Hard No-Trade Gate (institutional refusal logic)
-    _ntg = compute_no_trade_gate(
-        macro=st.session_state.macro,
-        metrics=st.session_state.metrics,
-        strategy=strategy,
-        dte=dte if "Income" in strategy else 30,
-        event_risk=event_risk_48h if "Income" in strategy else False
-    )
-    if _ntg["verdict"] in ("HARD_NO", "SOFT_NO"):
-        st.markdown(f"### {_ntg['badge']} NO-TRADE GATE: {_ntg['headline']}")
-        if _ntg["blocks"]:
-            for _b in _ntg["blocks"]:
-                st.error(_b)
-        if _ntg["warnings"]:
-            for _w in _ntg["warnings"]:
-                st.warning(_w)
-        st.info(f"**Institutional action:** {_ntg['action']}")
-        if _ntg["verdict"] == "HARD_NO":
-            st.stop()
-    elif _ntg["verdict"] == "CONDITIONAL":
-        st.warning(f"### {_ntg['badge']} CONDITIONAL — {_ntg['headline']}")
-        st.caption(_ntg["action"])
-        if _ntg["warnings"]:
-            for _w in _ntg["warnings"]:
-                st.caption(f"• {_w}")
-    else:
-        st.caption(f"{_ntg['badge']} No-Trade Gate: {_ntg['headline']}")
-
-
-
-
-    # V14 VIP: To Short / Not to Short (VIP 2022-2023 multiple sessions)
-    if "Short" in strategy and st.session_state.metrics:
-        _m_short = st.session_state.metrics
-        _vix_s = st.session_state.macro.get("vix", 20) if st.session_state.macro else 20
-        _sns = short_or_not_score(
-            trend=_m_short.get("trend_strength", "NEUTRAL"),
-            vix=_vix_s,
-            macro=st.session_state.macro or {},
-            metrics=_m_short,
-            rsi=_m_short.get("rsi", 50),
-            rvol=_m_short.get("rvol", 1.0)
-        )
-        _sns_color = {"GREEN — SHORT VALID":"#1b5e20","YELLOW — WAIT FOR CONFIRMATION":"#f57f17",
-                      "RED — DO NOT SHORT":"#b71c1c","DO NOT SHORT":"#b71c1c"}.get(_sns["verdict"],"#37474f")
-        st.markdown(
-            f"""<div style="background:{_sns_color};color:#fff;padding:12px 16px;
-            border-radius:7px;margin:6px 0">
-            <strong style="font-size:1.1rem">{_sns['badge']} SHORT SIGNAL: {_sns['verdict']}</strong><br/>
-            <em style="opacity:0.9;font-size:0.9rem">{_sns['action']}</em>
-            </div>""",
-            unsafe_allow_html=True
-        )
-        if _sns["blocks"]:
-            for _b in _sns["blocks"]:
-                st.error(_b)
-        with st.expander("📋 Short Condition Details", expanded=False):
-            for r in _sns["reasons"]:
-                st.caption(r)
-
-
-    col_verdict, col_analysis = st.columns([1, 1])
-
-    _lv4 = st.session_state.lang_level
-    with col_verdict:
-        if st.session_state.goal_met:
-            st.error("## 🛑 You Hit Your Daily Goal — STOP NOW")
-            if _lv4 in ["Beginner","Intermediate"]:
-                st.info("You made your 1% today. Close your broker. Protect your gains. "
-                        "The best traders walk away when they're up — not when they're chasing.")
-            else:
-                st.markdown("<div class='risk-warning'><strong>CLOSE YOUR TERMINAL.</strong> Protect your gains.</div>", unsafe_allow_html=True)
-            can_trade = False
-        elif (st.session_state.total_risk_deployed + total_trade_risk) > (capital * max_portfolio_risk / 100):
-            st.error("## 🛑 Too Much Risk Already Open")
-            if _lv4 in ["Beginner","Intermediate"]:
-                st.info(f"Adding this trade would put more than {max_portfolio_risk}% of your account at risk at once. "
-                        f"Close an existing trade first, or reduce your size on this one.")
-            else:
-                st.markdown(f"<div class='risk-warning'>Adding this trade exceeds your {max_portfolio_risk}% portfolio heat cap.</div>", unsafe_allow_html=True)
-            can_trade = False
-        else:
-            can_trade = True
-            if total_score >= 7:
-                st.success(f"## ✅ YES — Take This Trade  ({total_score}/8)")
-                st.markdown(
-                    "All filters passed. Enter at your planned price, set your stop, set your target — and walk away."
-                    if _lv4 in ["Beginner","Intermediate"] else
-                    "Execute with full size. All systems GO."
-                )
-            elif total_score >= 5:
-                st.warning(f"## 🟡 MAYBE — Trade Smaller  ({total_score}/8)")
-                st.markdown(
-                    "Setup is OK but not ideal. If you enter, use HALF your normal size. "
-                    "Or wait — a better setup for this same stock will come."
-                    if _lv4 in ["Beginner","Intermediate"] else
-                    "Conditional. Reduce size 50% or wait for confirmation candle."
-                )
-            else:
-                st.error(f"## 🔴 NO — Skip This Trade  ({total_score}/8)")
-                st.markdown(
-                    "Too many warning signs. Protect your account — no trade is better than a bad trade. "
-                    "A new opportunity will appear tomorrow."
-                    if _lv4 in ["Beginner","Intermediate"] else
-                    "Stand aside. Multiple filters failed. Setup is structurally weak."
-                )
-
-        if penalties:
-            with st.expander(f"⚠️ {len(penalties)} penalty filter(s) triggered — click to see why"):
-                for p in penalties:
-                    if _lv4 in ["Beginner","Intermediate"]:
-                        # Translate penalty codes to plain English
-                        _plain = (p.replace("Trade Budget (-3)","🔴 Day-trade limit: no more same-day trades left")
-                                   .replace("Trade Budget (-1)","🟡 Day-trade caution: save your last trade for A+ setups")
-                                   .replace("DTE Discipline (-1)","🟡 DTE too high: tighten up or use shorter expiry")
-                                   .replace("Expected Move (-2)","🔴 Strike too close: short strike inside expected move = high risk")
-                                   .replace("POP (-1)","🟡 Odds: less than 65% chance of profit")
-                                   .replace("Event Risk (-2)","🔴 Big news soon: major event within 48h = hold off")
-                                   .replace("Event Hold (-2)","🔴 Holding through event: very risky")
-                                   .replace("Fed/Rates (-2)","🟡 Rates rising: hurts tech/growth stocks")
-                                   .replace("Market Hours (-1)","🟡 Bad timing: low liquidity period")
-                                   .replace("Trend Misalignment (-1)","🟡 Against the trend: trading against the main direction")
-                                   .replace("RSI Extreme (-1)","🟡 Overextended: stock has moved too far, too fast")
-                                   .replace("Multi-Algo Conflict (-1)","🟡 Mixed signals: technical indicators disagree"))
-                        st.caption(f"• {_plain}")
-                    else:
-                        st.caption(f"• {p}")
-
-    with col_analysis:
-        st.markdown("**📋 Setup Quality Checklist**")
-
-        checks = []
-        checks.append(("✅" if fresh == 2 else "⚠️" if fresh == 1 else "❌", f"Freshness: {['Stale (Weak)','Used (OK)','Fresh (Strong)'][fresh]}"))
-        if is_vertical:
-            _ce = option_details.get("credit_pct_width", 0)
-            checks.append(("✅" if score_rr == 2 else "⚠️" if score_rr == 1 else "❌", f"Credit Efficiency: {_ce:.0%} of width ({['Thin (<20%)', 'Acceptable (20-25%)', 'Preferred (25%+)'][score_rr]})"))
-        else:
-            checks.append(("✅" if score_rr == 2 else "⚠️" if score_rr == 1 else "❌", f"R/R: {rr:.2f} ({['Poor', 'Acceptable', 'Excellent'][score_rr]})"))
-        checks.append(("✅" if abs(m['gap']) > 2 and m['rvol'] > 1.5 else "⚠️" if abs(m['gap']) > 2 else "➖", f"Gap: {m['gap']:.2f}%"))
-        checks.append(("✅" if m['rvol'] > 1.2 else "⚠️", f"Volume: {m['rvol']:.1f}x"))
-        checks.append(("✅" if m['adx'] > 25 else "⚠️", f"Trend Strength: ADX {m['adx']:.0f}"))
-
-        for icon, text in checks:
-            st.caption(f"{icon} {text}")
-
-    # === WARREN AI EXPORT ===
-    st.markdown("---")
-    st.caption("**📋 Copy for 2nd Opinion:**")
-
-    if st.session_state.macro:
-        flow_strength = engine.check_passive_intensity(
-            datetime.now().day,
-            st.session_state.metrics.get('rvol', 0)
-        )
-    else:
-        flow_strength = "UNKNOWN"
-
-    ai_export = f"""
-[ARCHITECT REVIEW - {ticker}]
-Strategy: {strategy}
-Score: {total_score}/8
-Verdict: {'GREEN' if total_score>=7 else 'YELLOW' if total_score>=5 else 'RED'}
-Entry: ${entry:.2f} | Stop: ${stop:.2f} | Target: ${target:.2f}
-R/R: {rr:.2f} | Size: {shares} {'contracts' if 'Income' in strategy else 'shares'}
-VIX Regime: {vix_regime if st.session_state.macro else 'N/A'}
-Passive Flow: {flow_strength}
-10Y Yield: {'RISING >1%' if fed_penalty else 'STABLE'}
-Day Trade Plan: {'Same-day exit' if planned_same_day_exit else 'Swing/hold plan'} | PDT Framework: {pdt_framework} | Day trades used: {day_trades_used}/3
-Expected Move: {round(option_details.get('expected_move', 0), 2) if is_vertical else 'N/A'} | EM Status: {option_details.get('expected_move_status', 'N/A') if is_vertical else 'N/A'} | Approx POP: {round(option_details.get('approx_pop', 0)*100, 1) if is_vertical else 'N/A'}% | Event 48h: {option_details.get('event_risk_48h', False) if is_vertical else 'N/A'}
-Option Math: {('Vertical ' + spread_kind + ' spread | Short ' + str(short_strike) + ' | Long ' + str(long_strike) + ' | Credit ' + str(spread_credit) + ' | Max loss/contract $' + str(round(option_details.get('max_loss_per_contract', 0), 2))) if is_vertical else ('CSP | Premium ' + str(premium) + ' | Cash-secured exposure/contract $' + str(round(option_details.get('cash_secured_risk_per_contract', 0), 2))) if is_csp else 'N/A'}
-    """
-
-    st.code(ai_export.strip(), language='text')
-
-    # EXECUTION
-    if can_trade and total_score >= 5:
-        st.divider()
-        st.subheader("📤 Log Your Trade")
-        st.caption("💡 PAPER = practice (no P&L). LIVE = real trade (affects P&L).")
-
-        col_exec1, col_exec2 = st.columns(2)
-
-        with col_exec1:
-            if st.button("📝 Log as PAPER TRADE", type="secondary", use_container_width=True,
-                        help="Logs for learning. Does NOT affect P&L or portfolio risk."):
-                trade_record = {
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "ticker": ticker, "action": strategy, "entry": entry, "stop": stop, "target": target,
-                    "shares": shares, "score": total_score, "risk": total_trade_risk,
-                    "expected_reward": gross_reward, "net_reward": net_reward, "rr_ratio": rr,
-                    "credit_points": spread_credit if is_vertical else premium if is_csp else 0.0,
-                    "slippage": slippage, "commissions": commissions, "status": "PAPER"
-                }
-                st.session_state.journal.append(trade_record)
-                st.success("📋 Paper trade logged!")
-
-        with col_exec2:
-            if st.button("💵 Log as LIVE TRADE", type="primary", use_container_width=True,
-                        help="Logs as open position (affects portfolio risk). Only if you actually entered."):
-                trade_record = {
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "ticker": ticker, "action": strategy, "entry": entry, "stop": stop, "target": target,
-                    "shares": shares, "score": total_score, "risk": total_trade_risk,
-                    "expected_reward": gross_reward, "net_reward": net_reward, "rr_ratio": rr,
-                    "credit_points": spread_credit if is_vertical else premium if is_csp else 0.0,
-                    "slippage": slippage, "commissions": commissions, "status": "OPEN"
-                }
-                st.session_state.journal.append(trade_record)
-                st.session_state.open_positions.append(trade_record)
-                st.session_state.total_risk_deployed += total_trade_risk
-                st.success("✅ Live position logged!")
-                st.rerun()
-
-else:
-    st.info("👈 **Quick Start:** 1. Scan Macro (check global markets) → 2. Select a Ticker/Asset (**left sidebar**) → 3. Check/Enter **Strategy** + **IWT Score** (**left sidebar**) → 4. Scan Ticker/Asset → 5. Review Multi-Algo Signals → 6. Log Paper or Live Trade")
-
-# POSITION MANAGEMENT
-if st.session_state.open_positions:
-    st.divider()
-    st.subheader("📊 Open Trades")
-    _lop = st.session_state.lang_level
-    if _lop in ["Beginner","Intermediate"]:
-        st.caption("These are your active trades. When you close a trade in your broker, come back here and log the exit price to track your P&L.")
-    else:
-        st.caption("Live position log. P&L updates when you close a position here.")
-
-    positions_df = pd.DataFrame(st.session_state.open_positions)
-    _display_cols = [c for c in ['ticker','action','entry','stop','target','shares','risk','score'] if c in positions_df.columns]
-    _rename = {'ticker':'Symbol','action':'Type','entry':'Entry $','stop':'Stop $',
-               'target':'Target $','shares':'Size','risk':'Risk $','score':'Score'}
-    st.dataframe(positions_df[_display_cols].rename(columns=_rename), use_container_width=True)
-
-    st.markdown("**Close a trade you already exited in your broker:**")
-    if _lop in ["Beginner","Intermediate"]:
-        st.caption(
-            "Stocks/ETFs: enter the price you sold at. "
-            "SPX Verticals: enter the credit/debit remaining (e.g. 0.35 if spread is worth $0.35 to close). "
-            "The app calculates your actual profit or loss."
-        )
-    else:
-        st.caption("Stocks: exit price. SPX verticals: closing debit in index points.")
-
-    col_close1, col_close2, col_close3 = st.columns(3)
-
-    with col_close1:
-        position_to_close = st.selectbox("Which trade?", [p['ticker'] for p in st.session_state.open_positions])
-
-    with col_close2:
-        exit_price = st.number_input("At what price did you exit? ($)", value=0.0, step=0.01)
-
-    with col_close3:
-        if st.button("✅ CLOSE & RECORD"):
-            if exit_price > 0:
-                for i, pos in enumerate(st.session_state.open_positions):
-                    if pos['ticker'] == position_to_close:
-                        if "Long" in pos['action']:
-                            actual_pnl = (exit_price - pos['entry']) * pos['shares']
-                        elif "SPX Vertical" in pos['action']:
-                            # Conservative close-entry: user enters actual closing debit/credit-equivalent P&L manually
-                            # as Exit Price = remaining spread value/debit in index points.
-                            # P&L = initial credit - closing debit, each point worth $100 per contract.
-                            initial_credit_points = pos.get('credit_points', pos['expected_reward'] / max(pos['shares'] * 100, 1))
-                            closing_debit_points = exit_price
-                            actual_pnl = (initial_credit_points - closing_debit_points) * pos['shares'] * 100
-                        elif "Income" in pos['action']:
-                            # Cash-secured put: profit = premium kept if price > strike at close.
-                            # If assigned / below strike, estimate intrinsic loss minus premium.
-                            if exit_price >= pos['entry']:
-                                actual_pnl = pos['expected_reward']
-                            else:
-                                assignment_loss = (pos['entry'] - exit_price) * pos['shares'] * 100
-                                actual_pnl = pos['expected_reward'] - assignment_loss
-                        else:  # Short
-                            actual_pnl = (pos['entry'] - exit_price) * pos['shares']
-
-                        actual_pnl -= (pos['slippage'] + pos['commissions'])
-
-                        pos['exit_price'] = exit_price
-                        pos['actual_pnl'] = actual_pnl
-                        pos['status'] = 'CLOSED'
-
-                        st.session_state.closed_trades.append(pos)
-                        st.session_state.daily_pnl += actual_pnl
-                        st.session_state.total_risk_deployed -= pos['risk']
-
-                        if actual_pnl < 0:
-                            st.session_state.consecutive_losses += 1
-                        else:
-                            st.session_state.consecutive_losses = 0
-
-                        if st.session_state.daily_pnl >= daily_goal:
-                            st.session_state.goal_met = True
-                            st.balloons()
-
-                        st.session_state.open_positions.pop(i)
-                        st.success(f"✅ Closed {position_to_close}: P&L = ${actual_pnl:.2f}")
-                        st.rerun()
-                        break
-            else:
-                st.error("❌ Please enter a valid exit price.")
-
-# PERFORMANCE ANALYTICS
-if st.session_state.closed_trades:
-    st.divider()
-    st.subheader("📈 How Are You Doing?")
-    _lpf2 = st.session_state.lang_level
-    if _lpf2 in ["Beginner","Intermediate"]:
-        st.caption("Your trading scorecard. Win rate above 50% is a start — but average win size matters just as much.")
-    else:
-        st.caption("Performance analytics across closed trades. Win rate, EV/trade, R-multiples, drawdown.")
-
-    closed_df = pd.DataFrame(st.session_state.closed_trades)
-
-    col_stats1, col_stats2, col_stats3, col_stats4, col_stats5 = st.columns(5)
-
-    wins = len(closed_df[closed_df['actual_pnl'] > 0])
-    total_trades = len(closed_df)
-    win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
-
-    col_stats1.metric("Win Rate", f"{win_rate:.1f}%", delta=f"{wins}/{total_trades} trades",
-                     help=">50% is good with 2:1 R/R. >60% is excellent.")
-
-    avg_rr = closed_df['rr_ratio'].mean()
-    col_stats2.metric("Avg R/R", f"{avg_rr:.2f}",
-                     help="Average Risk/Reward. >2.0 means you make 2x what you risk.")
-
-    total_pnl = closed_df['actual_pnl'].sum()
-    col_stats3.metric("Total P&L", f"${total_pnl:.2f}", delta=f"{(total_pnl/capital)*100:.2f}%",
-                     help="Total profit/loss. % shows return on capital.")
-
-    sharpe = engine.calculate_sharpe_ratio(st.session_state.closed_trades)
-    if sharpe:
-        sharpe_quality = "Excellent" if sharpe > 2 else "Good" if sharpe > 1 else "Poor"
-        col_stats4.metric("Sharpe Ratio", f"{sharpe:.2f}", delta=sharpe_quality,
-                         help="Risk-adjusted return. >1 is good, >2 is excellent.")
-    else:
-        col_stats4.metric("Sharpe Ratio", "N/A", help="Need at least 5 closed trades.")
-
-    profit_factor = engine.calculate_profit_factor(st.session_state.closed_trades)
-    if profit_factor:
-        pf_quality = "Excellent" if profit_factor > 2 else "Good" if profit_factor > 1.5 else "Poor"
-        col_stats5.metric("Profit Factor", f"{profit_factor:.2f}", delta=pf_quality,
-                         help="Gross Profit / Gross Loss. >1.5 = profitable.")
-    else:
-        col_stats5.metric("Profit Factor", "N/A")
-
-    col_stats6, col_stats7, col_stats8 = st.columns(3)
-
-    expectancy = engine.calculate_expectancy(st.session_state.closed_trades)
-    col_stats6.metric("Expectancy", f"${expectancy:.2f}",
-                     help="Average $/trade. Must be positive to be profitable long-term.")
-
-    max_dd = engine.calculate_max_drawdown(st.session_state.closed_trades)
-    col_stats7.metric("Max Drawdown", f"${max_dd:.2f}",
-                     help="Largest peak-to-trough decline. Keep under 20% of capital.")
-
-    consecutive_wins = 0
-    consecutive_losses = 0
-    max_consec_wins = 0
-    max_consec_losses = 0
-
-    for t in st.session_state.closed_trades:
-        if t['actual_pnl'] > 0:
-            consecutive_wins += 1
-            consecutive_losses = 0
-            max_consec_wins = max(max_consec_wins, consecutive_wins)
-        else:
-            consecutive_losses += 1
-            consecutive_wins = 0
-            max_consec_losses = max(max_consec_losses, consecutive_losses)
-
-    col_stats8.metric("Max Streak", f"W:{max_consec_wins} / L:{max_consec_losses}",
-                     help="Longest winning/losing streaks.")
-
-    with st.expander("📋 Complete Trade History", expanded=False):
-        history_df = closed_df[['timestamp', 'ticker', 'action', 'entry', 'exit_price', 'actual_pnl', 'score', 'slippage', 'commissions']]
-        st.dataframe(history_df, use_container_width=True)
-
-
-
-# === TRADE MANAGEMENT ENGINE ===
-st.divider()
-with st.expander("🔧 Trade Management Engine", expanded=False):
-    st.caption(
-        "Systematic rules for managing open positions. "
-        "TastyTrade 50% rule + IWT profit/stop discipline + gamma management."
-    )
-    _tm_struct = st.selectbox(
-        "Position Type",
-        ["CREDIT_SPREAD", "LONG_OPTION"],
-        format_func=lambda x: "Credit Spread (short premium)" if x == "CREDIT_SPREAD" else "Long Option (bought premium)"
-    )
-    _col_tm1, _col_tm2 = st.columns(2)
-    with _col_tm1:
-        if _tm_struct == "CREDIT_SPREAD":
-            _tm_entry = st.number_input("Credit Received ($, e.g. 1.50 credit = 150)", value=0.0, step=5.0)
-            _tm_curr  = st.number_input("Current Cost to Close ($)", value=0.0, step=5.0)
-            _tm_dte_r = st.number_input("DTE Remaining", value=14, min_value=0, max_value=90, step=1)
-            _tm_dte_e = st.number_input("DTE at Entry", value=30, min_value=1, max_value=90, step=1)
-        else:
-            _tm_entry = st.number_input("Premium Paid ($ total per position, e.g. $500)", value=0.0, step=10.0)
-            _tm_curr  = st.number_input("Current Market Value ($)", value=0.0, step=10.0)
-            _tm_dte_r = st.number_input("DTE Remaining", value=45, min_value=0, max_value=400, step=1)
-            _tm_dte_e = None
-    with _col_tm2:
-        if _tm_entry > 0:
-            _tme = trade_management_engine(_tm_struct, _tm_entry, _tm_curr, _tm_dte_r, _tm_dte_e)
-            st.markdown(f"### {_tme['primary']}")
-            for _td in _tme['actions']:
-                st.markdown(f"• {_td}")
-            if _tm_struct == "CREDIT_SPREAD" and _tm_dte_e and _tm_dte_e > 0:
-                _theta = theta_decay_profile(_tm_entry / 100, _tm_dte_e, _tm_dte_r)
-                if _theta:
-                    st.markdown("---")
-                    st.caption(
-                        f"Theta tracker — profit captured: ~{_theta['pct_profit_captured']:.1f}% | "
-                        f"value remaining: ~${_theta['value_remaining']:.0f}/contract | "
-                        f"daily decay: ~${_theta['daily_theta_approx']:.2f}/day"
-                    )
-                    st.caption(_theta['management_signal'])
-        else:
-            st.info("Enter position values to get management decision.")
-
-# === KELLY CRITERION + RISK-OF-RUIN ===
-with st.expander("🎯 Position Sizing — How Big Should Your Trades Be?", expanded=False):
-    _lkv = st.session_state.lang_level
-    if _lkv in ["Beginner","Intermediate"]:
-        st.info(
-            "**How much of your account should you put into one trade?**\n\n"
-            "This calculator tells you the mathematically correct answer based on your "
-            "actual win rate and average win/loss size. "
-            "The app uses Quarter Kelly — the conservative professional standard."
-        )
-    else:
-        st.caption(
-            "Kelly Criterion: f* = (p·b − q) / b. Quarter Kelly (f*/4) is the institutional default. "
-            "Full Kelly maximises E[ln(W)] but produces severe periodic drawdowns."
-        )
-    _ck1, _ck2 = st.columns(2)
-    with _ck1:
-        _k_win = st.slider(
-            "Your win rate (%)" if _lkv in ["Beginner","Intermediate"] else "Win Rate (%)",
-            30, 85, 60, step=1,
-            help="Out of every 10 trades, how many do you win? 60% = 6 wins out of 10."
-        ) / 100.0
-        _k_avgwin = st.number_input(
-            "Average WIN size (% of your max risk)" if _lkv in ["Beginner","Intermediate"] else "Avg Win (% of 1R)",
-            value=50.0, step=5.0,
-            help=(
-                "When you win a trade, how much do you typically make vs what you risked? "
-                "50% = you make half of what you risked (e.g., risked $100, made $50). "
-                "100% = you make exactly what you risked."
-                if _lkv in ["Beginner","Intermediate"] else
-                "Average win as % of 1R (1R = your risk per trade). 50 = win 0.5R per win."
-            )
-        ) / 100.0
-        _k_avgloss = st.number_input(
-            "Average LOSS size (% of your max risk)" if _lkv in ["Beginner","Intermediate"] else "Avg Loss (% of 1R)",
-            value=100.0, step=5.0,
-            help=(
-                "When you lose, how much do you typically lose vs what you planned to risk? "
-                "100% = you lose the full amount you set as your max risk (ideal discipline). "
-                "Higher means you sometimes hold losing trades too long."
-                if _lkv in ["Beginner","Intermediate"] else
-                "Average loss as % of 1R. 100 = always hit your stop (ideal). >100 = holding losers."
-            )
-        ) / 100.0
-        _k_monthly = st.number_input(
-            "How many trades do you take per month?",
-            value=8, min_value=1, max_value=50, step=1
-        )
-    with _ck2:
-        if _k_avgwin > 0 and _k_avgloss > 0:
-            _kr = kelly_and_ruin(_k_win, _k_avgwin, _k_avgloss, _k_monthly)
-            if _kr['edge_per_trade_pct'] > 0:
-                st.success(
-                    f"✅ **Your edge is real — you have a mathematical advantage.**\n\n"
-                    f"Put **{_kr['quarter_kelly_pct']:.1f}% of your account** into each trade."
-                    if _lkv in ["Beginner","Intermediate"] else
-                    f"✅ Positive edge. Quarter Kelly: **{_kr['quarter_kelly_pct']:.1f}% of capital per trade**."
-                )
-                st.code(
-                    f"Recommended size: {_kr['quarter_kelly_pct']:.1f}% per trade\n"
-                    f"Edge per trade:   {_kr['edge_per_trade_pct']:.1f}%\n"
-                    f"Monthly return:   {_kr['expected_monthly_pct']:.1f}%\n"
-                    f"Risk of ruin:     {_kr['ruin_probability_pct']:.2f}%"
-                    if _lkv in ["Beginner","Intermediate"] else
-                    f"Full Kelly:     {_kr['kelly_pct']:.1f}%\n"
-                    f"Half Kelly:     {_kr['half_kelly_pct']:.1f}%\n"
-                    f"Quarter Kelly:  {_kr['quarter_kelly_pct']:.1f}% ← recommended\n"
-                    f"Edge/trade:     {_kr['edge_per_trade_pct']:.1f}%\n"
-                    f"Monthly EV:     {_kr['expected_monthly_pct']:.1f}%\n"
-                    f"Risk of Ruin:   {_kr['ruin_probability_pct']:.2f}%"
-                )
-            else:
-                st.error(
-                    "🔴 **Your numbers don't add up to a profitable system yet.**\n\n"
-                    "At this win rate and win/loss size, you'd lose money over time. "
-                    "You need to either win more often, OR make more when you win vs what you lose."
-                    if _lkv in ["Beginner","Intermediate"] else
-                    f"🔴 Negative edge (EV = {_kr['edge_per_trade_pct']:.1f}%). "
-                    f"Kelly = 0%. Do not size mechanically — fix the system first."
-                )
-                if _lkv in ["Beginner","Intermediate"]:
-                    st.caption(
-                        "Credit spreads need at least 80-85% win rate when risking 4× what you make. "
-                        "Long options need 2:1+ reward/risk ratio. Adjust your parameters until the edge turns positive."
-                    )
-            st.caption(_kr['note'])
-
-
-# =============================================================================
-# LIVE TRADING — Account · Order Builder · Confirm · Execute
-# Tradier brokerage integration.
-# Every order requires two explicit steps: Preview → Confirm.
-# Futures/Forex require a separate broker (see the setup guide).
-# =============================================================================
-
-st.divider()
-st.header("📤 Execute Trade")
-_lvl = st.session_state.lang_level
-
-if not _tradier_is_connected():
-    _ltd = st.session_state.lang_level
-    st.info(
-        "🔗 **Want to place real trades directly from this app?**\n\n"
-        "This app can connect to your Tradier brokerage account and execute orders automatically. "
-        "To set it up, your account admin needs to add your Tradier API key to the app settings — "
-        "it takes about two minutes. Contact support or your account admin to get connected."
-        if _ltd in ["Beginner","Intermediate"] else
-        "🔗 **Connect Tradier to enable live execution.** "
-        "Contact your app admin to connect your broker account. See the setup guide. "
-        "Sandbox = paper trading. Production = real orders."
-    )
-else:
-    _env_label = (st.secrets.get("TRADIER_ENV") or
-                  st.secrets.get("tradier", {}).get("env", "production")).lower()
-    _is_sandbox = _env_label == "sandbox"
-
-    _ltd2 = st.session_state.lang_level
-    if _is_sandbox:
-        st.success(
-            "🧪 **PAPER TRADING (Practice Mode)** — no real money used. "
-            "Orders are simulated so you can practice without any financial risk. "
-            "When you're ready to trade with real money, your account admin can switch this to live mode."
-        )
-    else:
-        st.error(
-            "⚡ **LIVE TRADING — REAL MONEY** \n\n"
-            "Orders placed here go straight to your real brokerage account. "
-            "Every order you confirm will cost or earn real money. "
-            "There is no undo after an order is filled."
-        )
-
-    # ── Account dashboard ────────────────────────────────────────────────────
-    _acct_id = tdr_get_account_id()
-    _bal     = tdr_get_balances(_acct_id) if _acct_id else None
-
-    if _bal:
-        col_b1, col_b2, col_b3, col_b4 = st.columns(4)
-        col_b1.metric("Total Equity",    f"${_bal['total_equity']:,.2f}")
-        col_b2.metric("Options BP",      f"${_bal['option_bp']:,.2f}",
-                      help="Buying power available for options trades.")
-        col_b3.metric("Stock BP",        f"${_bal['stock_bp']:,.2f}")
-        col_b4.metric("PDT Flag",
-                      "⚠️ PDT" if _bal["pdt_status"] else "✅ No PDT",
-                      help="Pattern Day Trader flag — if flagged, intraday round-trips are restricted.")
-
-        if _bal["pdt_status"]:
-            st.warning(
-                "⚠️ **Pattern Day Trader (PDT) flag active.** "
-                "Your account is flagged for exceeding 3 intraday round-trips in a 5-day window. "
-                "Restrictions apply until equity reaches $25,000."
-            )
-
-    # Positions summary
-    with st.expander("📋 Current Positions & Open Orders", expanded=False):
-        _positions = tdr_get_positions(_acct_id) if _acct_id else []
-        _orders    = tdr_get_orders(_acct_id)    if _acct_id else []
-
-        if _positions:
-            st.markdown("**Open Positions:**")
-            _pos_rows = []
-            for p in _positions:
-                _pos_rows.append({
-                    "Symbol": p.get("symbol",""),
-                    "Qty":    p.get("quantity",""),
-                    "Cost":   f"${float(p.get('cost_basis',0)):.2f}",
-                    "Value":  f"${float(p.get('market_value',0)):.2f}",
-                    "P&L":    f"${float(p.get('gain_loss',0)):+.2f}",
-                })
-            st.dataframe(pd.DataFrame(_pos_rows), use_container_width=True)
-        else:
-            st.caption("No open positions.")
-
-        if _orders:
-            st.markdown("**Recent Orders:**")
-            _ord_rows = []
-            for o in _orders[:15]:
-                _ord_rows.append({
-                    "ID":     str(o.get("id","")),
-                    "Symbol": o.get("symbol",""),
-                    "Type":   o.get("class",""),
-                    "Side":   o.get("side",""),
-                    "Qty":    o.get("quantity",""),
-                    "Status": o.get("status",""),
-                    "Price":  f"${float(o.get('price',0) or 0):.2f}" if o.get("price") else "MKT",
-                })
-            st.dataframe(pd.DataFrame(_ord_rows), use_container_width=True)
-
-            # Cancel button for open orders
-            _open_ords = [o for o in _orders if o.get("status") in ("open","pending")]
-            if _open_ords:
-                _cancel_id = st.selectbox(
-                    "Cancel order:",
-                    ["— select —"] + [f"{o['id']} | {o.get('symbol','')} {o.get('side','')} {o.get('quantity','')}" for o in _open_ords]
-                )
-                if _cancel_id != "— select —":
-                    _oid = _cancel_id.split(" | ")[0]
-                    if st.button("🗑️ Cancel this order", type="secondary"):
-                        _cr = tdr_cancel_order(_acct_id, _oid)
-                        if _cr.get("order", {}).get("status") == "ok" or _cr.get("order"):
-                            st.success(f"✅ Order {_oid} cancelled.")
-                            st.cache_data.clear()
-                        else:
-                            st.error(f"Cancel failed. Please try again or cancel in your broker directly.")
-        else:
-            st.caption("No recent orders.")
-
-    st.divider()
-
-    # ── Order builder ─────────────────────────────────────────────────────────
-    st.subheader("🏗️ Build Your Order")
-
-    _order_class = st.selectbox(
-        "What are you trading?",
-        ["SPX/SPY Vertical Credit Spread  (income — sell premium)",
-         "IWT Long Option — 60+ DTE  (directional — buy premium)",
-         "Single Stock or ETF  (long or short)",
-         "Close / Exit an existing position"],
-        help=(
-            "Stocks and ETFs: buy or sell shares directly. "
-            "Options: defined-risk contracts. "
-            "Futures require a separate broker (IBKR, NinjaTrader, thinkorSwim)."
-        )
-    )
-
-    _order_result = None
-    _max_loss_order = 0
-    _order_preview  = {}
-
-    # ════════════════════════════════════════════════════════════════════════
-    # PATH 1: Vertical Credit Spread
-    # ════════════════════════════════════════════════════════════════════════
-    if "Vertical Credit Spread" in _order_class:
-        st.markdown("### 📊 SPX/SPY Vertical Credit Spread")
-        if _lvl == "Beginner":
-            st.info(
-                "💡 You're selling a put spread. You collect premium upfront. "
-                "Your max profit is that premium. Your max loss is the spread width minus premium. "
-                "You need the market to stay ABOVE your short strike at expiration."
-            )
-
-        _vs_col1, _vs_col2 = st.columns(2)
-        with _vs_col1:
-            _vs_under = st.text_input("Underlying (SPY for small accounts, SPX for $50k+)", value="SPY")
-            _vs_type  = st.radio("Spread type", ["Put Credit Spread", "Call Credit Spread"], horizontal=True)
-            _vs_expiry= st.date_input("Expiration date")
-            _vs_short = st.number_input("Short strike (the one you SELL)", value=0.0, step=0.5)
-            _vs_long  = st.number_input("Long strike (the one you BUY for protection)", value=0.0, step=0.5)
-        with _vs_col2:
-            _vs_credit = st.number_input("Net credit per share ($)", value=0.0, step=0.05,
-                help="Mid-price of the spread. (Short bid + Long ask) / 2. Enter as positive number.")
-            _vs_qty    = st.number_input("Contracts", value=1, min_value=1, max_value=50, step=1)
-            _vs_otype  = "PUT" if "Put" in _vs_type else "CALL"
-
-        if _vs_short > 0 and _vs_long > 0 and _vs_credit > 0 and _vs_expiry:
-            _width         = abs(_vs_short - _vs_long)
-            _max_profit    = _vs_credit * 100 * _vs_qty
-            _max_loss_order= (_width - _vs_credit) * 100 * _vs_qty
-            _breakeven     = (_vs_short - _vs_credit if _vs_otype=="PUT" else _vs_short + _vs_credit)
-            _credit_eff    = _vs_credit / _width if _width > 0 else 0
-
-            st.code(
-                f"Spread:      {_vs_under} ${_vs_short:.2f}/{_vs_long:.2f} {_vs_otype} "
-                + _vs_expiry.strftime("%b %d %Y")
-                + f"\nContracts:   {_vs_qty}"
-                + f"\nCredit:      ${_vs_credit:.2f}/share = ${_max_profit:,.2f} total"
-                + f"\nMax loss:    ${_max_loss_order:,.2f} (if spread goes full width)"
-                + f"\nBreakeven:   ${_breakeven:.2f}"
-                + f"\nCredit eff:  {_credit_eff:.0%} of width "
-                + ("✅ Good" if _credit_eff >= 0.25 else "⚠️ Thin — below 25%")
-            )
-
-            _short_sym = build_option_symbol(_vs_under, _vs_expiry.strftime("%Y-%m-%d"), _vs_otype, _vs_short)
-            _long_sym  = build_option_symbol(_vs_under, _vs_expiry.strftime("%Y-%m-%d"), _vs_otype, _vs_long)
-
-            _order_preview = {
-                "class": "spread",
-                "underlying": _vs_under,
-                "legs": [
-                    {"symbol": _short_sym, "side": "sell_to_open", "qty": _vs_qty},
-                    {"symbol": _long_sym,  "side": "buy_to_open",  "qty": _vs_qty},
-                ],
-                "net_price": _vs_credit,
-                "description": (
-                    f"SELL {_vs_qty}x {_vs_under} {_vs_otype} {_vs_short} / "
-                    f"BUY {_vs_qty}x {_vs_under} {_vs_otype} {_vs_long} "
-                    f"exp {_vs_expiry.strftime('%Y-%m-%d')} for ${_vs_credit:.2f} credit"
-                ),
-                "max_profit": _max_profit,
-                "max_loss":   _max_loss_order,
-            }
-
-    # ════════════════════════════════════════════════════════════════════════
-    # PATH 2: IWT Long Option (60+ DTE)
-    # ════════════════════════════════════════════════════════════════════════
-    elif "IWT Long Option" in _order_class:
-        st.markdown("### 📈 IWT Long Option — 60+ DTE")
-        if _lvl == "Beginner":
-            st.info(
-                "💡 You're BUYING an option — paying premium upfront. "
-                "Your max loss is exactly what you pay (the premium). "
-                "Your max gain is unlimited (for calls) or down to zero (for puts). "
-                "IWT rule: minimum 60 days to expiry. Target delta 0.70+."
-            )
-
-        _lo_col1, _lo_col2 = st.columns(2)
-        with _lo_col1:
-            _lo_under  = st.text_input("Underlying (SPY, AAPL, QQQ, GLD...)", value="SPY")
-            _lo_dir    = st.radio("Direction", ["CALL (bullish)", "PUT (bearish)"], horizontal=True)
-            _lo_expiry = st.date_input("Expiration (min 60 days out)", key="lo_exp")
-            _lo_strike = st.number_input("Strike price (choose DITM: delta 0.70+)", value=0.0, step=0.5)
-        with _lo_col2:
-            _lo_premium = st.number_input("Premium per share ($)", value=0.0, step=0.05,
-                help="Cost of one option contract. $5.00 = $500 per contract.")
-            _lo_qty     = st.number_input("Contracts", value=1, min_value=1, max_value=20, step=1)
-
-        from datetime import date as _date
-        _lo_dte = (_lo_expiry - _date.today()).days if _lo_expiry else 0
-
-        if _lo_premium > 0 and _lo_strike > 0 and _lo_expiry:
-            _lo_total_cost  = _lo_premium * 100 * _lo_qty
-            _lo_stop_value  = _lo_total_cost * 0.50   # IWT 50% stop
-            _lo_target_50   = _lo_total_cost * 0.50   # IWT 50% profit target
-            _lo_target_100  = _lo_total_cost * 1.00
-
-            _lo_otype = "CALL" if "CALL" in _lo_dir else "PUT"
-            _dte_ok   = _lo_dte >= 60
-
-            if not _dte_ok:
-                st.error(f"⚠️ {_lo_dte} DTE is below IWT's 60-day minimum. Theta decay will hurt you faster.")
-            else:
-                st.success(f"✅ {_lo_dte} DTE — IWT compliant")
-
-            st.code(
-                f"Buy {_lo_qty}x {_lo_under} {_lo_otype} ${_lo_strike:.2f} "
-                + "exp " + _lo_expiry.strftime("%b %d %Y")
-                + f"\nPremium:      ${_lo_premium:.2f}/share = ${_lo_total_cost:,.2f} total"
-                + f"\nIWT stop:     ${_lo_stop_value:,.2f} (50% loss — hard rule)"
-                + f"\n50%% target:   ${_lo_target_50:,.2f} gain"
-                + f"\n100%% target:  ${_lo_target_100:,.2f} gain"
-            )
-
-            _max_loss_order = _lo_total_cost
-            _lo_sym = build_option_symbol(_lo_under, _lo_expiry.strftime("%Y-%m-%d"), _lo_otype, _lo_strike)
-
-            _order_preview = {
-                "class":       "option",
-                "option_symbol": _lo_sym,
-                "side":        "buy_to_open",
-                "qty":         _lo_qty,
-                "net_price":   _lo_premium,
-                "description": (
-                    f"BUY {_lo_qty}x {_lo_under} {_lo_otype} {_lo_strike} "
-                    f"exp {_lo_expiry.strftime('%Y-%m-%d')} @ ${_lo_premium:.2f}"
-                ),
-                "max_profit":  float("inf"),
-                "max_loss":    _max_loss_order,
-            }
-
-    # ════════════════════════════════════════════════════════════════════════
-    # PATH 3: Stock or ETF
-    # ════════════════════════════════════════════════════════════════════════
-    elif "Stock or ETF" in _order_class:
-        st.markdown("### 📦 Stock / ETF Order")
-        if _lvl == "Beginner":
-            st.info(
-                "💡 Buying shares = owning a piece of the company. "
-                "Your max loss = the full amount you invest (if it goes to zero). "
-                "Always use a stop-loss order to limit your downside."
-            )
-
-        _eq_col1, _eq_col2 = st.columns(2)
-        with _eq_col1:
-            _eq_sym   = st.text_input("Symbol (SPY, AAPL, GLD...)", value="SPY")
-            _eq_side  = st.radio("Action", ["Buy (long)", "Sell short"], horizontal=True)
-            _eq_qty   = st.number_input("Shares", value=1, min_value=1, max_value=10000, step=1)
-        with _eq_col2:
-            _eq_otype = st.radio("Order type", ["Limit (recommended)", "Market"], horizontal=True)
-            _eq_limit = st.number_input("Limit price ($)", value=0.0, step=0.01) if "Limit" in _eq_otype else None
-            _eq_stop  = st.number_input("Stop-loss price ($)", value=0.0, step=0.01,
-                help="Optional: set a stop to cap your loss. Leave 0 to skip.")
-            _eq_dur   = st.radio("Duration", ["Day", "GTC"], horizontal=True)
-
-        if _eq_limit and _eq_limit > 0 and _eq_stop and _eq_stop > 0:
-            _eq_actual_side = "buy" if "Buy" in _eq_side else "sell"
-            _eq_risk = abs(_eq_limit - _eq_stop) * _eq_qty if _eq_stop > 0 else _eq_limit * _eq_qty
-            _max_loss_order = _eq_risk
-
-            st.code(
-                f"{'BUY' if 'buy' in _eq_actual_side else 'SELL'} {_eq_qty} {_eq_sym} "
-                + f"@ limit ${_eq_limit:.2f}"
-                + f"\nStop-loss:  ${_eq_stop:.2f}"
-                + f"\nMax risk:   ${_eq_risk:,.2f}"
-            )
-
-            _order_preview = {
-                "class":       "equity",
-                "symbol":      _eq_sym,
-                "side":        _eq_actual_side,
-                "qty":         _eq_qty,
-                "order_type":  "limit" if "Limit" in _eq_otype else "market",
-                "limit_price": _eq_limit,
-                "stop_price":  _eq_stop if _eq_stop > 0 else None,
-                "duration":    _eq_dur.lower(),
-                "description": (
-                    f"{'BUY' if 'buy' in _eq_actual_side else 'SELL'} {_eq_qty}x {_eq_sym} "
-                    f"limit ${_eq_limit:.2f} stop ${_eq_stop:.2f} {_eq_dur}"
-                ),
-                "max_profit": None,
-                "max_loss":   _max_loss_order,
-            }
-
-    # ════════════════════════════════════════════════════════════════════════
-    # PATH 4: Close existing position
-    # ════════════════════════════════════════════════════════════════════════
-    else:
-        st.markdown("### 🚪 Close / Exit Position")
-        _positions_close = tdr_get_positions(_acct_id) if _acct_id else []
-        if not _positions_close:
-            st.info("No open positions found. Positions appear here after your first trade.")
-        else:
-            _pos_labels = {
-                f"{p.get('symbol','')} | Qty: {p.get('quantity','')} | P&L: ${float(p.get('gain_loss',0)):+.2f}": p
-                for p in _positions_close
-            }
-            _sel_pos_label = st.selectbox("Select position to close", list(_pos_labels.keys()))
-            _sel_pos = _pos_labels[_sel_pos_label]
-            _close_qty = st.number_input("Quantity to close",
-                min_value=1, max_value=abs(int(_sel_pos.get("quantity",1))),
-                value=abs(int(_sel_pos.get("quantity",1))))
-            _close_type = st.radio("Close order type", ["Limit", "Market"], horizontal=True)
-            _close_price = st.number_input("Limit price ($)", value=0.0, step=0.01) if _close_type == "Limit" else None
-
-            _sym = _sel_pos.get("symbol","")
-            # Determine close side
-            _pos_qty = int(_sel_pos.get("quantity", 0))
-            _is_option_pos = len(_sym) > 10
-            if _is_option_pos:
-                _close_side = "sell_to_close" if _pos_qty > 0 else "buy_to_close"
-            else:
-                _close_side = "sell" if _pos_qty > 0 else "buy"
-
-            _order_preview = {
-                "class":       "option" if _is_option_pos else "equity",
-                "symbol":      _sym,
-                "option_symbol": _sym if _is_option_pos else None,
-                "side":        _close_side,
-                "qty":         _close_qty,
-                "order_type":  "limit" if _close_type == "Limit" else "market",
-                "limit_price": _close_price,
-                "description": f"CLOSE {_close_qty}x {_sym} @ {'$'+str(_close_price) if _close_price else 'market'}",
-                "max_profit":  None,
-                "max_loss":    0,
-            }
-            _max_loss_order = 0
-
-    # ════════════════════════════════════════════════════════════════════════
-    # CONFIRM AND EXECUTE (all paths converge here)
-    # ════════════════════════════════════════════════════════════════════════
-    if _order_preview:
-        st.divider()
-        st.subheader("⚠️ Order Preview — Review Before Submitting")
-
-        _safety = trade_safety_check(_bal, _max_loss_order, _order_preview.get("qty",1)) if _bal else {"checks":[],"all_pass":False}
-
-        st.markdown(f"**Order:** `{_order_preview['description']}`")
-
-        if _order_preview.get("max_loss"):
-            st.error(
-                f"🔴 **Maximum possible loss on this trade: "
-                f"${_order_preview['max_loss']:,.2f}**"
-                + (f" | Max profit: ${_order_preview['max_profit']:,.2f}" if _order_preview.get("max_profit") and _order_preview["max_profit"] != float("inf") else "")
-            )
-
-        # Safety check results
-        if _safety.get("checks"):
-            for chk in _safety["checks"]:
-                icon = "✅" if chk["pass"] else "⚠️"
-                st.caption(f"{icon} {chk['name']}: {chk['detail']}")
-
-        _instrument_note = ""
-        if "Futures" in _order_class or "futures" in _order_class.lower():
-            st.info("ℹ️ Futures orders cannot be placed through this app's broker connection. Use your futures broker directly (Interactive Brokers, NinjaTrader, or thinkorSwim) to place futures trades. Use the Futures Calculator above to size your trade first.")
-
-        # Beginner plain-English summary
-        if _lvl == "Beginner":
-            _plain = f"""
-What you're about to do: {_order_preview['description']}
-
-The most you can lose: ${_order_preview.get('max_loss',0):,.2f}
-
-{"The most you can make: $"+f"{_order_preview['max_profit']:,.2f}" if _order_preview.get('max_profit') and _order_preview['max_profit'] != float('inf') else "Maximum gain: unlimited (options can grow if the stock moves far)"}
-
-{"✅ This is a paper trade — no real money." if _is_sandbox else "⚡ This is a REAL trade with REAL money."}
-"""
-            st.info(_plain)
-
-        # Two-step confirmation
-        _confirm1 = st.checkbox(
-            "✅ I have reviewed this order and the risk/reward above",
-            value=False
-        )
-        _confirm2 = st.checkbox(
-            f"{'🧪 I understand this is a paper trade (sandbox)' if _is_sandbox else '💸 I understand this will use REAL money from my Tradier account'}",
-            value=False
-        )
-
-        _can_submit = _confirm1 and _confirm2
-
-        if st.button(
-            f"{'🧪 Place Paper Order' if _is_sandbox else '💸 Place Live Order'}",
-            disabled=not _can_submit,
-            type="primary" if _can_submit else "secondary",
-            use_container_width=True
-        ):
-            _result = None
-            with st.spinner("Sending order to Tradier..."):
-                oc = _order_preview.get("class")
-                if oc == "spread":
-                    _result = tdr_place_spread_order(
-                        _acct_id,
-                        _order_preview["underlying"],
-                        _order_preview["legs"],
-                        _order_preview["net_price"],
-                    )
-                elif oc == "option":
-                    _result = tdr_place_option_order(
-                        _acct_id,
-                        _order_preview["option_symbol"],
-                        _order_preview["side"],
-                        _order_preview["qty"],
-                        "limit",
-                        _order_preview["net_price"],
-                    )
-                elif oc == "equity":
-                    _result = tdr_place_equity_order(
-                        _acct_id,
-                        _order_preview["symbol"],
-                        _order_preview["side"],
-                        _order_preview["qty"],
-                        _order_preview.get("order_type","limit"),
-                        _order_preview.get("limit_price"),
-                        _order_preview.get("stop_price"),
-                        _order_preview.get("duration","day"),
-                    )
-
-            if _result:
-                _ord = _result.get("order", {})
-                if _ord.get("status") == "ok":
-                    st.success(
-                        f"✅ Order submitted! ID: **{_ord.get('id','')}** | "
-                        f"Status: {_ord.get('status','')} | "
-                        f"{'Paper trade — no real money used.' if _is_sandbox else 'Live order sent to market.'}"
-                    )
-                    st.cache_data.clear()  # Force positions/orders refresh
-                else:
-                    err = _result.get("errors", {}).get("error", str(_result))
-                    st.error(f"❌ Order failed: {err}")
-                    if _lvl == "Beginner":
-                        st.info(
-                            "Common reasons: invalid symbol, market closed, insufficient buying power, "
-                            "or the option symbol format doesn't match an active contract. "
-                            "Double-check your strike and expiration date."
-                        )
-            else:
-                st.error("No response from the broker. Check your internet connection and try again.")
-
-        if not _can_submit:
-            st.caption("Check both boxes above to enable the order button.")
-
-    # Futures note (always visible at bottom of trading section)
-    with st.expander("📦 Futures & Forex Trading (different broker required)", expanded=False):
-        st.markdown("""
-Tradier supports US equities and equity options only.
-
-**For futures (ES, NQ, CL, GC, ZC, etc.)** use one of these brokers:
-| Broker | Instruments | API | Notes |
-|--------|------------|-----|-------|
-| [Interactive Brokers](https://ibkr.com) | Everything | ibapi (Python) | Best coverage, complex setup |
-| [NinjaTrader](https://ninjatrader.com) | Futures | NinjaScript / REST | Free for sim, $50/mo live |
-| [Schwab thinkorSwim](https://tdameritrade.com) | Equities + futures | REST API | Good for existing Schwab accounts |
-| [Tastytrade](https://tastytrade.com) | Options + futures | REST API | Best UX for options/futures combo |
-
-The **Futures Calculator** in this app (Futures mode in strategy selector) already computes your exact tick-value risk for all 14 contracts. Use that output to size your trade before placing in one of the brokers above.
-
-**For Forex** — Interactive Brokers, Oanda (oanda.com), or FXCM.
-""")
-
-# =============================================================================
-# BACKTESTING ENGINE — V7
-# Real data: yfinance (SPY prices, VIX, TNX). No fake numbers.
-# Options P&L: synthetic via BSM with real VIX. Clearly labelled.
-# Equity P&L: real price changes.
-# =============================================================================
-
-
-
-# =============================================================================
-# V14 UI — TERI IWT UNIVERSE BATCH SCANNER
-# Scan all 34 TERI_UNIVERSE stocks simultaneously. Real yfinance data.
-# Returns ranked setups by IWT scorecard.
-# =============================================================================
-with st.expander("🔍 IWT Universe Scanner — 34-Stock Opportunity Scan", expanded=False):
-    _lus = st.session_state.lang_level
-    if _lus in ["Beginner","Intermediate"]:
-        st.caption(
-            "the IWT morning routine: scan her full watchlist before picking a stock. "
-            "This checks all 34 stocks in her universe simultaneously and ranks the best setups. "
-            "A-grade = ready to trade. B-grade = monitor. C/D = skip."
-        )
-    else:
-        st.caption(
-            "IWT scorecard across all 34 TERI_UNIVERSE stocks: "
-            "trend (4pts) + RSI zone (2pts) + RVOL (2pts) + gap signal (1pt) + level freshness (2pts). "
-            "Real yfinance data. NSE tickers (.NR) skipped — no yfinance coverage. "
-            "Cache: 30 min."
-        )
-
-    _top_n = st.slider("How many top setups to show?", 5, 15, 8)
-
-    if st.button("🚀 Scan All 34 IWT Stocks Now", type="primary", key="universe_scan_btn"):
-        with st.spinner("Scanning 34 stocks with real market data (takes ~30s)..."):
-            _scan_results = batch_scan_teri_universe(TERI_UNIVERSE, top_n=_top_n)
-        st.session_state["_universe_scan"] = _scan_results
-
-    _scan = st.session_state.get("_universe_scan")
-    if _scan:
-        if not _scan:
-            st.warning("No setups found — market data may be unavailable. Try again after market open.")
-        else:
-            st.success(f"✅ Found {len(_scan)} ranked setups from TERI_UNIVERSE")
-            _grade_colors = {"A+":"#1b5e20","A":"#2e7d32","B":"#f57f17","C":"#e65100","D":"#b71c1c"}
-            for _i, _s in enumerate(_scan):
-                _gc = _grade_colors.get(_s["grade"], "#37474f")
-                _medal = "🥇" if _i==0 else "🥈" if _i==1 else "🥉" if _i==2 else f"{_i+1}."
-                _col1, _col2, _col3, _col4 = st.columns([2,2,2,2])
-                with _col1:
-                    st.markdown(
-                        f"""<div style="background:{_gc};color:#fff;padding:6px 10px;
-                        border-radius:5px;font-weight:700">
-                        {_medal} {_s['ticker']}  
-                        <span style="font-size:1.2rem">{_s['grade']}</span>  
-                        <span style="font-size:0.8rem;opacity:0.9">{_s['score']}/{_s['max']}</span>
-                        </div>""",
-                        unsafe_allow_html=True
-                    )
-                with _col2:
-                    st.metric("Price", f"${_s['price']:.2f}", delta=_s["trend"])
-                with _col3:
-                    st.metric("RSI", f"{_s['rsi']:.0f}", delta=f"RVOL {_s['rvol']:.1f}x")
-                with _col4:
-                    _gap_lbl = f"Gap {_s['gap_pct']:+.2f}%" if abs(_s['gap_pct']) > 0.1 else "No gap"
-                    st.metric("ATR", f"${_s['atr']:.2f}", delta=_gap_lbl)
-                if _i < len(_scan)-1:
-                    st.markdown("<hr style='margin:4px 0;border-color:#30333d'>", unsafe_allow_html=True)
-
-            st.caption(
-                "💡 Click any ticker → go to Sidebar → Manual Search → enter ticker → Scan. "
-                "All data from yfinance. Cached 30 min — refresh for intraday updates."
-            )
-
-
-
-
-# =============================================================================
-# V14 VIP UI — COVERED CALL YIELD CALCULATOR
-# VIP 2020: "Covered Calls" coaching sessions
-# IWT: sell 30-45 DTE, slightly OTM, collect income while holding shares
-# =============================================================================
-with st.expander("💰 Covered Call Income Calculator (IWT Strategy)", expanded=False):
-    _lcc = st.session_state.lang_level
-    if _lcc in ["Beginner","Intermediate"]:
-        st.info(
-            "**Covered calls = getting paid to wait.** You own shares, you sell "
-            "someone the right to buy them at a higher price. If they don't buy, "
-            "you keep the income AND your shares. The IWT system teaches this as a consistent "
-            "income strategy for shareholders.\n\n"
-            "**IWT rules:** Sell 30-45 days out, slightly above current price, "
-            "close at 50% profit, roll at 21 DTE."
-        )
-    _cc_cols = st.columns(2)
-    with _cc_cols[0]:
-        _cc_stock = st.number_input("Stock/ETF price right now ($)", value=0.0, step=0.50, key="cc_stock")
-        _cc_strike = st.number_input("Call strike you're selling ($)", value=0.0, step=0.50, key="cc_strike")
-        _cc_prem = st.number_input("Premium collected ($/share)", value=0.0, step=0.05, key="cc_prem")
-    with _cc_cols[1]:
-        _cc_dte = st.number_input("Days to expiry (IWT: 30-45 DTE)", value=35, min_value=1, max_value=90, key="cc_dte")
-        _cc_shares = st.number_input("Shares owned", value=100, min_value=100, step=100, key="cc_shares")
-
-    if _cc_stock > 0 and _cc_strike > 0 and _cc_prem > 0:
-        _cc = calc_covered_call_yield(_cc_stock, _cc_strike, _cc_prem, _cc_dte, _cc_shares)
-        if _cc.get("error"):
-            st.error(_cc["error"])
-        else:
-            _ccc1, _ccc2, _ccc3 = st.columns(3)
-            _ccc1.metric("Income Collected",   f"${_cc['total_income']:,.0f}")
-            _ccc2.metric("Annualized Yield",   f"{_cc['annualized_yield_pct']:.1f}%",
-                         delta=f"{_cc['simple_yield_pct']:.2f}% per trade")
-            _ccc3.metric("Take Profit @ 50%",  f"${_cc['take_profit_price']:.2f}/share")
-            st.code(
-                f"Stock: ${_cc['stock_price']:.2f}  |  Sell {_cc['call_strike']:.2f} CALL  "
-                + f"|  ${_cc['call_premium']:.2f} premium  |  {_cc['dte']} DTE\n"
-                + f"{_cc['otm_note']}\n"
-                + f"{_cc['dte_note']}\n"
-                + f"Max profit if assigned: ${_cc['max_profit']:,.0f}"
-            )
-            st.markdown("**📋 the IWT IWT Rules for this trade:**")
-            for rule in _cc["teri_rules"]:
-                st.caption(f"• {rule}")
-    else:
-        st.caption("Enter stock price, strike, and premium above to calculate yield.")
-
-
-
-
-
-
-# =============================================================================
-# V14b UI — TROUBLESHOOT YOUR TRADING CHECKLIST
-# Coaching Call 1/4/2023: "Troubleshoot Your Trading" (118:27)
-# the IWT diagnostic framework for common trading problems.
-# =============================================================================
-with st.expander("🔧 Troubleshoot Your Trading — Diagnostic Checklist", expanded=False):
-    st.caption(
-        "From the IWT coaching call: diagnose why your trading isn't where you want it. "
-        "Check every box that applies — be honest with yourself."
-    )
-    _tt_responses = {}
-    _tt_symptoms = [
-        ("making_then_losing",    "I make money but then give it back"),
-        ("losses_bigger_than_wins","My average losses are bigger than my average wins"),
-        ("too_many_trades",       "I trade too much / get bored and trade"),
-        ("missing_good_setups",   "I miss good setups because I'm not watching at the right time"),
-        ("scared_to_enter",       "I hesitate and miss entries I planned"),
-        ("revenge_trading",       "After a loss I rush to make it back"),
-        ("holding_losers_too_long","I hold losing trades too long hoping they recover"),
-    ]
-    for sym, label in _tt_symptoms:
-        _tt_responses[sym] = st.checkbox(label, key="tt_" + sym)
-
-    if any(_tt_responses.values()):
-        _ttd = troubleshoot_trading(_tt_responses)
-        _pcolor = {"FIX NOW":"#b71c1c","IMPROVE":"#f57f17","MAINTAIN":"#1b5e20"}.get(_ttd["priority"],"#37474f")
-        st.markdown(
-            "<div style='background:" + _pcolor + ";color:#fff;padding:10px 14px;"
-            "border-radius:6px;margin:8px 0'>"
-            "<strong>DIAGNOSIS: " + _ttd["priority"] + "</strong><br/>"
-            "<em>" + _ttd["summary"] + "</em></div>",
-            unsafe_allow_html=True
-        )
-        for _diag in _ttd["active_diagnoses"]:
-            sev_icon = "🔴" if _diag["severity"] == "HIGH" else "🟡"
-            with st.expander(sev_icon + " " + _diag["label"], expanded=_diag["severity"]=="HIGH"):
-                st.markdown("**Root cause:** " + _diag["root_cause"])
-                st.success("**Fix:** " + _diag["fix"])
-                st.info(_diag["teri_quote"])
-        st.caption(_ttd["teri_rule"])
-    else:
-        st.caption("Check any that apply above to see the IWT diagnosis and fix.")
-
-
-# =============================================================================
-# V14b UI — SIX FIGURE TRADING PLAN CALCULATOR
-# T&T 2.0 / Coaching Call 1/9/2023: "Building a Six Figure Trading Plan"
-# the IWT backward-planning: start from income goal, derive what you need.
-# =============================================================================
-with st.expander("📊 Six Figure Trading Plan — Build Your Income Blueprint", expanded=False):
-    _lang_sfp = st.session_state.lang_level
-    if _lang_sfp in ["Beginner","Intermediate"]:
-        st.info(
-            "the IWT approach: start with your INCOME GOAL and work backwards to "
-            "what you need to do each day. This is your business plan, not just a trade plan."
-        )
-    else:
-        st.caption(
-            "T&T 2.0 / Coaching Call 1/9/2023. Math: EV = win_rate × avg_win - loss_rate × avg_loss. "
-            "No invented edge — shows what inputs WOULD be needed to hit the goal."
-        )
-    _sf1, _sf2 = st.columns(2)
-    with _sf1:
-        _sfp_monthly = st.number_input("Monthly income goal ($)", value=5000, step=500, key="sfp_monthly")
-        _sfp_account = st.number_input("Account size ($)", value=25000, step=1000, key="sfp_acct")
-        _sfp_wr      = st.slider("Your win rate (%)", 50, 90, 70, key="sfp_wr") / 100
-    with _sf2:
-        _sfp_risk    = st.number_input("Avg risk per contract ($)", value=500, step=50, key="sfp_risk")
-        _sfp_tpd     = st.number_input("Planned trades per day", value=2, min_value=1, max_value=5, key="sfp_tpd")
-
-    if _sfp_monthly > 0 and _sfp_account > 0:
-        _sfp = calc_six_figure_plan(_sfp_monthly, _sfp_account, _sfp_wr, _sfp_risk, _sfp_tpd)
-        if _sfp.get("error"):
-            st.error(_sfp["error"])
-        else:
-            _s1, _s2, _s3, _s4 = st.columns(4)
-            _s1.metric("Daily Target",   "$" + str(round(_sfp["daily_goal"])))
-            _s2.metric("Weekly Target",  "$" + str(round(_sfp["weekly_goal"])))
-            _s3.metric("Annual Goal",    "$" + str(round(_sfp["annual_goal"] / 1000)) + "k")
-            _s4.metric("Monthly Return", str(_sfp["monthly_return_pct"]) + "%",
-                       delta=("Achievable" if _sfp["daily_reachable"] else "Review inputs"))
-            st.code(
-                "EV per trade:   $" + str(_sfp["ev_per_trade"]) + "\n"
-                "Trades needed:  " + str(_sfp["trades_needed_daily"]) + "/day (you plan: " + str(_sfp_tpd) + ")\n"
-                "1% risk limit:  $" + str(round(_sfp["max_risk_1pct"])) + "/trade\n"
-                "Your avg risk:  $" + str(round(_sfp_risk)) + "/trade → " +
-                ("OK" if _sfp["sizing_ok"] else "TOO LARGE")
-            )
-            if not _sfp["sizing_ok"]:
-                st.warning(_sfp["sizing_note"])
-            st.caption(_sfp["ev_note"])
-            st.markdown("**the IWT plan rules:**")
-            for r in _sfp["teri_rules"]:
-                st.caption("• " + r)
-
-
-
-
-# V14b: Covered Call Cost Basis Reducer (additional section under CC calculator)
-with st.expander("📉 Cost Basis Reducer — How Many Calls Until I Own It Free?", expanded=False):
-    st.caption(
-        "From Options 101 (71:31): The IWT method sells covered calls to reduce cost basis over time. "
-        "Goal: eventually own the stock 'for free' (zero cost basis) through repeated premium collection."
-    )
-    _cbr1, _cbr2 = st.columns(2)
-    with _cbr1:
-        _cbr_purchase = st.number_input("Your purchase price ($/share)", value=0.0, step=0.50, key="cbr_purchase")
-        _cbr_current  = st.number_input("Current stock price ($/share)", value=0.0, step=0.50, key="cbr_current")
-    with _cbr2:
-        _cbr_shares = st.number_input("Shares owned", value=100, step=100, key="cbr_shares")
-        _cbr_rounds_txt = st.text_area(
-            "Premiums collected per call sold (comma-separated, $/share)",
-            placeholder="e.g. 2.50, 1.80, 3.00, 2.20",
-            key="cbr_rounds_txt",
-            height=60
-        )
-    if _cbr_purchase > 0 and _cbr_rounds_txt.strip():
-        try:
-            _cbr_rounds = [float(x.strip()) for x in _cbr_rounds_txt.split(",") if x.strip()]
-            _cbr = calc_cc_cost_basis_reducer(_cbr_current or _cbr_purchase, _cbr_purchase, _cbr_rounds, _cbr_shares)
-            _r1, _r2, _r3 = st.columns(3)
-            _r1.metric("Original Cost Basis", "$" + str(round(_cbr["purchase_price"], 2)))
-            _r2.metric("Current Cost Basis",  "$" + str(round(_cbr["current_cost_basis"], 2)),
-                       delta="-$" + str(round(_cbr["total_premium_collected"], 2)) + " collected")
-            _r3.metric("Cost Reduction", str(_cbr["cost_reduction_pct"]) + "%",
-                       delta=str(_cbr["total_rounds"]) + " rounds sold")
-            st.code(
-                "Total premium collected: $" + str(round(_cbr["total_premium_collected"], 2)) + "/share"
-                + " = $" + str(round(_cbr["total_premium_collected"] * _cbr_shares, 2)) + " total\n"
-                + "Avg per round: $" + str(_cbr["avg_premium_per_round"]) + "/share\n"
-                + "Break-even (own free): ~" + str(_cbr["breakeven_months"]) + " months at this avg"
-            )
-            st.info(_cbr["teri_goal_note"])
-            if len(_cbr["rounds"]) <= 12:
-                st.markdown("**Round-by-round history:**")
-                for r in _cbr["rounds"]:
-                    st.caption(
-                        "Round " + str(r["round"]) + ": collected $" + str(r["premium"])
-                        + " → cost basis now $" + str(r["cost_basis_after"])
-                        + " (total saved: $" + str(r["reduction_to_date"]) + ")"
-                    )
-        except ValueError:
-            st.warning("Please enter valid numbers separated by commas (e.g. 2.50, 1.80, 3.00)")
-
-
-st.divider()
-st.header("📈 Backtest — Did These Strategies Work?")
-_lvl = st.session_state.lang_level
-
-with st.expander("What backtesting means (and its limits)", expanded=False):
-    if _lvl == "Beginner":
-        st.info(
-            "Backtesting = running a strategy on PAST data to see how it would have performed. "
-            "It can't tell you what will happen next — markets change. "
-            "But it can tell you: did the strategy have an edge? "
-            "How often did it win? What was the worst stretch? "
-            "Read results critically, not as a promise."
-        )
-    else:
-        st.caption(
-            "Backtest limitations: survivorship bias, look-ahead bias, overfitting, "
-            "transaction cost assumptions, and the fundamental problem that past "
-            "market regimes don't repeat identically. "
-            "Options P&L here uses BSM + real VIX (best free approximation). "
-            "Actual market fills would differ from synthetic BSM prices."
-        )
-
-# Pre-computed results from live backtest run at deploy time
-_BT = {
-    "period":        "2025-05-08 → 2026-05-08  (252 trading days)",
-    "spy_start":     558.66,
-    "spy_end":       737.62,
-    "spy_return":    32.03,
-    "vix_avg":       18.26,
-    "vix_min":       13.47,
-    "vix_max":       31.05,
-    "strategies": {
-        "📈 Buy & Hold SPY":         {"return":29.82, "sharpe":1.95,  "max_dd":-8.88, "capital":32455.28},
-        "💰 Credit Spreads":          {"return":1.26,  "sharpe":-4.58, "max_dd":-0.39, "capital":25314.38,
-                                       "trades":16, "win_rate":69, "detail":"16 trades | 69% win | -0.4% drawdown"},
-        "📊 IWT Long Calls (60 DTE)": {"return":0.00,  "sharpe":0.00,  "max_dd":0.00,  "capital":25000.00,
-                                       "detail":"No entries triggered — IVR stayed below entry threshold most of year"},
-        "🔼 Trend Following (SPY)":   {"return":1.87,  "sharpe":-2.00, "max_dd":0.00,  "capital":25467.73,
-                                       "detail":"2 profitable trend rides | 0% drawdown on active capital"},
-        "⚖️ Combined (1/3 each)":     {"return":1.04,  "sharpe":-6.96, "max_dd":-0.13, "capital":25260.70},
-    },
-    "market_context": (
-        "2025-2026 was an exceptional bull year. SPY returned +32% (historical avg: ~10%). "
-        "VIX ranged 13–31 with an April 2025 tariff-shock spike. "
-        "IVR (6-month rolling) averaged 25% — a predominantly LOW IV environment. "
-        "This favoured: (1) owning stocks, (2) buying cheap options. "
-        "It was NOT an ideal year for income strategies that rely on elevated IV."
-    ),
-    "key_insight": (
-        "Income strategies (credit spreads) had a 69% win rate and near-zero drawdown. "
-        "They just had fewer entry signals because IVR stayed low most of the year. "
-        "In a normal 8–10% SPY year, income returns of 1–3% with <1% drawdown "
-        "represent excellent risk-adjusted performance."
-    ),
+# ── SESSION STATE ──────────────────────────────────────────────────────────────
+_SS_DEFAULTS = {
+    "data": None, "metrics": {}, "macro": None, "signals": {},
+    "journal": [], "open_positions": [], "closed_trades": [],
+    "goal_met": False, "lang_level": "Intermediate",
+    "advisor_goal": "Weekly income (sell premium)",
+    "daily_pnl": 0.0, "total_risk_deployed": 0.0,
+    "consecutive_losses": 0, "day_trades_used": 0,
+    "week_event_days": [],
+    # V15 new keys
+    "acct_size": 10000, "max_risk_per_trade": 100.0, "max_portfolio_risk_pct": 6.0,
+    "acct_type": "Margin < $25k", "monthly_goal": 1000.0,
+    "strategy": "Income (SPX Vertical Credit Spread)",
+    "ticker": "SPY", "dte": 14, "scorecard_fresh": 1,
+    "scorecard_speed": 1, "scorecard_time": 2,
+    "_spx_plan": None, "_universe_scan": None,
+    "_last_macro_fetch": None,
 }
+for k, v in _SS_DEFAULTS.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
-# Market context
-st.markdown(f"**Period: {_BT['period']}**")
-st.markdown(f"SPY: `${_BT['spy_start']:.2f}` → `${_BT['spy_end']:.2f}` (+{_BT['spy_return']:.1f}%) | "
-            f"VIX avg {_BT['vix_avg']:.1f} (range {_BT['vix_min']:.1f}–{_BT['vix_max']:.1f})")
-st.warning(
-    f"**Market context:** {_BT['market_context']}"
-)
+# ── HELPER: current live numbers for top bar ───────────────────────────────────
+def _topbar_numbers():
+    m = st.session_state.macro or {}
+    return {
+        "spx":  m.get("spx_price", "—"),
+        "vix":  m.get("vix", "—"),
+        "pnl":  st.session_state.daily_pnl,
+        "regime": compute_market_weather(m),
+    }
 
-# Results grid
-st.subheader("Strategy Performance (real money simulation)")
-col_hdr = st.columns([3,2,2,2,2])
-for h,t in zip(["Strategy","1-Year Return","Final $25k →","Sharpe","Max Drawdown"],
-               col_hdr):
-    t.markdown(f"**{h}**")
+# ── TOP BAR ───────────────────────────────────────────────────────────────────
+_tb = _topbar_numbers()
+_mw = _tb["regime"]
+_r   = _mw.get("regime", "UNKNOWN")
+_bc  = {"RISK-ON":"badge-on","RISK-NEUTRAL":"badge-neu",
+        "RISK-CAUTIOUS":"badge-cau","RISK-OFF":"badge-off"}.get(_r,"badge-unk")
+_spx = f"{_tb['spx']:,.0f}" if isinstance(_tb['spx'], (int,float)) else "—"
+_vix = f"{_tb['vix']:.1f}" if isinstance(_tb['vix'], (int,float)) else "—"
+_pnl_col = "#69f0ae" if _tb["pnl"] >= 0 else "#ff5252"
+_pnl_str = f"+${_tb['pnl']:.0f}" if _tb["pnl"] >= 0 else f"-${abs(_tb['pnl']):.0f}"
 
-for name, s in _BT["strategies"].items():
-    c1,c2,c3,c4,c5 = st.columns([3,2,2,2,2])
-    c1.markdown(name)
-    color = "green" if s["return"]>5 else "orange" if s["return"]>0 else "red"
-    c2.markdown(f":{color}[**{s['return']:+.2f}%**]")
-    c3.markdown(f"${s['capital']:,.0f}")
-    sh_color = "green" if s["sharpe"]>1 else "orange" if s["sharpe"]>0 else "red"
-    c4.markdown(f":{sh_color}[{s['sharpe']:.2f}]")
-    dd_color = "green" if s["max_dd"]>-2 else "orange"
-    c5.markdown(f":{dd_color}[{s['max_dd']:.2f}%]")
-    if "detail" in s:
-        st.caption(f"  ↳ {s['detail']}")
+st.markdown(f"""
+<div class="est-topbar">
+  <div class="est-topbar-brand">📈 <span>Easy</span>StockTrader</div>
+  <div class="est-topbar-metrics">
+    <span class="est-badge {_bc}">{_mw.get('badge','⬜')} {_r}</span>
+    <div class="est-metric">
+      <div class="est-metric-val">{_spx}</div>
+      <div class="est-metric-lbl">SPX</div>
+    </div>
+    <div class="est-metric">
+      <div class="est-metric-val">{_vix}</div>
+      <div class="est-metric-lbl">VIX</div>
+    </div>
+    <div class="est-metric">
+      <div class="est-metric-val" style="color:{_pnl_col}">{_pnl_str}</div>
+      <div class="est-metric-lbl">Today P&L</div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
-st.info(f"**Key Insight:** {_BT['key_insight']}")
+# ── 4 TABS ─────────────────────────────────────────────────────────────────────
+_T1, _T2, _T3, _T4 = st.tabs(["🎯 Setup", "🔍 Scan", "📊 Trade", "📓 Review"])
 
-# Explanation by level
-if _lvl == "Beginner":
-    st.markdown("""
-**What this means for you:**
-- Buying and holding SPY crushed every active strategy this year — that's unusual
-- Income strategies (spreads) protected capital beautifully (-0.4% worst drawdown)
-- The market was too calm and rising too fast for premium-selling to shine
-- In a normal or choppy year, income strategies make up ground vs buy-and-hold
-- **Bottom line:** No strategy works best every year. The IWT approach is about consistency over years, not beating exceptional bull runs
-""")
-elif _lvl in ["Advanced","Professional"]:
-    st.markdown("""
-**Risk-adjusted reading:**
-- Buy & Hold Sharpe 1.95 reflects the exceptional 2025-2026 bull run — not typical
-- Credit spreads' negative Sharpe (-4.58) reflects that *net premium collected was tiny relative to idle capital*
-  — the real comparison should be spread P&L vs margin deployed, not full portfolio
-- IWT long calls had no triggers: IVR < 40% with S > MA20 and RSI 40-70 aligned rarely
-- Trend following Sharpe (-2.00) reflects sparse trades and Sharpe penalising low-variance equity curves
-- For a proper strategy assessment: calculate return on capital *actually deployed*, not on full $25k
-""")
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — SETUP (Account → Ticker → Market Check → IWT Score → Verdict)
+# ══════════════════════════════════════════════════════════════════════════════
+with _T1:
+    _c_left, _c_right = st.columns([1, 1], gap="large")
 
-# Live re-run backtest button
-st.divider()
-with st.expander("🔄 Run Live Backtest Now (uses real current data)", expanded=False):
-    st.caption(
-        "This runs the backtest engine live against today's data from Yahoo Finance. "
-        "Results may differ slightly from above due to price updates."
-    )
-    if st.button("🚀 Run Full Backtest (takes ~30 seconds)", type="primary"):
-        with st.spinner("Fetching real historical data and computing backtest..."):
-            try:
-                import math as _m
-                from scipy.stats import norm as _norm
-                from datetime import date as _date, timedelta as _td
-                import warnings as _w; _w.filterwarnings('ignore')
+    # ── LEFT: Account + Strategy ─────────────────────────────────────────────
+    with _c_left:
+        st.markdown('<div class="card-sm"><span class="card-label">Account & Risk</span></div>',
+                    unsafe_allow_html=True)
+        _a1, _a2 = st.columns(2)
+        with _a1:
+            st.session_state.acct_size = st.number_input(
+                "Account size ($)", value=int(st.session_state.acct_size),
+                step=500, min_value=500, key="acct_sz_inp")
+            st.session_state.monthly_goal = st.number_input(
+                "Monthly income goal ($)", value=int(st.session_state.monthly_goal),
+                step=100, min_value=100, key="monthly_goal_inp")
+        with _a2:
+            _risk_pct = st.slider("Risk per trade (%)", 0.25, 5.0,
+                float(st.session_state.max_risk_per_trade / max(st.session_state.acct_size, 1) * 100),
+                step=0.25, key="risk_pct_sl")
+            st.session_state.max_risk_per_trade = st.session_state.acct_size * _risk_pct / 100
+            st.markdown(f'<div class="dim" style="margin-top:6px">1% = '
+                        f'<strong style="color:#e8e8ff">${st.session_state.max_risk_per_trade:.0f}/trade</strong>'
+                        f' · Daily goal <strong style="color:#6c8cff">'
+                        f'${st.session_state.monthly_goal/21:.0f}</strong></div>',
+                        unsafe_allow_html=True)
+            st.session_state.day_trades_used = st.number_input(
+                "Day trades used this week", 0, 3,
+                int(st.session_state.day_trades_used), key="dtu_inp")
 
-                _end = _date.today(); _start = _end - _td(days=400)
-                _spy = yf.download("SPY",  start=_start, end=_end, progress=False)["Close"].squeeze().dropna()
-                _vix = yf.download("^VIX", start=_start, end=_end, progress=False)["Close"].squeeze().dropna()
-                _tnx = yf.download("^TNX", start=_start, end=_end, progress=False)["Close"].squeeze().dropna()/100
-                _com = sorted(_spy.index.intersection(_vix.index).intersection(_tnx.index))[-252:]
-                _spy, _vix, _tnx = _spy.loc[_com], _vix.loc[_com], _tnx.loc[_com]
-                _ivr = ((_vix - _vix.rolling(126).min())/(_vix.rolling(126).max()-_vix.rolling(126).min())*100).fillna(50)
+        st.markdown("---")
+        st.markdown('<div class="card-sm"><span class="card-label">What to trade</span></div>',
+                    unsafe_allow_html=True)
+        _b1, _b2 = st.columns([2, 1])
+        with _b1:
+            _ticker_choice = st.selectbox(
+                "Ticker", ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN",
+                           "GOOGL", "TSLA", "META", "NFLX", "JPM", "GLD",
+                           "TLT", "SPX (0DTE/Credit)", "Custom…"],
+                index=0, key="ticker_sel")
+            if _ticker_choice == "Custom…":
+                _ticker_choice = st.text_input("Enter ticker", "AAPL", key="custom_tkr").upper()
+            st.session_state.ticker = _ticker_choice.replace(" (0DTE/Credit)", "").replace("SPX", "^GSPC")
 
-                def _bsm(S,K,T,r,s2,f='p'):
-                    if T<=0 or s2<=0: return max(S-K,0) if f=='c' else max(K-S,0)
-                    d1=(_m.log(S/K)+(r+.5*s2**2)*T)/(s2*_m.sqrt(T)); d2=d1-s2*_m.sqrt(T)
-                    if f=='c': return S*_norm.cdf(d1)-K*_m.exp(-r*T)*_norm.cdf(d2)
-                    return K*_m.exp(-r*T)*_norm.cdf(-d2)-S*_norm.cdf(-d1)
+        with _b2:
+            _strategy_opts = [
+                "💰 Income (credit spread)",
+                "📈 Long call/put",
+                "📉 Short sell",
+                "📋 Stock only",
+            ]
+            _strat_sel = st.selectbox("Strategy", _strategy_opts, key="strat_sel")
+            _strat_map = {
+                "💰 Income (credit spread)": "Income (SPX Vertical Credit Spread)",
+                "📈 Long call/put": "IWT Long Option (60+ DTE DITM)",
+                "📉 Short sell": "Short (Sell) Stock",
+                "📋 Stock only": "Stock — Long (Swing/Trend)",
+            }
+            st.session_state.strategy = _strat_map.get(_strat_sel, _strat_sel)
 
-                _CAPITAL = 25_000; _cap = _CAPITAL; _open = None; _trades = []
-                _sspy = pd.Series(_spy.values, index=_spy.index)
-                _ma20 = _sspy.rolling(20).mean(); _ma50 = _sspy.rolling(50).mean()
-                _gain = _sspy.diff().clip(lower=0).rolling(14).mean()
-                _loss = (-_sspy.diff().clip(upper=0)).rolling(14).mean()
-                _rsi  = 100 - 100/(1+_gain/_loss.replace(0,1e-10))
+        st.markdown("---")
+        # Market data fetch button
+        _mfetch_col1, _mfetch_col2 = st.columns([1, 1])
+        with _mfetch_col1:
+            if st.button("🔄 Load Market Data", type="primary", use_container_width=True, key="load_mkt"):
+                with st.spinner("Fetching live data…"):
+                    try:
+                        _tkr = st.session_state.ticker
+                        _eng = InstitutionalAnalyst()
+                        _eng.fetch_data(_tkr)
+                        st.session_state.data    = _eng.data
+                        st.session_state.metrics = _eng.compute_metrics()
+                        st.session_state.signals = _eng.generate_signals()
+                        # Macro
+                        _mac = get_macro()
+                        if _mac: st.session_state.macro = _mac
+                        st.rerun()
+                    except Exception as _ex:
+                        st.error(f"Data error: {_ex}")
+        with _mfetch_col2:
+            if st.session_state.data is not None:
+                _m = st.session_state.metrics
+                _p = _m.get("price", 0); _ch = _m.get("chg_pct", 0)
+                _col = "#69f0ae" if _ch >= 0 else "#ff5252"
+                st.markdown(
+                    f'<div class="card-sm" style="border-left:3px solid {_col}">'
+                    f'<div class="card-label">{st.session_state.ticker.replace("^GSPC","SPX")}</div>'
+                    f'<div class="card-value" style="color:{_col};font-size:1.1rem">'
+                    f'${_p:,.2f}</div>'
+                    f'<div class="card-delta">{_ch:+.2f}% today</div>'
+                    f'</div>', unsafe_allow_html=True)
 
-                # Credit spreads
-                _cap_cs = _CAPITAL; _open_cs = None; _cs_wins = 0; _cs_l = 0; _cs_pnl = 0
-                for _i, _dt in enumerate(_com):
-                    _S, _sg, _r, _iv = float(_spy[_dt]), float(_vix[_dt])/100, float(_tnx[_dt]), float(_ivr[_dt])
-                    if _i < 30: continue
-                    if _open_cs:
-                        _Tr = max(_open_cs['d']/365, 1e-6)
-                        _sv = _bsm(_S,_open_cs['Ks'],_Tr,_r,_sg,'p'); _lv = _bsm(_S,_open_cs['Kl'],_Tr,_r,_sg,'p')
-                        _cc = _sv - _lv; _pp = (_open_cs['c'] - _cc)/_open_cs['c'] if _open_cs['c']>0 else 0
-                        _cl = ('EXPIRY' if _open_cs['d']<=0 else '50% PROFIT' if _pp>=.5 else
-                               'STOP' if _cc>=_open_cs['c']*2 else '21 DTE' if _open_cs['d']<=21 else None)
-                        if _cl:
-                            _pnl = (_open_cs['c'] - _cc)*100 - 3.30
-                            _cap_cs += _pnl; _cs_pnl += _pnl
-                            if _pnl > 0: _cs_wins += 1
-                            else: _cs_l += 1
-                            _open_cs = None
-                        else: _open_cs['d'] -= 1
-                    if _open_cs is None and _iv>=35 and _dt.weekday()==0:
-                        _T = 30/365
-                        _Ks = round(_S*0.96, 0); _Kl = _Ks-5
-                        _c = _bsm(_S,_Ks,_T,_r,_sg,'p') - _bsm(_S,_Kl,_T,_r,_sg,'p')
-                        if _c/5>=.20 and _c>0:
-                            _open_cs = {'Ks':_Ks,'Kl':_Kl,'c':_c,'d':30}
+    # ── RIGHT: IWT Scorecard → Verdict ───────────────────────────────────────
+    with _c_right:
+        st.markdown('<div class="card-sm"><span class="card-label">IWT Scorecard — Rate each 0–2</span></div>',
+                    unsafe_allow_html=True)
 
-                # Trend following
-                _cap_tf = _CAPITAL; _open_tf = None; _tf_pnl = 0; _hw2 = 0; _tf_t = 0; _tf_w = 0
-                for _i2, _dt2 in enumerate(_com):
-                    _S2 = float(_spy[_dt2])
-                    _ma20v = float(_ma20[_dt2]) if not _m.isnan(float(_ma20[_dt2])) else _S2
-                    _ma50v = float(_ma50[_dt2]) if not _m.isnan(float(_ma50[_dt2])) else _S2
-                    _rsiv  = float(_rsi[_dt2]) if not _m.isnan(float(_rsi[_dt2])) else 50
-                    if _i2 < 50: continue
-                    if _open_tf:
-                        _hw2 = max(_hw2, _S2)
-                        if _ma20v < _ma50v or _S2 < _hw2*0.96:
-                            _p2 = (_S2 - _open_tf['p'] - 0.01)*_open_tf['sh']
-                            _cap_tf += _p2; _tf_pnl += _p2
-                            if _p2>0: _tf_w+=1
-                            _tf_t += 1; _open_tf = None; _hw2 = 0
-                    if _open_tf is None and _ma20v>_ma50v and 40<_rsiv<68 and _dt2.weekday()==0:
-                        _sh = max(1, int(_cap_tf*0.3/_S2))
-                        _open_tf = {'p':_S2,'sh':_sh}; _hw2 = _S2
+        st.markdown("""
+        <div class="step-row">
+          <div class="step-num">①</div>
+          <div class="step-lbl">How <strong>fresh</strong> is this level? (0 = often tested · 2 = never touched)</div>
+        </div>""", unsafe_allow_html=True)
+        st.session_state.scorecard_fresh = st.select_slider(
+            "Freshness", [0,1,2],
+            value=st.session_state.scorecard_fresh,
+            format_func=lambda v: {0:"0 — Overused",1:"1 — Some history",2:"2 — Fresh ✅"}[v],
+            key="sc_fresh", label_visibility="collapsed")
 
-                if _open_tf:
-                    _p2 = (float(_spy.iloc[-1])-_open_tf['p']-0.01)*_open_tf['sh']
-                    _cap_tf += _p2; _tf_pnl += _p2; _tf_t += 1; _tf_w += 1
+        st.markdown("""
+        <div class="step-row">
+          <div class="step-num">②</div>
+          <div class="step-lbl">Did price leave <strong>fast</strong>? (0 = slow · 2 = sharp rejection)</div>
+        </div>""", unsafe_allow_html=True)
+        st.session_state.scorecard_speed = st.select_slider(
+            "Speed", [0,1,2],
+            value=st.session_state.scorecard_speed,
+            format_func=lambda v: {0:"0 — Slow drift",1:"1 — Average",2:"2 — Sharp ✅"}[v],
+            key="sc_speed", label_visibility="collapsed")
 
-                _bh_ret = (float(_spy.iloc[-1])/float(_spy.iloc[0])-1)*100
-                _total_cs = _cs_wins + _cs_l
+        st.markdown("""
+        <div class="step-row">
+          <div class="step-num">③</div>
+          <div class="step-lbl">Did it <strong>linger</strong>? (0 = camped there · 2 = 1-3 candles and gone)</div>
+        </div>""", unsafe_allow_html=True)
+        st.session_state.scorecard_time = st.select_slider(
+            "Time at level", [0,1,2],
+            value=st.session_state.scorecard_time,
+            format_func=lambda v: {0:"0 — Camped there",1:"1 — A while",2:"2 — Gone fast ✅"}[v],
+            key="sc_time", label_visibility="collapsed")
 
-                st.success("✅ Backtest complete — LIVE results from real data:")
-                r1,r2,r3,r4 = st.columns(4)
-                r1.metric("Buy & Hold SPY",  f"+{_bh_ret:.1f}%")
-                r2.metric("Credit Spreads",  f"+{_cs_pnl/25000*100:.2f}%",
-                          delta=f"{_cs_wins}/{_total_cs} wins" if _total_cs>0 else "No trades")
-                r3.metric("Trend Following", f"+{_tf_pnl/25000*100:.2f}%",
-                          delta=f"{_tf_w}/{_tf_t} wins" if _tf_t>0 else "No trades")
-                r4.metric("Period",
-                          f"{_com[0].date()} to {_com[-1].date()}")
-                st.caption(
-                    "⚠️ Options P&L = synthetic BSM with real VIX. Equity P&L = real price changes. "
-                    f"VIX avg: {float(_vix.mean()):.1f}"
-                )
-            except Exception as _ex:
-                st.error(f"Backtest error: {_ex}")
+        _iwt_total = (st.session_state.scorecard_fresh +
+                      st.session_state.scorecard_speed +
+                      st.session_state.scorecard_time)
+        _max_score = 6
 
-# Data provenance (always visible)
-with st.expander("📋 Data sources & methodology", expanded=False):
-    st.markdown("""
-**What is real:**
-- SPY daily closing prices — Yahoo Finance (yfinance)
-- VIX daily history — CBOE via Yahoo Finance
-- 10-Year Treasury yield — Yahoo Finance
+        # Pills
+        _pill_f = ["pill-red","pill-yellow","pill-green"][st.session_state.scorecard_fresh]
+        _pill_s = ["pill-red","pill-yellow","pill-green"][st.session_state.scorecard_speed]
+        _pill_t = ["pill-red","pill-yellow","pill-green"][st.session_state.scorecard_time]
+        st.markdown(
+            f'<span class="score-pill {_pill_f}">Fresh {st.session_state.scorecard_fresh}/2</span>'
+            f'<span class="score-pill {_pill_s}">Speed {st.session_state.scorecard_speed}/2</span>'
+            f'<span class="score-pill {_pill_t}">Linger {st.session_state.scorecard_time}/2</span>',
+            unsafe_allow_html=True)
 
-**What is synthetic (clearly labelled):**
-- Options P&L is computed using Black-Scholes-Merton with real historical VIX as the implied volatility input
-- Real option market prices would differ due to bid/ask spread, volatility skew (put IV > call IV), and term structure
-- This approximation is standard in academic backtesting when historical options data is unavailable
-- Historical options prices require paid data (ORATS, OptionStack, CBOE LiveVol) — we use the best free alternative
+        st.markdown("---")
 
-**Commissions assumed:**
-- Options: $0.65/contract/leg × 2 legs × open+close = $2.60–$3.30 round trip
-- Equity: $0 commission (Tradier) + $0.01/share slippage
+        # Market-level checks
+        _mac  = st.session_state.macro or {}
+        _mets = st.session_state.metrics or {}
+        _ntg  = compute_no_trade_gate(_mac, _mets, st.session_state.strategy, 14, False)
 
-**Why buy-and-hold dominated this year:**
-SPY returned ~32% in 2025-2026 — approximately 3× the historical average. This is exceptional.
-Active strategies with Kelly-based position sizing intentionally limit exposure to protect capital.
-In a typical 8–10% year, income strategies generating 1–3% with <1% drawdown represent
-excellent risk-adjusted performance relative to buy-and-hold volatility.
-""")
-    if _lvl == "Professional":
-        st.code("""
-Sharpe formula used: (mean_daily_excess_return / std_daily_return) × √252
-Excess return = daily return - rf/252 where rf = 4.5% (approximate TNX)
-Max drawdown = max((peak - trough) / peak) over the test period
-IVR = (VIX - VIX_126d_min) / (VIX_126d_max - VIX_126d_min) × 100 (6-month rolling)
-Strike selection: nearest strike giving delta ≈ -0.25 (put spreads)
-BSM: standard closed-form with no dividend adjustment
-""")
+        # Composite verdict
+        if _ntg["verdict"] == "HARD_NO":
+            _verdict_class  = "verdict-no"
+            _verdict_icon   = "🚫"
+            _verdict_title  = "DO NOT TRADE"
+            _verdict_detail = _ntg["headline"]
+        elif _ntg["verdict"] == "SOFT_NO" or _iwt_total < 4:
+            _verdict_class  = "verdict-no"
+            _verdict_icon   = "🔴"
+            _verdict_title  = "SKIP THIS SETUP"
+            _verdict_detail = f"IWT score {_iwt_total}/{_max_score} — need 4+ to trade. {_ntg['headline']}"
+        elif _ntg["verdict"] == "CONDITIONAL" or _iwt_total == 4:
+            _verdict_class  = "verdict-cond"
+            _verdict_icon   = "🟡"
+            _verdict_title  = "CONDITIONAL"
+            _verdict_detail = f"IWT {_iwt_total}/{_max_score} · Half-size · 40% profit target"
+        else:
+            _verdict_class  = "verdict-go"
+            _verdict_icon   = "🟢"
+            _verdict_title  = "GO — SETUP READY"
+            _verdict_detail = f"IWT score {_iwt_total}/{_max_score} · VIX {_mac.get('vix',0):.1f} · {_mw.get('regime','—')}"
 
-# =============================================================================
-# BACKTESTING — Section 8
-# Real 1-year historical simulation. Real prices. Honest labels.
-# =============================================================================
+        st.markdown(
+            f'<div class="{_verdict_class}">'
+            f'<div class="verdict-big">{_verdict_icon} {_verdict_title}</div>'
+            f'<div class="verdict-sub">{_verdict_detail}</div>'
+            f'</div>', unsafe_allow_html=True)
 
-st.divider()
-st.header("📈 Backtest — Did These Strategies Actually Work?")
+        if _ntg["blocks"]:
+            for _blk in _ntg["blocks"][:2]:
+                st.error(_blk)
+        if _ntg["warnings"]:
+            for _wrn in _ntg["warnings"][:2]:
+                st.warning(_wrn)
 
-_lvl = st.session_state.lang_level
-if _lvl == "Beginner":
-    st.info(
-        "💡 A backtest asks: IF we had followed this strategy every week for the past year "
-        "using real market prices — how much money would we have made or lost? "
-        "The answer tells us when each strategy works and when it doesn't."
-    )
-else:
-    st.caption(
-        "Historical simulation using real daily prices (yfinance) + BSM pricing. "
-        "Option fills reconstructed from VIX-derived IV. Not real options market data. "
-        "Slippage and commission included. Past performance does not predict future results."
-    )
+        # IWT checklist hint
+        with st.expander("📋 Full IWT 7-Step Checklist", expanded=False):
+            _steps = [
+                ("1", "Pick a quality, liquid underlying"),
+                ("2", "Find the buyer/seller level — is it fresh?"),
+                ("3", "Check reward-to-risk — is it at least 2:1?"),
+                ("4", "Size your position — max 1% account risk"),
+                ("5", "Check portfolio heat — under 6% total risk?"),
+                ("6", "Enter with a limit order at the level"),
+                ("7", "Set your exit — 50% profit OR 2× credit stop"),
+            ]
+            for _sn, _sl in _steps:
+                _done = (_sn in ["1","4","5","6","7"] or _iwt_total >= 5)
+                _ic = "✅" if _done else "⬜"
+                st.markdown(f"`{_ic}` **Step {_sn}:** {_sl}")
 
-with st.expander("⚙️ Backtest Parameters", expanded=False):
-    _bc1, _bc2 = st.columns(2)
-    with _bc1:
-        st.markdown("**Credit Spread**")
-        _bt_min_ivr  = st.slider("Min IVR-90d to enter (%)", 20, 60, 40, 5)
-        _bt_spread_w = st.number_input("Spread width ($)", value=5, min_value=1, max_value=25, step=1)
-        _bt_pft      = st.slider("Profit target (%)", 25, 75, 50, 5)
-    with _bc2:
-        st.markdown("**IWT Long Call**")
-        _bt_max_vix  = st.slider("Max VIX to enter long call", 16, 30, 22, 1)
-        _bt_call_dte = st.number_input("DTE for long call", value=60, min_value=30, max_value=120, step=5)
-    _bt_capital  = st.number_input("Starting capital ($)", value=25000, min_value=5000, max_value=500000, step=5000)
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 2 — SCAN (Universe + SPX Daily Plan)
+# ══════════════════════════════════════════════════════════════════════════════
+with _T2:
+    _s_left, _s_right = st.columns([1, 1], gap="large")
 
-if st.button("▶️ Run 1-Year Backtest", type="primary", use_container_width=True):
-    st.session_state["_bt_run"] = True
+    with _s_left:
+        st.markdown('<div class="card-sm"><span class="card-label">IWT Universe — Best Setups Now</span></div>',
+                    unsafe_allow_html=True)
+        _scan_top = st.slider("Show top N stocks", 5, 15, 8, key="scan_top_n")
+        if st.button("🚀 Run Universe Scan (34 stocks)", type="primary", key="run_uni_scan"):
+            with st.spinner("Scanning 34 stocks with live data (~30s)…"):
+                _scan_res = batch_scan_teri_universe(TERI_UNIVERSE, top_n=_scan_top)
+                st.session_state._universe_scan = _scan_res
 
-if st.session_state.get("_bt_run"):
-    with st.spinner("Loading real market data and running simulation..."):
-        _df_bt = load_backtest_data()
+        _scan = st.session_state.get("_universe_scan")
+        if _scan:
+            _grade_border = {"A+":"#00e676","A":"#69f0ae","B":"#ffd740","C":"#ff6d00","D":"#d50000"}
+            for _i, _st_item in enumerate(_scan):
+                _gb = _grade_border.get(_st_item["grade"], "#555")
+                _trend_col = "#69f0ae" if "BULL" in _st_item["trend"] else \
+                             "#ff5252" if "BEAR" in _st_item["trend"] else "#ffd740"
+                _medal = ["🥇","🥈","🥉"][_i] if _i < 3 else f"{_i+1}."
+                _gap_txt = f" · Gap {_st_item['gap_pct']:+.2f}%" \
+                           if abs(_st_item.get("gap_pct",0)) > 0.3 else ""
+                with st.container():
+                    st.markdown(
+                        f'<div class="card-sm" style="border-left:3px solid {_gb}">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                        f'<span style="font-weight:700;color:#e8e8ff">{_medal} {_st_item["ticker"]}'
+                        f'&nbsp;<span style="background:{_gb};color:#000;padding:1px 7px;'
+                        f'border-radius:10px;font-size:0.7rem;font-weight:700">{_st_item["grade"]}</span>'
+                        f'</span>'
+                        f'<span class="mono" style="color:#e8e8ff">${_st_item["price"]:.2f}</span>'
+                        f'</div>'
+                        f'<div class="dim" style="margin-top:4px">'
+                        f'<span style="color:{_trend_col}">{_st_item["trend"]}</span>'
+                        f' · RSI {_st_item["rsi"]:.0f}'
+                        f' · {_st_item["rvol"]:.1f}x vol'
+                        f'{_gap_txt}'
+                        f'</div>'
+                        f'</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="dim" style="padding:20px 0;text-align:center">'
+                        'Click Scan to find today\'s best setups</div>', unsafe_allow_html=True)
 
-    if _df_bt is not None and len(_df_bt) > 0:
-        _period_str = f"{_df_bt.index[0].date()} → {_df_bt.index[-1].date()}"
-        _bnh_ret    = (_df_bt['spy'].iloc[-1]/_df_bt['spy'].iloc[0]-1)*100
-        _bnh_pnl    = _bt_capital * _bnh_ret / 100
+    with _s_right:
+        st.markdown('<div class="card-sm"><span class="card-label">SPX Today — Live Strikes</span></div>',
+                    unsafe_allow_html=True)
+        _dt_choice = st.radio("DTE", [7, 14, 21], index=1, horizontal=True, key="scan_dte")
+        _min_cr_scan = st.number_input("Min credit ($0.50 = system minimum)",
+                                        value=0.50, min_value=0.10, step=0.05, key="scan_mincr")
 
-        with st.spinner("Running credit spread simulation..."):
-            _cs_trades, _cs_eq, _cs_cap = backtest_credit_spread(
-                _df_bt, min_ivr=_bt_min_ivr, spread_w=_bt_spread_w,
-                profit_tgt=_bt_pft/100, initial_capital=_bt_capital)
+        if st.button("🎯 Generate SPX Setup", type="primary", key="gen_spx_scan"):
+            with st.spinner("Fetching live SPX/VIX…"):
+                _sp = generate_spx_daily_plan(dte_target=_dt_choice, min_credit=_min_cr_scan)
+                st.session_state._spx_plan = _sp
 
-        with st.spinner("Running IWT long call simulation..."):
-            _lc_trades, _lc_eq, _lc_cap = backtest_long_call(
-                _df_bt, max_vix=_bt_max_vix, call_dte=_bt_call_dte,
-                initial_capital=_bt_capital)
+        _sp = st.session_state.get("_spx_plan")
+        if _sp and not _sp.get("error"):
+            _b = _sp.get("best", {})
+            _em = _sp.get("em", 0)
+            _ok = _b.get("ok_credit", False) and _b.get("outside_em", False)
+            _spx_badge = "✅ READY" if _ok else "⚠️ CHECK"
+            _bcol = "#69f0ae" if _ok else "#ffd740"
+            st.markdown(
+                f'<div class="card" style="border-left:3px solid {_bcol}">'
+                f'<div style="display:flex;justify-content:space-between">'
+                f'<span style="font-weight:700;color:#e8e8ff">SPX {_sp["S"]:,.0f} '
+                f'<span style="color:{_bcol}">{_spx_badge}</span></span>'
+                f'<span class="dim">VIX {_sp["vix"]:.1f} · EM ±{_em:.0f}</span>'
+                f'</div>'
+                f'<div class="order-block" style="margin-top:10px">'
+                f'SELL {_b.get("K_s",0):.0f} PUT\nBUY  {_b.get("K_l",0):.0f} PUT ({_b.get("width",0)}-pt)\n'
+                f'Credit ${_b.get("credit",0):.2f} = ${_b.get("max_profit",0):.0f}/contract\n'
+                f'Max loss ${_b.get("max_loss",0):.0f} · POP {_b.get("pop",0):.0%}\n'
+                f'BE {_b.get("breakeven",0):.2f} · {_b.get("em_ratio",0):.2f}x EM'
+                f'</div>'
+                f'</div>', unsafe_allow_html=True)
+            if not _ok:
+                if not _b.get("ok_credit"):
+                    st.warning("Credit below $0.50 minimum — thin premium today. Wait for higher VIX.")
+                if not _b.get("outside_em"):
+                    st.error("Short strike inside expected move — below IWT standard.")
+            # EM chart
+            if _b.get("K_s") and _sp.get("S"):
+                with st.expander("📈 Expected Move Chart", expanded=True):
+                    _fig_em = plot_expected_move_chart(
+                        spx=_sp["S"], iv_pct=_sp.get("sigma", 18),
+                        dte=_dt_choice, short_k=_b.get("K_s"),
+                        long_k=_b.get("K_l"), spread_type="PUT")
+                    if _fig_em:
+                        st.pyplot(_fig_em)
+        elif _sp and _sp.get("error"):
+            st.error("Could not fetch live SPX data: " + str(_sp["error"]))
+        else:
+            st.markdown('<div class="dim" style="padding:20px 0;text-align:center">'
+                        'Click to generate today\'s specific strikes</div>',
+                        unsafe_allow_html=True)
 
-        _cs_stats = compute_backtest_stats(_cs_trades, _bt_capital, "Put Credit Spread")
-        _lc_stats = compute_backtest_stats(_lc_trades, _bt_capital, "IWT Long Call (DITM)")
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — TRADE (Details for selected ticker + strategy)
+# ══════════════════════════════════════════════════════════════════════════════
+with _T3:
+    _tr_left, _tr_right = st.columns([1, 1], gap="large")
 
-        # ── Results summary ─────────────────────────────────────────────────
-        st.subheader(f"📊 Results — {_period_str}")
-        _r1, _r2, _r3 = st.columns(3)
+    with _tr_left:
+        _m = st.session_state.metrics or {}
+        _price = _m.get("price", 0)
+        _strat = st.session_state.strategy
+        _tkr   = st.session_state.ticker.replace("^GSPC", "SPX")
 
-        _r1.metric("Put Credit Spread",
-                   f"${_cs_stats.get('total_pnl',0):+,.0f}",
-                   delta=f"{_cs_stats.get('return_pct',0):+.1f}% | {_cs_stats.get('n_trades',0)} trades | WR {_cs_stats.get('win_rate_pct',0):.0f}%",
-                   delta_color="normal")
-        _r2.metric("IWT Long Call (DITM)",
-                   f"${_lc_stats.get('total_pnl',0):+,.0f}",
-                   delta=f"{_lc_stats.get('return_pct',0):+.1f}% | {_lc_stats.get('n_trades',0)} trades | WR {_lc_stats.get('win_rate_pct',0):.0f}%",
-                   delta_color="normal")
-        _r3.metric("Buy & Hold SPY",
-                   f"${_bnh_pnl:+,.0f}",
-                   delta=f"{_bnh_ret:+.1f}%",
-                   delta_color="normal")
+        st.markdown(f'<div class="card-sm"><span class="card-label">'
+                    f'{_tkr} — {_strat}</span></div>', unsafe_allow_html=True)
 
-        # ── Plain English verdict ────────────────────────────────────────────
-        _best_strat = ("IWT Long Call" if _lc_stats.get('total_pnl',0) > _cs_stats.get('total_pnl',0) else "Credit Spread")
-        _best_pnl   = max(_lc_stats.get('total_pnl',0), _cs_stats.get('total_pnl',0))
+        if not _price:
+            st.info("Load market data in **Setup** first (🎯 Setup → Load Market Data).")
+        else:
+            # Show key metrics in a compact row
+            _metrics_to_show = [
+                ("Price",    f"${_price:,.2f}"),
+                ("RSI",      f"{_m.get('rsi',0):.0f}"),
+                ("RVOL",     f"{_m.get('rvol',1):.1f}x"),
+                ("ATR",      f"${_m.get('atr',0):.2f}"),
+                ("Trend",    _m.get("trend_strength","—")),
+                ("IV Rank",  f"{_m.get('ivr',0):.0f}%"),
+            ]
+            _cols = st.columns(3)
+            for _idx, (_lbl, _val) in enumerate(_metrics_to_show):
+                with _cols[_idx % 3]:
+                    st.markdown(
+                        f'<div class="card-sm">'
+                        f'<div class="card-label">{_lbl}</div>'
+                        f'<div style="font-size:1rem;font-weight:600;color:#e8e8ff;'
+                        f'font-family:\'DM Mono\',monospace">{_val}</div>'
+                        f'</div>', unsafe_allow_html=True)
 
-        if _lvl == "Beginner":
             st.markdown("---")
-            st.markdown("### 🔍 What the numbers mean")
-            if _lc_stats.get('total_pnl',0) > _cs_stats.get('total_pnl',0):
-                st.success(
-                    f"**The IWT long call strategy won this year.** "
-                    f"Buying DITM calls when VIX was low (cheap options) + market trending up "
-                    f"returned ${_lc_stats.get('total_pnl',0):+,.0f} vs "
-                    f"${_cs_stats.get('total_pnl',0):+,.0f} for credit spreads. "
-                    f"This is exactly what the IWT two-weapon system teaches: "
-                    f"when IV is low, BUY options, don't sell them."
-                )
+
+            # Gap signal (if present)
+            _gap_pct = _m.get("gap", 0)
+            if abs(_gap_pct) > 0.15:
+                _gc = classify_gap_type(
+                    _gap_pct, _m.get("rvol",1.0), _m.get("trend_strength","NEUTRAL"))
+                _gap_cols = {"Common":"#1565c0","Breakaway":"#6a1b9a",
+                             "Runaway":"#1b5e20","Exhaustion":"#e65100"}
+                _gcolor = _gap_cols.get(_gc["type"], "#37474f")
+                st.markdown(
+                    f'<div class="card-sm" style="border-left:3px solid {_gcolor}">'
+                    f'<div class="card-label">Gap Signal</div>'
+                    f'<div style="font-weight:600;color:#e8e8ff">'
+                    f'{_gc["type"]} {_gc["direction"]} {_gc["abs_pct"]:.2f}%'
+                    f'</div>'
+                    f'<div class="dim">{_gc["action"][:90]}…</div>'
+                    f'</div>', unsafe_allow_html=True)
+
+            # Support / Resistance levels
+            _supp = _m.get("supp", 0); _res = _m.get("res", 0)
+            if _supp or _res:
+                st.markdown(
+                    f'<div class="card-sm">'
+                    f'<div class="card-label">Key Levels</div>'
+                    f'<div style="display:flex;gap:20px">'
+                    f'<div><span class="dim">Support</span><br/>'
+                    f'<span class="mono" style="color:#69f0ae">${_supp:,.2f}</span></div>'
+                    f'<div><span class="dim">Resistance</span><br/>'
+                    f'<span class="mono" style="color:#ff5252">${_res:,.2f}</span></div>'
+                    f'<div><span class="dim">R:R</span><br/>'
+                    f'<span class="mono" style="color:#e8e8ff">'
+                    f'{(_res-_price)/(max(_price-_supp,0.01)):.1f}:1 '
+                    f'({"✅" if (_res-_price)/(max(_price-_supp,0.01))>=2 else "⚠️"})'
+                    f'</span></div>'
+                    f'</div></div>', unsafe_allow_html=True)
+
+    with _tr_right:
+        # Credit spread builder (if income strategy)
+        if "Income" in _strat:
+            st.markdown('<div class="card-sm"><span class="card-label">Credit Spread Builder</span></div>',
+                        unsafe_allow_html=True)
+            _sb1, _sb2 = st.columns(2)
+            with _sb1:
+                _short_k = st.number_input("Short strike", value=max(0.0, _price - 100 if _price else 0.0),
+                                            step=5.0, key="trade_sk")
+                _long_k  = st.number_input("Long strike",  value=max(0.0, _price - 125 if _price else 0.0),
+                                            step=5.0, key="trade_lk")
+            with _sb2:
+                _spread_credit = st.number_input("Credit received ($)", value=0.75, step=0.05, key="trade_cr")
+                _contracts = st.number_input("Contracts", value=1, min_value=1, step=1, key="trade_ct")
+                _spread_dte = st.number_input("DTE", value=14, min_value=0, step=1, key="trade_dte")
+
+            if _short_k > 0 and _long_k > 0 and _spread_credit > 0:
+                _width = abs(_short_k - _long_k)
+                _max_p = _spread_credit * 100 * _contracts
+                _max_l = (_width - _spread_credit) * 100 * _contracts
+                _be    = _short_k - _spread_credit
+                _eff   = _spread_credit / _width if _width > 0 else 0
+
+                st.markdown(
+                    f'<div class="card" style="border-left:3px solid '
+                    f'{"#69f0ae" if _spread_credit >= 0.50 else "#ffd740"}">'
+                    f'<div class="order-block">'
+                    f'SELL {_short_k:.0f} PUT × {_contracts}\n'
+                    f'BUY  {_long_k:.0f} PUT × {_contracts}\n'
+                    f'Credit   ${_spread_credit:.2f}/share\n'
+                    f'Max gain ${_max_p:,.0f} | Max loss ${_max_l:,.0f}\n'
+                    f'Breakeven {_be:.2f}\n'
+                    f'Efficiency {_eff*100:.1f}% | Min 20% needed'
+                    f'</div></div>', unsafe_allow_html=True)
+
+                # Risk sizing check
+                _risk_ok = _max_l <= st.session_state.max_risk_per_trade
+                _eff_ok  = _eff >= 0.20
+                _cr_ok   = _spread_credit >= 0.50
+                st.markdown(
+                    f'{"✅" if _cr_ok else "❌"} Credit ≥ $0.50 &nbsp;'
+                    f'{"✅" if _risk_ok else "❌"} Max loss ≤ ${st.session_state.max_risk_per_trade:.0f} &nbsp;'
+                    f'{"✅" if _eff_ok else "❌"} Efficiency ≥ 20%',
+                    unsafe_allow_html=True)
+
+                st.markdown("---")
+                # P&L Payoff chart
+                if _price and st.checkbox("Show P&L payoff diagram", True, key="show_payoff"):
+                    _fig_pnl = plot_payoff_diagram(
+                        structure="CREDIT_SPREAD", short_k=_short_k, long_k=_long_k,
+                        credit_or_debit=_spread_credit, option_type="PUT",
+                        underlying=_price, contracts=_contracts)
+                    if _fig_pnl:
+                        st.pyplot(_fig_pnl)
+
+                st.markdown("---")
+                st.markdown('<div class="card-sm"><span class="card-label">Exit rules</span></div>',
+                            unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="dim">'
+                    f'🎯 Close at <strong style="color:#69f0ae">'
+                    f'${_spread_credit*0.50:.2f}/share</strong> (50% profit = ${_max_p*0.5:.0f})<br/>'
+                    f'🛑 Stop at <strong style="color:#ff5252">'
+                    f'${_spread_credit*2:.2f}/share</strong> (2× credit = ${_max_l:.0f} max)<br/>'
+                    f'📅 Exit by <strong style="color:#e8e8ff">21 DTE</strong> regardless of P&L'
+                    f'</div>', unsafe_allow_html=True)
+
+        else:
+            # Non-income strategies: show signal summary
+            _sigs = st.session_state.signals or {}
+            _verdict = _sigs.get("verdict", "NO_DATA")
+            _sig_color = {"STRONG_BULL":"#00e676","BULL":"#69f0ae","NEUTRAL":"#ffd740",
+                          "BEAR":"#ff5252","STRONG_BEAR":"#d50000"}.get(_verdict, "#7080a0")
+            if _verdict != "NO_DATA":
+                st.markdown(
+                    f'<div class="verdict-go" style="background:linear-gradient(135deg,#0d1a3b,#1a2e5e)">'
+                    f'<div class="verdict-big" style="color:{_sig_color}">{_verdict}</div>'
+                    f'<div class="verdict-sub">'
+                    f'Trend {_sigs.get("trend","—")} · '
+                    f'Momentum {_sigs.get("momentum","—")} · '
+                    f'Volume {_sigs.get("volume","—")}'
+                    f'</div></div>', unsafe_allow_html=True)
             else:
-                st.success(
-                    f"**The credit spread strategy won this year.** "
-                    f"Selling premium in elevated-IV environments collected consistent income. "
-                    f"Returned ${_cs_stats.get('total_pnl',0):+,.0f}."
-                )
-            st.info(
-                f"**What this tells you about the market this year:** "
-                f"SPY rose {_bnh_ret:.1f}% from ${_df_bt['spy'].iloc[0]:.0f} to ${_df_bt['spy'].iloc[-1]:.0f}. "
-                f"VIX mostly stayed below 22. Low VIX = cheap options = buyers had the edge. "
-                f"Next time VIX spikes to 25+, credit spreads will likely outperform."
-            )
-        elif _lvl == "Professional":
-            st.caption(
-                f"Credit spread Sharpe proxy: edge={_cs_stats.get('ev_per_trade',0):.2f}/trade, "
-                f"drawdown={_cs_stats.get('max_drawdown',0):.0f}. "
-                f"Long call leverage: avg_win/avg_loss={abs(_lc_stats.get('avg_win',1)/_lc_stats.get('avg_loss',-1) if _lc_stats.get('avg_loss',0)!=0 else 0):.2f}. "
-                f"VRP environment: IV/RV spread drives credit spread edge; bull market + low VRP = buyer's market. "
-                f"BSM-reconstructed; actual PnL would be lower by bid/ask (~$10-40/contract round-trip for SPY options)."
-            )
+                st.info("Load market data in Setup to see trade signals.")
 
-        # ── Equity curve chart ──────────────────────────────────────────────
-        if not _cs_eq.empty or not _lc_eq.empty:
-            _all_dates = sorted(set(
-                (list(_cs_eq['date']) if not _cs_eq.empty else []) +
-                (list(_lc_eq['date']) if not _lc_eq.empty else [])
-            ))
-            if _all_dates:
-                _chart_data = {"Date": _all_dates}
-                if not _cs_eq.empty:
-                    _cs_dict = dict(zip(_cs_eq['date'], _cs_eq['cum_pnl']))
-                    _chart_data["Credit Spread P&L ($)"] = [_cs_dict.get(d, None) for d in _all_dates]
-                if not _lc_eq.empty:
-                    _lc_dict = dict(zip(_lc_eq['date'], _lc_eq['cum_pnl']))
-                    _chart_data["IWT Long Call P&L ($)"] = [_lc_dict.get(d, None) for d in _all_dates]
-                _chart_df = pd.DataFrame(_chart_data).set_index("Date")
-                st.line_chart(_chart_df, use_container_width=True)
-                st.caption("Cumulative P&L ($) over the backtest period. Each point = a completed trade.")
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — REVIEW (Journal + Troubleshoot + Income Plan)
+# ══════════════════════════════════════════════════════════════════════════════
+with _T4:
+    _rv_left, _rv_right = st.columns([1, 1], gap="large")
 
-        # ── Detailed stats tables ────────────────────────────────────────────
-        _t1, _t2 = st.tabs(["📋 Credit Spread Trades", "📋 IWT Long Call Trades"])
-        with _t1:
-            if not _cs_trades.empty:
-                st.caption(f"{len(_cs_trades)} trades | Win rate {_cs_stats.get('win_rate_pct',0):.0f}% | PF {_cs_stats.get('profit_factor','N/A')}")
-                _cs_show = _cs_trades.copy()
-                _cs_show.columns = [c.replace('_',' ') for c in _cs_show.columns]
-                st.dataframe(_cs_show.style.format({'P&L':'${:,.2f}','Credit $/shr':'{:.3f}'}),
-                             use_container_width=True, height=300)
-                st.caption(
-                    f"Avg win: ${_cs_stats.get('avg_win',0):,.2f} | "
-                    f"Avg loss: ${_cs_stats.get('avg_loss',0):,.2f} | "
-                    f"Max drawdown: ${_cs_stats.get('max_drawdown',0):,.2f}")
+    with _rv_left:
+        # ── Quick journal entry ───────────────────────────────────────────────
+        st.markdown('<div class="card-sm"><span class="card-label">Log a Trade</span></div>',
+                    unsafe_allow_html=True)
+        _j1, _j2, _j3 = st.columns(3)
+        with _j1:
+            _j_tkr    = st.text_input("Ticker", st.session_state.ticker.replace("^GSPC","SPX"),
+                                       key="j_tkr")
+            _j_result = st.selectbox("Result", ["Win","Loss","Breakeven"], key="j_result")
+        with _j2:
+            _j_pnl = st.number_input("P&L ($)", value=0.0, step=10.0, key="j_pnl")
+            _j_strat_j = st.selectbox("Type", ["Credit spread","Long option",
+                                                "Stock long","Short sell"], key="j_strat")
+        with _j3:
+            _j_plan   = st.checkbox("Followed the plan?", True, key="j_plan")
+            _j_notes  = st.text_area("Notes (optional)", height=70, key="j_notes",
+                                      placeholder="What happened?")
+
+        if st.button("+ Add to Journal", key="add_journal"):
+            import datetime as _dt
+            _entry = {
+                "date": str(_dt.date.today()), "ticker": _j_tkr,
+                "result": _j_result, "pnl": _j_pnl, "strategy": _j_strat_j,
+                "followed_plan": _j_plan, "notes": _j_notes,
+            }
+            st.session_state.journal.append(_entry)
+            st.session_state.daily_pnl += _j_pnl
+            if _j_result == "Win":
+                st.session_state.consecutive_losses = 0
             else:
-                st.info(
-                    f"No credit spread trades executed with IVR threshold of {_bt_min_ivr}%. "
-                    f"This was a low-IV year (VIX 13-31, IVR-90d median ~20%). "
-                    f"Try lowering the IVR threshold to 25-30% to see more trades, "
-                    f"or this year simply favored option BUYERS over sellers."
-                )
+                st.session_state.consecutive_losses += 1
+            st.success(f"Logged: {_j_tkr} {_j_result} ${_j_pnl:+.0f}")
+            st.rerun()
 
-        with _t2:
-            if not _lc_trades.empty:
-                st.caption(f"{len(_lc_trades)} trades | Win rate {_lc_stats.get('win_rate_pct',0):.0f}% | Avg win ${_lc_stats.get('avg_win',0):,.0f}")
-                _lc_show = _lc_trades.copy()
-                _lc_show.columns = [c.replace('_',' ') for c in _lc_show.columns]
-                st.dataframe(_lc_show.style.format({'P&L':'${:,.2f}','Premium $':'{:.3f}','Cost total':'${:,.2f}'}),
-                             use_container_width=True, height=300)
-            else:
-                st.info("No long call trades executed (VIX above threshold or no uptrend).")
+        # ── Journal history ───────────────────────────────────────────────────
+        if st.session_state.journal:
+            st.markdown("---")
+            _jrn = st.session_state.journal
+            _wins  = sum(1 for e in _jrn if e["result"] == "Win")
+            _total = len(_jrn)
+            _wr    = _wins / _total if _total else 0
+            _total_pnl = sum(e["pnl"] for e in _jrn)
+            _plan_follow = sum(1 for e in _jrn if e.get("followed_plan")) / max(_total, 1)
+            _stats_cols = st.columns(4)
+            _stats_cols[0].metric("Trades", _total)
+            _stats_cols[1].metric("Win Rate", f"{_wr:.0%}")
+            _stats_cols[2].metric("Total P&L", f"${_total_pnl:+.0f}")
+            _stats_cols[3].metric("Plan Adherence", f"{_plan_follow:.0%}")
+            with st.expander(f"📓 {_total} trade(s) logged", expanded=False):
+                for _e in reversed(_jrn[-10:]):
+                    _ecol = "#69f0ae" if _e["result"] == "Win" else "#ff5252"
+                    st.markdown(
+                        f'`{_e["date"]}` **{_e["ticker"]}** '
+                        f'<span style="color:{_ecol}">{_e["result"]} ${_e["pnl"]:+.0f}</span> '
+                        f'· {_e["strategy"]} '
+                        f'{"✅" if _e.get("followed_plan") else "❌"}',
+                        unsafe_allow_html=True)
 
-        # ── Methodology transparency ─────────────────────────────────────────
-        with st.expander("📐 Methodology & Honest Limitations", expanded=False):
-            st.markdown(f"""
-**Data sources (all real):**
-- SPY daily closing prices: Yahoo Finance (yfinance)
-- VIX daily closing: Yahoo Finance (^VIX)
-- Risk-free rate: 10-Year Treasury (^TNX) via Yahoo Finance
-- Period: {_period_str}
-
-**Option pricing method: Black-Scholes-Merton (BSM)**
-Historical option market prices are not available for free. We reconstruct prices using the BSM formula with VIX as the IV input.
-This is the standard academic approach for options backtesting without paid historical options data (ORATS, OptionStack, CBOE LiveVol).
-
-```
-Option price = BSM(S, K, T, r, σ)
-where σ = VIX / 100 (for SPY options; VIX is SPX 30-day IV by construction)
-```
-
-**Costs included:**
-- Slippage: $0.03/share (credit spreads) | $0.05/share (long options)
-- Commission: $1.30/contract (2-leg for spreads)
-- These are conservative retail estimates
-
-**What BSM does NOT capture:**
-- Bid/ask spread (real SPY options: $0.05–$0.30/contract depending on liquidity)
-- Volatility skew (puts cost more than BSM suggests due to tail risk demand)
-- Early exercise / pin risk (minimal for European-style index options)
-- Actual fill prices (you often get worse than mid-price)
-
-**Conservative adjustment:** Real results would be approximately 15-30% lower than shown due to the above factors.
-
-**IVR-90d computation:**
-```
-IVR_90d = (VIX_today − VIX_90d_min) / (VIX_90d_max − VIX_90d_min) × 100
-```
-90-day rolling window; updates daily. More responsive than 252-day IVR.
-
-**Strategy rules applied:**
-- Credit spread: enter weekly (Monday) when IVR-90d ≥ {_bt_min_ivr}%, short strike outside 75% of EM, close at 50% profit | 2× stop | 21 DTE
-- Long call: enter weekly (Monday, one per week) when VIX ≤ {_bt_max_vix} and SPY above 20-day SMA, DITM strike (~delta 0.70), close at 50% or 100% gain | 50% stop | 21 DTE
-
-**Past performance disclaimer:** Backtests are in-sample. This specific year may not repeat. 2025-2026 was a strong bull market with low VIX — a different environment would produce different results. Always forward-test in paper trading before risking capital.
-""")
-
-    else:
-        st.error("Could not load backtest data. Check your internet connection and try again.")
-
-# JOURNAL EXPORT
-if st.session_state.journal:
-    st.divider()
-    st.subheader("📓 Your Trading Journal")
-    _ljl = st.session_state.lang_level
-    if _ljl in ["Beginner","Intermediate"]:
-        st.info(
-            "Your journal records every trade you analyse. Review it weekly to spot what's working and what isn't. "
-            "Consistent traders study their journal as much as the market."
+    with _rv_right:
+        # ── Income plan card ─────────────────────────────────────────────────
+        st.markdown('<div class="card-sm"><span class="card-label">My Income Blueprint</span></div>',
+                    unsafe_allow_html=True)
+        _sfp = calc_six_figure_plan(
+            monthly_goal=st.session_state.monthly_goal,
+            account_size=st.session_state.acct_size,
+            avg_contract_risk=st.session_state.max_risk_per_trade,
         )
-    else:
-        st.caption("Full trade log: paper + live. Review regularly for pattern detection and system improvement.")
+        if not _sfp.get("error"):
+            _plan_cols = st.columns(3)
+            _plan_cols[0].metric("Daily Target",  f"${_sfp['daily_goal']:.0f}")
+            _plan_cols[1].metric("Weekly Target", f"${_sfp['weekly_goal']:.0f}")
+            _plan_cols[2].metric("Annual Goal",   f"${_sfp['annual_goal']/1000:.0f}k")
+            _ev_col = "#69f0ae" if _sfp["ev_per_trade"] > 0 else "#ff5252"
+            st.markdown(
+                f'<div class="card-sm">'
+                f'<div class="dim">EV/trade <strong style="color:{_ev_col}">'
+                f'${_sfp["ev_per_trade"]:.0f}</strong>'
+                f' · Monthly return <strong style="color:#e8e8ff">'
+                f'{_sfp["monthly_return_pct"]:.1f}%</strong>'
+                f' on ${st.session_state.acct_size:,.0f}'
+                f'</div>'
+                f'{"⚠️ " + _sfp["sizing_note"] if not _sfp["sizing_ok"] else ""}'
+                f'</div>', unsafe_allow_html=True)
 
-    journal_df = pd.DataFrame(st.session_state.journal)
-    st.dataframe(journal_df, use_container_width=True)
+        st.markdown("---")
 
-    col_export1, col_export2 = st.columns(2)
+        # ── Troubleshoot ────────────────────────────────────────────────────
+        st.markdown('<div class="card-sm"><span class="card-label">Troubleshoot My Trading</span></div>',
+                    unsafe_allow_html=True)
+        _tt_syms = [
+            ("making_then_losing",    "Making money then giving it back"),
+            ("losses_bigger_than_wins","Average losses > average wins"),
+            ("too_many_trades",       "Trading too much / boredom trading"),
+            ("scared_to_enter",       "Hesitating at valid setups"),
+            ("revenge_trading",       "Revenge trading after a loss"),
+            ("holding_losers_too_long","Holding losers hoping for recovery"),
+        ]
+        _tt_resp = {}
+        for _sym, _lbl in _tt_syms:
+            _tt_resp[_sym] = st.checkbox(_lbl, key="tt_" + _sym)
 
-    with col_export1:
-        csv = journal_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            "📥 Download Full Journal (CSV)",
-            data=csv,
-            file_name=f"journal_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+        if any(_tt_resp.values()):
+            _ttd = troubleshoot_trading(_tt_resp)
+            _pri_col = {"FIX NOW":"#b71c1c","IMPROVE":"#f57f17","MAINTAIN":"#1b5e20"}.get(
+                _ttd["priority"],"#37474f")
+            st.markdown(
+                f'<div class="card-sm" style="border-left:3px solid {_pri_col}">'
+                f'<div style="font-weight:700;color:#e8e8ff">{_ttd["priority"]}</div>'
+                f'<div class="dim">{_ttd["summary"]}</div>'
+                f'</div>', unsafe_allow_html=True)
+            for _diag in _ttd["active_diagnoses"][:2]:
+                _sev_c = "#ff5252" if _diag["severity"]=="HIGH" else "#ffd740"
+                with st.expander(_diag["label"], expanded=False):
+                    st.markdown(f'**Root cause:** {_diag["root_cause"]}')
+                    st.success(f'**Fix:** {_diag["fix"]}')
+                    st.caption(_diag["teri_quote"])
 
-    with col_export2:
-        if st.session_state.closed_trades:
-            closed_csv = pd.DataFrame(st.session_state.closed_trades).to_csv(index=False).encode('utf-8')
-            st.download_button(
-                "📊 Download Performance Report (CSV)",
-                data=closed_csv,
-                file_name=f"performance_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+# ══════════════════════════════════════════════════════════════════════════════
+# POWER TOOLS — collapsed by default (expert / macro / backtest)
+# ══════════════════════════════════════════════════════════════════════════════
+with st.expander("⚡ Power Tools — Market Brief · Backtest · Options Calculator · More", expanded=False):
+    _pw1, _pw2 = st.columns([1,1])
+    with _pw1:
+        # Market weather deep-dive
+        if st.session_state.macro:
+            _mw2 = compute_market_weather(st.session_state.macro)
+            st.markdown(f"**Options Playbook Today**")
+            _play = options_playbook_router(
+                _mw2.get("vix",20), _mw2.get("ivr",50),
+                st.session_state.macro.get("sp_trend","NEUTRAL"))
+            st.markdown(f'**{_play["badge"]} {_play["play"]}**')
+            st.caption(_play["primary"])
+            if _play.get("avoid"):
+                st.caption("Avoid: " + ", ".join(_play["avoid"][:2]))
 
-st.divider()
-st.caption("📊 EasyStockTrader by Gabriel Mahia — Smart analysis tool. For educational use only. Not financial advice. Always verify with your broker.")
-st.caption("© 2026 Gabriel Mahia | Consistency beats intensity.")
-# -- Feedback sidebar ---------------------------------------------------------
-with st.sidebar:
-    st.markdown("---")
-    st.markdown(
-        "**Was this useful?**\n\n"
-        "[:pencil: Leave feedback](https://docs.google.com/forms/d/e/1FAIpQLSff_cjR102HNUeYU428ROv56TScLBzsQRc1JTwY4wGizvTQKw/viewform) (2 min)\n\n"
-        "[:bug: Report a bug](https://github.com/gabrielmahia/quantum-maestro/issues/new)\n\n"
-        "---\n"
-        "*Built by [Gabriel Mahia](https://aikungfu.dev)*\n\n"
-        "[Back to all tools](https://gabrielmahia.github.io)"
-    )
+        st.markdown("---")
+        # Covered call calculator
+        st.markdown("**Covered Call Yield**")
+        _cc_s = st.number_input("Stock price", value=0.0, step=0.5, key="pw_cc_s")
+        _cc_k = st.number_input("Strike to sell", value=0.0, step=0.5, key="pw_cc_k")
+        _cc_p = st.number_input("Premium ($/share)", value=0.0, step=0.05, key="pw_cc_p")
+        _cc_d = st.number_input("DTE", value=35, min_value=1, key="pw_cc_d")
+        if _cc_s > 0 and _cc_k > 0 and _cc_p > 0:
+            _cc = calc_covered_call_yield(_cc_s, _cc_k, _cc_p, _cc_d)
+            if not _cc.get("error"):
+                st.metric("Annualized Yield", f"{_cc['annualized_yield_pct']:.1f}%")
+                st.caption(_cc["otm_note"])
+                st.caption(_cc["dte_note"])
+
+    with _pw2:
+        # Morning brief
+        if st.button("🌍 Load Morning Macro Brief", key="pw_macro_btn"):
+            with st.spinner("Fetching global data…"):
+                _m_data = get_macro()
+                if _m_data:
+                    st.session_state.macro = _m_data
+                    st.success("Macro data loaded")
+                    st.rerun()
+                else:
+                    st.warning("Could not fetch macro data")
+
+        if st.session_state.macro:
+            _mac = st.session_state.macro
+            _brief_items = [
+                ("SPX",  f"{_mac.get('spx_price',0):,.0f}"),
+                ("VIX",  f"{_mac.get('vix',0):.1f}"),
+                ("10Y",  f"{_mac.get('tnx',0):.2f}%"),
+                ("DXY",  f"{_mac.get('dxy',0):.1f}"),
+                ("Gold", f"{_mac.get('gold',0):,.0f}"),
+                ("Oil",  f"{_mac.get('oil',0):.1f}"),
+            ]
+            _br_cols = st.columns(3)
+            for _bi, (_bl, _bv) in enumerate(_brief_items):
+                _br_cols[_bi % 3].metric(_bl, _bv)
+
+        st.markdown("---")
+        # Short/Not short checker (when relevant)
+        if "Short" in st.session_state.strategy and st.session_state.metrics:
+            _m3 = st.session_state.metrics
+            _sns = short_or_not_score(
+                _m3.get("trend_strength","NEUTRAL"),
+                (st.session_state.macro or {}).get("vix",20),
+                st.session_state.macro or {},
+                _m3, _m3.get("rsi",50), _m3.get("rvol",1.0))
+            _sc = {"GREEN — SHORT VALID":"#69f0ae","YELLOW — WAIT FOR CONFIRMATION":"#ffd740",
+                   "RED — DO NOT SHORT":"#ff5252","DO NOT SHORT":"#ff5252"}.get(
+                   _sns["verdict"],"#7080a0")
+            st.markdown(f'**Short Signal:** <span style="color:{_sc}">{_sns["verdict"]}</span>',
+                        unsafe_allow_html=True)
+            st.caption(_sns["action"])
+
+# ── DISCLAIMER (compact footer) ───────────────────────────────────────────────
+st.markdown("---")
+st.markdown(
+    '<div class="dim" style="text-align:center;font-size:0.72rem;padding:8px 0">'
+    '⚠️ <strong>Simulation only</strong> · Not financial advice · Not affiliated with Trade and Travel '
+    'or any trading organisation · Built by a student applying IWT methodology principles · '
+    'Data: Yahoo Finance · Trading involves substantial risk of loss'
+    '</div>', unsafe_allow_html=True)
 
