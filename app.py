@@ -4385,12 +4385,27 @@ with _T4:
             _j_result = st.selectbox("Result", ["Win","Loss","Breakeven"], key="j_result")
         with _j2:
             _j_pnl = st.number_input("P&L ($)", value=0.0, step=10.0, key="j_pnl")
-            _j_strat_j = st.selectbox("Type", ["Credit spread","Long option",
-                                                "Stock long","Short sell"], key="j_strat",
-                                                 index=["Credit spread","Long option","Stock long","Short sell"].index(
-                                                 st.session_state.get("_journal_prefill",{}).get("strategy","Credit spread")[:12].replace("Income","Credit spread").replace("Long","Long option").replace("Short","Short sell").replace("Stock","Stock long") 
-                                                 ) if st.session_state.get("_journal_prefill") else 0
-                                                 )
+            # Map strategy session key → journal dropdown label safely
+            _STRAT_MAP = {
+                "Income": "Credit spread",
+                "Credit": "Credit spread",
+                "Long Option": "Long option",
+                "Long Call": "Long option",
+                "Long Put":  "Long option",
+                "IWT Long":  "Long option",
+                "Short":     "Short sell",
+                "Stock":     "Stock long",
+            }
+            _pf_strat = st.session_state.get("_journal_prefill", {}).get("strategy", "")
+            _j_default = 0
+            for _kw, _label in _STRAT_MAP.items():
+                if _kw.lower() in _pf_strat.lower():
+                    _opts = ["Credit spread","Long option","Stock long","Short sell"]
+                    _j_default = _opts.index(_label) if _label in _opts else 0
+                    break
+            _j_strat_j = st.selectbox(
+                "Type", ["Credit spread","Long option","Stock long","Short sell"],
+                index=_j_default, key="j_strat")
         with _j3:
             _j_plan   = st.checkbox("Followed the plan?", True, key="j_plan")
             _j_notes  = st.text_area("Notes (optional)", height=70, key="j_notes",
