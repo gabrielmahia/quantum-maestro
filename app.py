@@ -4120,7 +4120,7 @@ with _T3:
                     f'<span class="mono" style="color:#ff5252">${_res:,.2f}</span></div>'
                     f'<div><span class="dim">R:R</span><br/>'
                     f'<span class="mono" style="color:#e8e8ff">'
-                    f'{(_res-_price)/(max(_price-_supp,0.01)):.1f}:1 '
+                    f'{(_res-_price)/(max(_price-_supp,0.01)):.2f}:1 '
                     f'({"✅" if (_res-_price)/(max(_price-_supp,0.01))>=2 else "⚠️"})'
                     f'</span></div>'
                     f'</div></div>', unsafe_allow_html=True)
@@ -4195,20 +4195,53 @@ with _T3:
         else:
             # Non-income strategies: show signal summary
             _sigs = st.session_state.signals or {}
-            _verdict = _sigs.get("verdict", "NO_DATA")
-            _sig_color = {"STRONG_BULL":"#00e676","BULL":"#69f0ae","NEUTRAL":"#ffd740",
-                          "BEAR":"#ff5252","STRONG_BEAR":"#d50000"}.get(_verdict, "#7080a0")
-            if _verdict != "NO_DATA":
+            # generate_signals returns {bullish, bearish, neutral, score}
+            # Derive verdict from score so data IS shown when loaded
+            _score = _sigs.get("score", None)
+            _bulls = _sigs.get("bullish", [])
+            _bears = _sigs.get("bearish", [])
+
+            # If signals dict is empty but metrics exist, build from metrics
+            if _score is None and _m:
+                _tr = _m.get("trend_strength", "NEUTRAL")
+                _ri = _m.get("rsi", 50)
+                _score = (2 if _tr=="STRONG_BULL" else 1 if _tr=="BULL"
+                          else -1 if _tr=="BEAR" else -2 if _tr=="STRONG_BEAR" else 0)
+                if _ri > 65: _score += 1
+                elif _ri < 35: _score -= 1
+                _bulls = [f"Trend: {_tr}"] + (["RSI overbought"] if _ri>65 else [])
+                _bears = [f"Trend: {_tr}"] + (["RSI oversold"] if _ri<35 else [])
+                if "BULL" in _tr: _bears = []
+                elif "BEAR" in _tr: _bulls = []
+                else: _bulls = []; _bears = []
+
+            if _score is not None:
+                if _score >= 4:   _verdict, _vc = "STRONG BULL ↑", "#00e676"
+                elif _score >= 2: _verdict, _vc = "BULLISH ↑",     "#69f0ae"
+                elif _score <= -4: _verdict, _vc = "STRONG BEAR ↓","#d50000"
+                elif _score <= -2: _verdict, _vc = "BEARISH ↓",    "#ff5252"
+                else:              _verdict, _vc = "NEUTRAL →",    "#ffd740"
                 st.markdown(
-                    f'<div class="verdict-go" style="background:linear-gradient(135deg,#0d1a3b,#1a2e5e)">'
-                    f'<div class="verdict-big" style="color:{_sig_color}">{_verdict}</div>'
-                    f'<div class="verdict-sub">'
-                    f'Trend {_sigs.get("trend","—")} · '
-                    f'Momentum {_sigs.get("momentum","—")} · '
-                    f'Volume {_sigs.get("volume","—")}'
-                    f'</div></div>', unsafe_allow_html=True)
+                    "<div style='background:linear-gradient(135deg,#0d1a3b,#1a2e5e);"
+                    "border:1px solid #1e3a6e;border-radius:10px;padding:14px 18px;margin:8px 0'>"
+                    f"<div style='font-size:1.5rem;font-weight:800;color:{_vc}'>{_verdict}</div>"
+                    f"<div style='font-size:0.83rem;color:#90a8c0;margin-top:4px'>"
+                    f"Signal score: {_score:+d} &nbsp;·&nbsp; "
+                    f"{len(_bulls)} bullish · {len(_bears)} bearish</div>"
+                    "</div>",
+                    unsafe_allow_html=True)
+                if _bulls or _bears:
+                    _bs1, _bs2 = st.columns(2)
+                    with _bs1:
+                        if _bulls:
+                            st.markdown("**🟢 Bullish signals**")
+                            for _b in _bulls[:5]: st.caption(f"• {_b}")
+                    with _bs2:
+                        if _bears:
+                            st.markdown("**🔴 Bearish signals**")
+                            for _b in _bears[:5]: st.caption(f"• {_b}")
             else:
-                st.info("Load market data in Setup to see trade signals.")
+                st.caption("Click **Load Market Data** in Setup to analyse this ticker.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — REVIEW (Journal + Troubleshoot + Income Plan)
