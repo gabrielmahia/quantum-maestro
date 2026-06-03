@@ -3477,6 +3477,261 @@ class InstitutionalAnalyst:
         return max_dd
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# QUANTUM MAESTRO — TRADING OS ENGINES (v16)
+# Integrated from the full Quantum Maestro Trading OS Architecture
+# Engines: Regime · Trade Grade · PDT Budget · SPX Income · WarrenAI Export
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import math
+import datetime
+
+
+# ── REGIME ENGINE ──────────────────────────────────────────────────────────────
+def classify_market_regime(macro: dict, metrics: dict = None) -> dict:
+    """
+    Classify market structure regime from macro data + optional ticker metrics.
+    Returns: {regime, label, badge, description, strategy_bias, weight}
+    """
+    macro   = macro or {}
+    metrics = metrics or {}
+    vix     = macro.get("vix", 20)
+    sp_chg  = macro.get("sp", 0)
+    oil_chg = macro.get("oil_chg", 0)
+    tnx_chg = macro.get("tnx_chg", 0)
+    dxy_chg = macro.get("dxy_chg", 0)
+    trend   = metrics.get("trend_strength", "NEUTRAL")
+
+    # Shock first — hardest block
+    if vix > 32 or abs(sp_chg) > 3.0:
+        return {"regime": "VOLATILITY_SHOCK", "label": "⚡ Volatility Shock",
+                "badge": "#d50000",
+                "description": "Extreme volatility — preserve capital. Defined risk ONLY or stand aside.",
+                "strategy_bias": "No Trade", "weight": 0}
+
+    # Multi-shock: oil + yields + DXY all rising = downgrade by 1 tier
+    macro_headwind = (oil_chg > 1.5 and tnx_chg > 0.5 and dxy_chg > 0.4)
+
+    if vix > 24:
+        r = {"regime": "EVENT_DRIVEN", "label": "⚠️ Event-Driven Market",
+             "badge": "#ff6d00",
+             "description": "Elevated IV with macro event risk — sell premium with defined risk, wider wings.",
+             "strategy_bias": "Income (credit spread)", "weight": 3}
+    elif "STRONG_BULL" in trend and vix < 18:
+        r = {"regime": "STRONG_BULL_TREND", "label": "🚀 Strong Bull Trend",
+             "badge": "#00e676",
+             "description": "Powerful uptrend + controlled vol — ride trend on pullbacks to buyer levels.",
+             "strategy_bias": "Long Stock", "weight": 5}
+    elif "BULL" in trend and vix < 24:
+        r = {"regime": "BULL_TREND", "label": "📈 Bull Trend",
+             "badge": "#69f0ae",
+             "description": "Uptrend with moderate vol — put credit spreads and pullback longs.",
+             "strategy_bias": "Income (credit spread)", "weight": 4}
+    elif "STRONG_BEAR" in trend or ("BEAR" in trend and vix > 18):
+        r = {"regime": "BEAR_TREND", "label": "📉 Bear Trend",
+             "badge": "#ff5252",
+             "description": "Downtrend confirmed — call credit spreads or defined-risk shorts.",
+             "strategy_bias": "Short Sell", "weight": 2}
+    elif abs(sp_chg) < 0.25 and 14 <= vix <= 22 and "NEUTRAL" in trend:
+        r = {"regime": "RANGE_CHOP", "label": "↔️ Range / Chop",
+             "badge": "#ffd740",
+             "description": "Low momentum, defined range — iron condors and wide credit spreads.",
+             "strategy_bias": "Income (credit spread)", "weight": 3}
+    else:
+        r = {"regime": "TREND_EXHAUSTION", "label": "⏸️ Trend Exhaustion",
+             "badge": "#ff9800",
+             "description": "Momentum fading — wait for level test and confirmation candle.",
+             "strategy_bias": "No Trade", "weight": 2}
+
+    # Apply macro headwind penalty
+    if macro_headwind and r["weight"] > 1:
+        r = dict(r)
+        r["weight"] = r["weight"] - 1
+        r["description"] += " ⚠️ Oil/yields/DXY rising together — downgrade one tier."
+
+    return r
+
+
+# ── TRADE GRADE ENGINE ─────────────────────────────────────────────────────────
+def compute_trade_grade(iwt_score: int, regime_weight: int,
+                        event_risk: bool, vix: float) -> dict:
+    """
+    Compute A-F trade grade combining IWT scorecard + market regime + vol regime.
+    Grade A = trade aggressively, F = no trade.
+    """
+    base = iwt_score + regime_weight
+    if event_risk: base -= 2
+    if vix > 25:   base -= 1
+    if vix > 30:   base -= 2
+
+    if base >= 9:
+        return {"grade": "A", "color": "#00e676",
+                "action": "Trade aggressively", "size": "Full size (1–2% risk)"}
+    elif base >= 7:
+        return {"grade": "B", "color": "#69f0ae",
+                "action": "Normal size", "size": "Normal size (1% risk)"}
+    elif base >= 5:
+        return {"grade": "C", "color": "#ffd740",
+                "action": "Half size only", "size": "0.5% risk max"}
+    elif base >= 3:
+        return {"grade": "D", "color": "#ff9800",
+                "action": "Observe only", "size": "Paper trade or watch"}
+    else:
+        return {"grade": "F", "color": "#ff5252",
+                "action": "No trade", "size": "Stand aside"}
+
+
+# ── PDT BUDGET ENGINE ──────────────────────────────────────────────────────────
+def pdt_best_days(day_trades_left: int, macro: dict) -> dict:
+    """
+    Given remaining day trades and macro data, recommend best days + per-day notes.
+    """
+    macro   = macro or {}
+    vix     = macro.get("vix", 20)
+    passive = macro.get("passive", False)
+
+    # Intrinsic day quality (empirical: Tue/Thu best for income, Mon early flow)
+    day_scores = {
+        "Monday":    5 if passive else 3,
+        "Tuesday":   5,
+        "Wednesday": 3 if vix > 20 else 4,
+        "Thursday":  4,
+        "Friday":    2 if vix > 18 else 3,
+    }
+    ranked = sorted(day_scores, key=day_scores.get, reverse=True)
+    best   = ranked[:max(0, day_trades_left)]
+
+    per_day = {
+        "Monday":    "Early-week passive flows (401k). Good for premium selling entry.",
+        "Tuesday":   "Historically strongest edge day — best for SPX credit spreads.",
+        "Wednesday": "FOMC/CPI risk mid-week. Wait for print, then trade repricing.",
+        "Thursday":  "Post-event repricing — vol spike premium is highest here.",
+        "Friday":    "Gamma danger on short-dated positions. Close before 2PM ET.",
+    }
+
+    note = ""
+    if day_trades_left == 0:
+        note = "⚠️ 0 day trades left — multi-day holds only. Enter and hold overnight."
+    elif day_trades_left <= 2:
+        note = f"🔒 {day_trades_left} day trade{'s' if day_trades_left>1 else ''} left — A/B setups only."
+
+    return {"best_days": best, "all_ranked": ranked, "per_day": per_day, "note": note}
+
+
+# ── SPX INCOME ENGINE ──────────────────────────────────────────────────────────
+def calc_spx_income_setup(spx_price: float, vix: float, dte: int,
+                          spread_width: int = 5) -> dict:
+    """
+    Compute SPX put credit spread parameters using BSM-approximated expected move.
+    Short strike placed at ~1.25σ from current price (approx 0.15 delta).
+    """
+    if not spx_price or spx_price < 1000 or not vix:
+        return {"error": "Load macro data first (SPX price and VIX required)"}
+
+    iv      = vix / 100
+    em_1sd  = spx_price * iv * math.sqrt(dte / 365)
+    em_125  = em_1sd * 1.25                                  # 1.25σ — ~0.15 delta
+
+    short_put = round((spx_price - em_125) / 5) * 5         # nearest $5 increment
+    long_put  = short_put - spread_width
+
+    # Credit approximation: ~20% of width baseline, scaled by IV and DTE
+    credit_raw = spread_width * 0.20 * (vix / 15) * math.sqrt(dte / 7)
+    credit     = round(max(0.25, min(credit_raw, spread_width * 0.40)), 2)
+
+    max_profit  = round(credit * 100, 2)
+    max_loss    = round((spread_width - credit) * 100, 2)
+    breakeven   = round(short_put - credit, 1)
+    pop_est     = int(min(85, 85 - (vix - 15) * 0.5))       # rough POP estimate
+    profit_tgt  = round(max_profit * 0.50, 2)
+    stop_loss   = round(credit * 1.5 * 100, 2)              # 1.5× credit debit
+
+    # Credit efficiency check (IWT standard: aim for ≥20% of width)
+    eff = credit / spread_width
+    quality = "✅ Good" if eff >= 0.20 else "⚠️ Low — widen spread or wait"
+
+    return {
+        "spx": round(spx_price, 2), "vix": round(vix, 1), "dte": dte,
+        "em_1sd": round(em_1sd, 1), "em_placed": round(em_125, 1),
+        "short_put": int(short_put), "long_put": int(long_put),
+        "credit": credit, "max_profit": max_profit, "max_loss": max_loss,
+        "breakeven": breakeven, "pop_est": pop_est,
+        "profit_tgt": profit_tgt, "stop_loss": stop_loss,
+        "width": spread_width, "credit_efficiency": round(eff * 100, 1),
+        "quality": quality,
+    }
+
+
+# ── WARREN AI EXPORT ───────────────────────────────────────────────────────────
+def build_warren_export(macro: dict, metrics: dict, regime: dict,
+                        grade: dict, strategy: str, ticker: str,
+                        iwt_score: int, account_size: float,
+                        max_risk: float, day_trades: int) -> str:
+    """Generate WarrenAI copy block for second-opinion analysis."""
+    macro   = macro or {}
+    metrics = metrics or {}
+    vix  = macro.get("vix",      "—")
+    dxy  = macro.get("dxy",      "—")
+    spx  = macro.get("spx_price","—")
+    tnx  = macro.get("tnx",      "—")
+    oil  = macro.get("oil_px",   "—")
+    price = metrics.get("price","—")
+    supp  = metrics.get("supp",  "—")
+    res   = metrics.get("res",   "—")
+    rsi   = metrics.get("rsi",   "—")
+    trend = metrics.get("trend_strength", "—")
+    atr   = metrics.get("atr",   "—")
+    rvol  = metrics.get("rvol",  "—")
+
+    def fmt(v, spec=".2f"):
+        try:    return format(float(v), spec)
+        except: return str(v)
+
+    return f"""[QUANTUM MAESTRO — WARREN AI EXPORT]
+Date:          {datetime.date.today()}
+─────────────────────────────────────
+TICKER:        {ticker}
+STRATEGY:      {strategy}
+ACCOUNT:       ${fmt(account_size,',.0f')}  |  Risk/Trade: ${fmt(max_risk,'.0f')}
+DAY TRADES:    {day_trades} remaining
+
+── MACRO ──────────────────────────────
+SPX Price:     {fmt(spx,',.0f')}
+VIX:           {fmt(vix,'.1f')}
+DXY:           {fmt(dxy,'.1f')}
+10Y Yield:     {fmt(tnx,'.2f')}%
+Oil (WTI):     ${fmt(oil,'.2f')}
+
+── REGIME ─────────────────────────────
+Structure:     {regime.get('regime','—')}
+Label:         {regime.get('label','—')}
+Strategy Bias: {regime.get('strategy_bias','—')}
+Regime Note:   {regime.get('description','—')}
+
+── TICKER SETUP ───────────────────────
+Price:         ${fmt(price,'.2f')}
+Trend:         {trend}
+RSI:           {fmt(rsi,'.0f')}
+ATR:           {fmt(atr,'.2f')}
+RVOL:          {fmt(rvol,'.1f')}x
+Support:       ${fmt(supp,'.2f')}
+Resistance:    ${fmt(res,'.2f')}
+
+── TRADE GRADE ────────────────────────
+IWT Score:     {iwt_score}/6
+Trade Grade:   {grade.get('grade','—')}  —  {grade.get('action','—')}
+Position Size: {grade.get('size','—')}
+
+── SECOND-OPINION REQUEST ─────────────
+Please confirm:
+1. Is the regime classification correct given current price action?
+2. Is the short strike outside the 1-week expected move?
+3. Are any high-impact events scheduled in the next 24-48 hours?
+4. Does the credit efficiency (credit ÷ spread width) exceed 20%?
+
+[END — WarrenAI: investing.com/ai | Not financial advice]"""
+
+
 engine = InstitutionalAnalyst()
 
 def get_macro() -> dict:
@@ -3772,6 +4027,18 @@ with _T1:
             st.session_state.ticker = _ticker_choice.replace(" (0DTE/Credit)", "").replace("SPX", "^GSPC")
 
         with _b2:
+            # PDT Budget
+            with st.expander("📅 PDT Budget", expanded=False):
+                _dt_left = st.selectbox(
+                    "Day trades remaining this week", [3,2,1,0], key="pdt_trades_left",
+                    help="PDT: accounts <$25k get 3 day trades per rolling 5-day window")
+                _pdt = pdt_best_days(_dt_left, st.session_state.macro or {})
+                if _pdt["note"]: st.warning(_pdt["note"])
+                if _pdt["best_days"]:
+                    st.markdown(f"**Best days:** {', '.join(_pdt['best_days'])}")
+                for _pd in _pdt["all_ranked"][:5]:
+                    _ic2 = "🟢" if _pd in _pdt["best_days"] else "⬜"
+                    st.caption(f"{_ic2} **{_pd}:** {_pdt['per_day'][_pd]}")
             _strategy_opts = [
                 "💰 Income (credit spread)",
                 "📈 Long call/put",
@@ -3935,6 +4202,33 @@ with _T1:
                 st.warning(_wrn)
 
         # IWT checklist hint
+        # Regime + Trade Grade
+        _regime = classify_market_regime(_mac, _mets)
+        _grade  = compute_trade_grade(
+            _iwt_total, _regime["weight"],
+            bool(_ntg.get("event_risk", False)),
+            float(_mac.get("vix", 20)) if _mac else 20.0)
+        _grc = _grade["color"]
+        st.markdown(
+            f"<div style='display:flex;gap:10px;margin:8px 0'>"
+            f"<div style='background:#0d1a3b;border:1px solid #1e3a6e;border-radius:8px;"
+            f"padding:10px 14px;flex:1'>"
+            f"<div style='font-size:0.7rem;color:#5e7a9e;text-transform:uppercase'>"
+            f"Market Regime</div>"
+            f"<div style='font-size:1rem;font-weight:700;color:{_regime.get("badge","#90a8c0")}'>"
+            f"{_regime.get("label","Unknown")}</div>"
+            f"<div style='font-size:0.73rem;color:#6e8ba8'>Bias → {_regime.get("strategy_bias","--")}</div>"
+            f"</div>"
+            f"<div style='background:#0d1a3b;border:1px solid #1e3a6e;border-radius:8px;"
+            f"padding:10px 14px;flex:0 0 110px;text-align:center'>"
+            f"<div style='font-size:0.7rem;color:#5e7a9e;text-transform:uppercase'>Trade Grade</div>"
+            f"<div style='font-size:2rem;font-weight:800;color:{_grc}'>{_grade["grade"]}</div>"
+            f"<div style='font-size:0.72rem;color:{_grc}'>{_grade["action"]}</div>"
+            f"</div></div>", unsafe_allow_html=True)
+        _rbs = _regime.get("strategy_bias","")
+        if _rbs == "No Trade": st.warning("Regime recommends standing aside.")
+        elif _rbs: st.caption(f"💡 Regime: **{_rbs}**")
+        st.markdown("---")
         with st.expander("📋 Full IWT 7-Step Checklist", expanded=False):
             _steps = [
                 ("1", "Pick a quality, liquid underlying"),
@@ -4528,6 +4822,44 @@ with st.expander("⚡ Power Tools — Market Brief · Backtest · Options Calcul
             if _play.get("avoid"):
                 st.caption("Avoid: " + ", ".join(_play["avoid"][:2]))
 
+        st.markdown("---")
+        # SPX Income Engine
+        st.markdown("**SPX Income Engine**")
+        _ms2  = st.session_state.macro or {}
+        _ie_s = st.number_input("SPX Price", value=float(_ms2.get("spx_price",5500)), step=10.0, format="%.0f", key="ie_spx")
+        _ie_v = st.number_input("VIX", value=float(_ms2.get("vix",18)), step=0.5, format="%.1f", key="ie_vix")
+        _ie_d = st.selectbox("DTE", [5,7,10,14,21], index=1, key="ie_dte")
+        _ie_w = st.selectbox("Width ($)", [5,10,25], key="ie_width")
+        _ie_o = calc_spx_income_setup(_ie_s, _ie_v, _ie_d, _ie_w)
+        if "error" not in _ie_o:
+            st.markdown(
+                f"<div class='order-block'>"f"SELL {_ie_o['short_put']}P / BUY {_ie_o['long_put']}P  ({_ie_d}DTE)\n"
+                f"CREDIT ${_ie_o['credit']:.2f} ({_ie_o['credit_efficiency']:.0f}%) {_ie_o['quality']}\n"
+                f"1σ EM ±{_ie_o['em_1sd']:.0f}pts  |  Strike {_ie_o['em_placed']:.0f}pts out\n"
+                f"MAX PROFIT ${_ie_o['max_profit']:.0f}  |  MAX LOSS ${_ie_o['max_loss']:.0f}\n"
+                f"TAKE at ${_ie_o['profit_tgt']:.0f}  |  STOP at ${_ie_o['stop_loss']:.0f} debit\n"
+                f"POP ~{_ie_o['pop_est']}%  |  BE {_ie_o['breakeven']:.0f}"
+                f"</div>", unsafe_allow_html=True)
+        else:
+            st.info(_ie_o["error"])
+        st.markdown("---")
+        st.markdown("**WarrenAI Export**")
+        _wa_r = classify_market_regime(_ms2, st.session_state.metrics or {})
+        _wa_g = compute_trade_grade(
+            (st.session_state.scorecard_fresh + st.session_state.scorecard_speed +
+             st.session_state.scorecard_time),
+            _wa_r["weight"], False, float(_ms2.get("vix", 20)))
+        _wa_t = build_warren_export(
+            _ms2, st.session_state.metrics or {}, _wa_r, _wa_g,
+            st.session_state.strategy,
+            st.session_state.ticker.replace("^GSPC","SPX"),
+            (st.session_state.scorecard_fresh + st.session_state.scorecard_speed +
+             st.session_state.scorecard_time),
+            st.session_state.acct_size,
+            st.session_state.max_risk_per_trade,
+            st.session_state.get("pdt_trades_left", 3))
+        st.code(_wa_t, language=None)
+        st.caption("Copy ↑ into WarrenAI at investing.com for a second opinion.")
         st.markdown("---")
         # Covered call calculator
         st.markdown("**Covered Call Yield**")
