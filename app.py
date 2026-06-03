@@ -3209,7 +3209,7 @@ class InstitutionalAnalyst:
             # IVR proxy = (current VIX - 52w low VIX) / (52w high VIX - 52w low VIX) * 100
             # This is the correct formula. For SPX, VIX IS implied volatility.
             try:
-                vix_1y = yf.download("^VIX", period="1y", progress=False, timeout=15)["Close"].dropna()
+                vix_1y = yf.download("^VIX", period="1y", progress=False, timeout=15)["Close"].squeeze().dropna()
                 vix_52w_high = float(vix_1y.max())
                 vix_52w_low  = float(vix_1y.min())
             except Exception:
@@ -3555,7 +3555,7 @@ def compute_market_health_score() -> dict:
     # Healthy: SPY up + VIX down. Caution: SPY up + VIX up (smart money hedging)
     try:
         _vdata = yf.download("^VIX", period="3d", progress=False, auto_adjust=True)
-        _vc    = _vdata["Close"]
+        _vc    = _vdata["Close"].squeeze()  # fix: single-ticker returns DataFrame in yfinance 1.4+
         vix_now  = float(_vc.iloc[-1])
         vix_prev = float(_vc.iloc[-2])
         vix_dir  = vix_now - vix_prev
