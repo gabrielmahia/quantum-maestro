@@ -3477,6 +3477,152 @@ class InstitutionalAnalyst:
         return max_dd
 
 
+
+# ── MARKET HEALTH SCORE ENGINE ────────────────────────────────────────────────
+def compute_market_health_score() -> dict:
+    """
+    Computes a 0-100 Market Health Score using free Yahoo Finance data.
+    Approximates the Bloomberg/CNBC breadth indicators:
+      - RSP vs SPY  (equal-weight vs cap-weight concentration check)
+      - Sector participation (how many of 8 sectors are green today)
+      - VIX direction (falling on up days = healthy)
+      - QQQ vs SPY divergence (tech concentration check)
+    
+    Returns: {score, grade, label, components, summary, thinkorswim_tip}
+    """
+    import yfinance as yf
+    import datetime
+
+    results = {}
+    score_total = 0
+    components = {}
+
+    # ── 1. RSP vs SPY: equal-weight vs cap-weight (30 pts) ───────────────────
+    # RSP = Invesco S&P 500 Equal Weight. If RSP returns < SPY returns: concentrated rally
+    try:
+        _data = yf.download(["SPY","RSP","QQQ"], period="5d", progress=False, auto_adjust=True)
+        _close = _data["Close"]
+        spy_ret = float((_close["SPY"].iloc[-1] - _close["SPY"].iloc[-2]) / _close["SPY"].iloc[-2] * 100)
+        rsp_ret = float((_close["RSP"].iloc[-1] - _close["RSP"].iloc[-2]) / _close["RSP"].iloc[-2] * 100)
+        qqq_ret = float((_close["QQQ"].iloc[-1] - _close["QQQ"].iloc[-2]) / _close["QQQ"].iloc[-2] * 100)
+
+        rsp_spy_diff = rsp_ret - spy_ret   # positive = broad, negative = concentrated
+        if rsp_spy_diff >= 0.2:
+            pts_rsp, rsp_lbl = 30, f"✅ Broad ({rsp_spy_diff:+.2f}% RSP vs SPY)"
+        elif rsp_spy_diff >= -0.1:
+            pts_rsp, rsp_lbl = 20, f"🟡 Mild concentration ({rsp_spy_diff:+.2f}% RSP vs SPY)"
+        elif rsp_spy_diff >= -0.3:
+            pts_rsp, rsp_lbl = 10, f"⚠️ Narrowing ({rsp_spy_diff:+.2f}% RSP vs SPY)"
+        else:
+            pts_rsp, rsp_lbl = 0,  f"🔴 Concentrated ({rsp_spy_diff:+.2f}% RSP vs SPY)"
+
+        score_total += pts_rsp
+        components["RSP vs SPY"] = {"pts": pts_rsp, "max": 30, "detail": rsp_lbl,
+                                     "spy": round(spy_ret,2), "rsp": round(rsp_ret,2)}
+        results["spy_ret"] = round(spy_ret, 2)
+        results["rsp_ret"] = round(rsp_ret, 2)
+        results["qqq_ret"] = round(qqq_ret, 2)
+    except Exception as _e:
+        components["RSP vs SPY"] = {"pts": 0, "max": 30, "detail": f"⚠️ Data error: {_e}"}
+
+    # ── 2. Sector participation (30 pts) ─────────────────────────────────────
+    # Count how many of 8 key sectors are green today
+    _sectors = {"XLK":"Tech","XLF":"Financials","XLI":"Industrials","XLY":"Consumer Disc",
+                "XLP":"Staples","XLV":"Health","XLE":"Energy","XLU":"Utilities"}
+    try:
+        _sdata = yf.download(list(_sectors.keys()), period="3d", progress=False, auto_adjust=True)
+        _sc = _sdata["Close"]
+        _green = []
+        _red   = []
+        for sym in _sectors:
+            try:
+                ret = float((_sc[sym].iloc[-1] - _sc[sym].iloc[-2]) / _sc[sym].iloc[-2] * 100)
+                if ret >= 0: _green.append(f"{_sectors[sym]}({ret:+.1f}%)")
+                else:        _red.append(f"{_sectors[sym]}({ret:+.1f}%)")
+            except: pass
+        n_green = len(_green)
+        if n_green >= 7:    pts_sec, sec_lbl = 30, f"✅ {n_green}/8 sectors green"
+        elif n_green >= 5:  pts_sec, sec_lbl = 20, f"🟡 {n_green}/8 sectors green"
+        elif n_green >= 3:  pts_sec, sec_lbl = 10, f"⚠️ {n_green}/8 sectors green"
+        else:               pts_sec, sec_lbl = 0,  f"🔴 {n_green}/8 sectors green (poor breadth)"
+        score_total += pts_sec
+        components["Sector Breadth"] = {"pts": pts_sec, "max": 30, "detail": sec_lbl,
+                                         "green": _green, "red": _red, "n_green": n_green}
+    except Exception as _e:
+        components["Sector Breadth"] = {"pts": 0, "max": 30, "detail": f"⚠️ {_e}"}
+
+    # ── 3. VIX direction vs SPY direction (20 pts) ───────────────────────────
+    # Healthy: SPY up + VIX down. Caution: SPY up + VIX up (smart money hedging)
+    try:
+        _vdata = yf.download("^VIX", period="3d", progress=False, auto_adjust=True)
+        _vc    = _vdata["Close"]
+        vix_now  = float(_vc.iloc[-1])
+        vix_prev = float(_vc.iloc[-2])
+        vix_dir  = vix_now - vix_prev
+        spy_r    = results.get("spy_ret", 0)
+        if spy_r > 0 and vix_dir < -0.3:
+            pts_vix, vix_lbl = 20, f"✅ VIX falling on up day ({vix_dir:+.2f})"
+        elif spy_r > 0 and vix_dir > 0.5:
+            pts_vix, vix_lbl = 0,  f"🔴 VIX rising on up day — institutional hedging ({vix_dir:+.2f})"
+        elif spy_r < 0 and vix_dir > 0:
+            pts_vix, vix_lbl = 10, f"🟡 VIX up on down day (normal) ({vix_dir:+.2f})"
+        else:
+            pts_vix, vix_lbl = 15, f"🟡 VIX neutral ({vix_dir:+.2f})"
+        score_total += pts_vix
+        components["VIX Direction"] = {"pts": pts_vix, "max": 20, "detail": vix_lbl,
+                                        "vix_now": round(vix_now,1), "vix_dir": round(vix_dir,2)}
+        results["vix"] = round(vix_now, 1)
+    except Exception as _e:
+        components["VIX Direction"] = {"pts": 0, "max": 20, "detail": f"⚠️ {_e}"}
+
+    # ── 4. QQQ vs SPY divergence (20 pts) ────────────────────────────────────
+    # If QQQ >> SPY by >0.5%, tech is carrying. If QQQ ≈ SPY: broad participation.
+    try:
+        q_ret = results.get("qqq_ret", 0)
+        s_ret = results.get("spy_ret", 0)
+        qqq_spy_diff = q_ret - s_ret
+        if abs(qqq_spy_diff) <= 0.3:
+            pts_qqq, qqq_lbl = 20, f"✅ QQQ ≈ SPY (balanced, {qqq_spy_diff:+.2f}%)"
+        elif qqq_spy_diff > 0.5:
+            pts_qqq, qqq_lbl = 5,  f"⚠️ Tech carrying index (QQQ +{qqq_spy_diff:.2f}% vs SPY)"
+        elif qqq_spy_diff < -0.5:
+            pts_qqq, qqq_lbl = 15, f"🟡 Rotation out of tech (QQQ {qqq_spy_diff:+.2f}% vs SPY)"
+        else:
+            pts_qqq, qqq_lbl = 15, f"🟡 Mild divergence ({qqq_spy_diff:+.2f}%)"
+        score_total += pts_qqq
+        components["QQQ vs SPY"] = {"pts": pts_qqq, "max": 20, "detail": qqq_lbl,
+                                     "qqq": round(q_ret,2), "spy": round(s_ret,2)}
+    except Exception as _e:
+        components["QQQ vs SPY"] = {"pts": 0, "max": 20, "detail": f"⚠️ {_e}"}
+
+    # ── Grade & Label ─────────────────────────────────────────────────────────
+    if score_total >= 90:   grade, label, color = "A", "🟢 Healthy Bull", "#00e676"
+    elif score_total >= 70: grade, label, color = "B", "🟡 Bull — Narrowing", "#69f0ae"
+    elif score_total >= 50: grade, label, color = "C", "🟡 Fragile", "#ffd740"
+    elif score_total >= 30: grade, label, color = "D", "🟠 High Risk", "#ff9800"
+    else:                   grade, label, color = "F", "🔴 Distribution", "#ff5252"
+
+    # Teri action
+    if grade in ("A","B"):
+        action = "Market structure supports trades — check your levels and go."
+    elif grade == "C":
+        action = "Fragile breadth — reduce size, tighten stops, wait for quality setups."
+    else:
+        action = "Poor breadth — stand aside or use only defined-risk structures."
+
+    return {
+        "score": score_total, "grade": grade, "label": label, "color": color,
+        "action": action, "components": components,
+        "thinkorswim": (
+            "Add these symbols to your ThinkorSwim chart/watchlist: "
+            "$ADD (NYSE A/D — most important), $UVOL/$DVOL (up/down volume ratio), "
+            "$ADSPD (S&P 500 A/D), RSP (equal-weight SPY comparison), "
+            "VIX — watch for SPY up + VIX up divergence (red flag). "
+            "In watchlist: add RSP column alongside SPY, compare daily % change."
+        )
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # QUANTUM MAESTRO — TRADING OS ENGINES (v16)
 # Integrated from the full Quantum Maestro Trading OS Architecture
@@ -3919,7 +4065,7 @@ _SS_DEFAULTS = {
     "strategy": "Income (SPX Vertical Credit Spread)",
     "ticker": "SPY", "dte": 14, "scorecard_fresh": 1,
     "scorecard_speed": 1, "scorecard_time": 2,
-    "_spx_plan": None, "_universe_scan": None,
+    "_spx_plan": None, "_universe_scan": None, "_market_health": None,
     "_last_macro_fetch": None,
 }
 for k, v in _SS_DEFAULTS.items():
@@ -4027,18 +4173,6 @@ with _T1:
             st.session_state.ticker = _ticker_choice.replace(" (0DTE/Credit)", "").replace("SPX", "^GSPC")
 
         with _b2:
-            # PDT Budget
-            with st.expander("📅 PDT Budget", expanded=False):
-                _dt_left = st.selectbox(
-                    "Day trades remaining this week", [3,2,1,0], key="pdt_trades_left",
-                    help="PDT: accounts <$25k get 3 day trades per rolling 5-day window")
-                _pdt = pdt_best_days(_dt_left, st.session_state.macro or {})
-                if _pdt["note"]: st.warning(_pdt["note"])
-                if _pdt["best_days"]:
-                    st.markdown(f"**Best days:** {', '.join(_pdt['best_days'])}")
-                for _pd in _pdt["all_ranked"][:5]:
-                    _ic2 = "🟢" if _pd in _pdt["best_days"] else "⬜"
-                    st.caption(f"{_ic2} **{_pd}:** {_pdt['per_day'][_pd]}")
             _strategy_opts = [
                 "💰 Income (credit spread)",
                 "📈 Long call/put",
@@ -4202,33 +4336,6 @@ with _T1:
                 st.warning(_wrn)
 
         # IWT checklist hint
-        # Regime + Trade Grade
-        _regime = classify_market_regime(_mac, _mets)
-        _grade  = compute_trade_grade(
-            _iwt_total, _regime["weight"],
-            bool(_ntg.get("event_risk", False)),
-            float(_mac.get("vix", 20)) if _mac else 20.0)
-        _grc = _grade["color"]
-        st.markdown(
-            f"<div style='display:flex;gap:10px;margin:8px 0'>"
-            f"<div style='background:#0d1a3b;border:1px solid #1e3a6e;border-radius:8px;"
-            f"padding:10px 14px;flex:1'>"
-            f"<div style='font-size:0.7rem;color:#5e7a9e;text-transform:uppercase'>"
-            f"Market Regime</div>"
-            f"<div style='font-size:1rem;font-weight:700;color:{_regime.get("badge","#90a8c0")}'>"
-            f"{_regime.get("label","Unknown")}</div>"
-            f"<div style='font-size:0.73rem;color:#6e8ba8'>Bias → {_regime.get("strategy_bias","--")}</div>"
-            f"</div>"
-            f"<div style='background:#0d1a3b;border:1px solid #1e3a6e;border-radius:8px;"
-            f"padding:10px 14px;flex:0 0 110px;text-align:center'>"
-            f"<div style='font-size:0.7rem;color:#5e7a9e;text-transform:uppercase'>Trade Grade</div>"
-            f"<div style='font-size:2rem;font-weight:800;color:{_grc}'>{_grade["grade"]}</div>"
-            f"<div style='font-size:0.72rem;color:{_grc}'>{_grade["action"]}</div>"
-            f"</div></div>", unsafe_allow_html=True)
-        _rbs = _regime.get("strategy_bias","")
-        if _rbs == "No Trade": st.warning("Regime recommends standing aside.")
-        elif _rbs: st.caption(f"💡 Regime: **{_rbs}**")
-        st.markdown("---")
         with st.expander("📋 Full IWT 7-Step Checklist", expanded=False):
             _steps = [
                 ("1", "Pick a quality, liquid underlying"),
@@ -4344,6 +4451,106 @@ with _T2:
             st.markdown('<div class="dim" style="padding:20px 0;text-align:center">'
                         'Click to generate today\'s specific strikes</div>',
                         unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MARKET HEALTH SCORE — appended to Scan tab
+# ══════════════════════════════════════════════════════════════════════════════
+# Market Health section at the bottom of Tab 2
+with _T2:
+    st.markdown("---")
+    st.markdown('<div class="card-sm"><span class="card-label">📊 Market Health Score — Breadth & Concentration</span></div>',
+                unsafe_allow_html=True)
+    _mh_left, _mh_right = st.columns([3, 1])
+    with _mh_left:
+        _lvl2 = st.session_state.lang_level
+        if _lvl2 == "Beginner":
+            st.caption(
+                "This score tells you if the whole market is rising, or just a few big companies. "
+                "A healthy market has MOST stocks going up. A fragile market only has a few tech giants pulling everything up.")
+        else:
+            st.caption(
+                "Market health from 4 breadth proxies: RSP vs SPY concentration, sector participation, "
+                "VIX direction, and QQQ vs SPY divergence. "
+                "Equivalent to Bloomberg's $ADD + $UVOL/$DVOL read for retail access.")
+    with _mh_right:
+        if st.button("🔄 Compute Health Score", key="mh_btn"):
+            with st.spinner("Fetching breadth data…"):
+                try:
+                    _mh = compute_market_health_score()
+                    st.session_state["_market_health"] = _mh
+                except Exception as _mhe:
+                    st.error(f"Error: {_mhe}")
+
+    _mh = st.session_state.get("_market_health")
+    if _mh:
+        _mhsc = _mh["score"]
+        _mhc  = _mh["color"]
+        _mhg  = _mh["grade"]
+        st.markdown(
+            f"<div style='display:flex;gap:12px;align-items:center;margin:10px 0'>"
+            f"<div style='background:#0d1a3b;border:1px solid #1e3a6e;border-radius:8px;"
+            f"padding:12px 16px;flex:0 0 100px;text-align:center'>"
+            f"<div style='font-size:0.7rem;color:#5e7a9e;text-transform:uppercase'>Health</div>"
+            f"<div style='font-size:2rem;font-weight:800;color:{_mhc}'>{_mhsc}</div>"
+            f"<div style='font-size:0.8rem;font-weight:700;color:{_mhc}'>Grade {_mhg}</div>"
+            f"</div>"
+            f"<div style='flex:1'>"
+            f"<div style='font-size:1rem;font-weight:700;color:{_mhc}'>{_mh['label']}</div>"
+            f"<div style='font-size:0.8rem;color:#90a8c0;margin-top:4px'>{_mh['action']}</div>"
+            f"</div>"
+            f"</div>", unsafe_allow_html=True)
+
+        # Component breakdown
+        _ch_cols = st.columns(2)
+        for _ci, (_cname, _cdata) in enumerate(_mh["components"].items()):
+            with _ch_cols[_ci % 2]:
+                _cpts  = _cdata.get("pts",0)
+                _cmax  = _cdata.get("max",30)
+                _cpct  = int(_cpts / _cmax * 100) if _cmax else 0
+                _ccol  = "#00e676" if _cpct >= 70 else "#ffd740" if _cpct >= 40 else "#ff5252"
+                st.markdown(
+                    f"<div style='background:#0d1a3b;border:1px solid #1e3a6e;border-radius:6px;"
+                    f"padding:8px 12px;margin:3px 0'>"
+                    f"<div style='display:flex;justify-content:space-between'>"
+                    f"<span style='font-size:0.78rem;color:#90a8c0'>{_cname}</span>"
+                    f"<span style='font-size:0.78rem;font-weight:700;color:{_ccol}'>"
+                    f"{_cpts}/{_cmax}</span></div>"
+                    f"<div style='font-size:0.73rem;color:#6e8ba8;margin-top:2px'>"
+                    f"{_cdata.get('detail','—')}</div>"
+                    f"</div>", unsafe_allow_html=True)
+            # Show sector breakdown if available
+            if _cname == "Sector Breadth":
+                _gr = _cdata.get("green",[])
+                _rd = _cdata.get("red",[])
+                if _gr:
+                    st.caption(f"🟢 {', '.join(_gr[:4])}")
+                if _rd:
+                    st.caption(f"🔴 {', '.join(_rd[:4])}")
+
+        # ThinkorSwim tip
+        with st.expander("📺 ThinkorSwim Setup — What Bloomberg analysts watch", expanded=False):
+            st.markdown("""
+**Add these to your ThinkorSwim watchlist/chart:**
+
+| Symbol | What it measures | Signal |
+|--------|-----------------|--------|
+| `$ADD` | NYSE Advance/Decline | Positive = broad rally, Negative = narrow/weak |
+| `$ADSPD` | S&P 500 A/D | Same as above, S&P specific |
+| `$UVOL` | Up volume | Should expand on up days |
+| `$DVOL` | Down volume | $DVOL >> $UVOL on up day = red flag |
+| `RSP` | Equal-weight S&P 500 | Compare to SPY daily: RSP lagging = concentrated |
+| `$HGH` | New 52-week highs | Should expand with index highs |
+| `$LOW` | New 52-week lows | Rising while index rises = distribution |
+
+**The single most powerful read:** Compare RSP vs SPY daily % on your watchlist.
+If SPY is up 1% but RSP is flat, the Magnificent 7 are carrying everything else.
+That's the fragile market CNBC keeps talking about.
+
+**Add to chart:** Plot `$ADD` as a lower pane on your SPY chart.
+If `$ADD` makes a lower high while SPY makes a higher high = classic divergence top.
+""")
+    else:
+        st.info("Click 'Compute Health Score' to see live market breadth analysis.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — TRADE (Details for selected ticker + strategy)
@@ -4822,44 +5029,6 @@ with st.expander("⚡ Power Tools — Market Brief · Backtest · Options Calcul
             if _play.get("avoid"):
                 st.caption("Avoid: " + ", ".join(_play["avoid"][:2]))
 
-        st.markdown("---")
-        # SPX Income Engine
-        st.markdown("**SPX Income Engine**")
-        _ms2  = st.session_state.macro or {}
-        _ie_s = st.number_input("SPX Price", value=float(_ms2.get("spx_price",5500)), step=10.0, format="%.0f", key="ie_spx")
-        _ie_v = st.number_input("VIX", value=float(_ms2.get("vix",18)), step=0.5, format="%.1f", key="ie_vix")
-        _ie_d = st.selectbox("DTE", [5,7,10,14,21], index=1, key="ie_dte")
-        _ie_w = st.selectbox("Width ($)", [5,10,25], key="ie_width")
-        _ie_o = calc_spx_income_setup(_ie_s, _ie_v, _ie_d, _ie_w)
-        if "error" not in _ie_o:
-            st.markdown(
-                f"<div class='order-block'>"f"SELL {_ie_o['short_put']}P / BUY {_ie_o['long_put']}P  ({_ie_d}DTE)\n"
-                f"CREDIT ${_ie_o['credit']:.2f} ({_ie_o['credit_efficiency']:.0f}%) {_ie_o['quality']}\n"
-                f"1σ EM ±{_ie_o['em_1sd']:.0f}pts  |  Strike {_ie_o['em_placed']:.0f}pts out\n"
-                f"MAX PROFIT ${_ie_o['max_profit']:.0f}  |  MAX LOSS ${_ie_o['max_loss']:.0f}\n"
-                f"TAKE at ${_ie_o['profit_tgt']:.0f}  |  STOP at ${_ie_o['stop_loss']:.0f} debit\n"
-                f"POP ~{_ie_o['pop_est']}%  |  BE {_ie_o['breakeven']:.0f}"
-                f"</div>", unsafe_allow_html=True)
-        else:
-            st.info(_ie_o["error"])
-        st.markdown("---")
-        st.markdown("**WarrenAI Export**")
-        _wa_r = classify_market_regime(_ms2, st.session_state.metrics or {})
-        _wa_g = compute_trade_grade(
-            (st.session_state.scorecard_fresh + st.session_state.scorecard_speed +
-             st.session_state.scorecard_time),
-            _wa_r["weight"], False, float(_ms2.get("vix", 20)))
-        _wa_t = build_warren_export(
-            _ms2, st.session_state.metrics or {}, _wa_r, _wa_g,
-            st.session_state.strategy,
-            st.session_state.ticker.replace("^GSPC","SPX"),
-            (st.session_state.scorecard_fresh + st.session_state.scorecard_speed +
-             st.session_state.scorecard_time),
-            st.session_state.acct_size,
-            st.session_state.max_risk_per_trade,
-            st.session_state.get("pdt_trades_left", 3))
-        st.code(_wa_t, language=None)
-        st.caption("Copy ↑ into WarrenAI at investing.com for a second opinion.")
         st.markdown("---")
         # Covered call calculator
         st.markdown("**Covered Call Yield**")
