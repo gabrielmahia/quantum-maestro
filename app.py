@@ -3478,7 +3478,8 @@ class InstitutionalAnalyst:
 
 
 
-# ── MARKET HEALTH SCORE ENGINE ────────────────────────────────────────────────
+# ── MARKET HEALTH SCORE ENGINE v2 ─────────────────────────────────────────────
+# Weights: 25 Breadth | 25 Sector | 20 VIX | 15 Small Caps | 15 Yield Curve = 100
 def compute_market_health_score() -> dict:
     """
     Computes a 0-100 Market Health Score using free Yahoo Finance data.
@@ -3610,16 +3611,203 @@ def compute_market_health_score() -> dict:
     else:
         action = "Poor breadth — stand aside or use only defined-risk structures."
 
+    import yfinance as yf
+
+    results = {}
+    score_total = 0
+    components = {}
+
+    # ── 1. Breadth: RSP vs SPY (25 pts) ──────────────────────────────────────
+    try:
+        _base = yf.download(["SPY","RSP","QQQ","IWM"], period="5d",
+                             progress=False, auto_adjust=True)
+        _close = _base["Close"]
+        spy_ret = float((_close["SPY"].iloc[-1] - _close["SPY"].iloc[-2])
+                        / _close["SPY"].iloc[-2] * 100)
+        rsp_ret = float((_close["RSP"].iloc[-1] - _close["RSP"].iloc[-2])
+                        / _close["RSP"].iloc[-2] * 100)
+        qqq_ret = float((_close["QQQ"].iloc[-1] - _close["QQQ"].iloc[-2])
+                        / _close["QQQ"].iloc[-2] * 100)
+        iwm_ret = float((_close["IWM"].iloc[-1] - _close["IWM"].iloc[-2])
+                        / _close["IWM"].iloc[-2] * 100)
+        rsp_spy_diff = rsp_ret - spy_ret
+        if rsp_spy_diff >= 0.2:
+            pts_rsp, rsp_lbl = 25, f"✅ Broad breadth ({rsp_spy_diff:+.2f}% RSP vs SPY)"
+        elif rsp_spy_diff >= -0.1:
+            pts_rsp, rsp_lbl = 18, f"🟡 Mild concentration ({rsp_spy_diff:+.2f}%)"
+        elif rsp_spy_diff >= -0.3:
+            pts_rsp, rsp_lbl = 9,  f"⚠️ Narrowing ({rsp_spy_diff:+.2f}%)"
+        else:
+            pts_rsp, rsp_lbl = 0,  f"🔴 Mega-caps only ({rsp_spy_diff:+.2f}%)"
+        score_total += pts_rsp
+        components["Breadth (RSP vs SPY)"] = {"pts": pts_rsp, "max": 25, "detail": rsp_lbl,
+                                               "spy": round(spy_ret,2), "rsp": round(rsp_ret,2)}
+        results.update({"spy_ret": round(spy_ret,2), "rsp_ret": round(rsp_ret,2),
+                         "qqq_ret": round(qqq_ret,2), "iwm_ret": round(iwm_ret,2)})
+    except Exception as _e:
+        components["Breadth (RSP vs SPY)"] = {"pts": 0, "max": 25, "detail": f"⚠️ {_e}"}
+
+    # ── 2. Sector Participation (25 pts) ─────────────────────────────────────
+    _sectors = {"XLK":"Tech","XLF":"Financials","XLI":"Industrials","XLY":"Consumer Disc",
+                "XLP":"Staples","XLV":"Health","XLE":"Energy","XLU":"Utilities"}
+    try:
+        _sdata = yf.download(list(_sectors.keys()), period="3d", progress=False, auto_adjust=True)
+        _sc = _sdata["Close"]
+        _green, _red = [], []
+        for sym in _sectors:
+            try:
+                ret = float((_sc[sym].iloc[-1] - _sc[sym].iloc[-2]) / _sc[sym].iloc[-2] * 100)
+                if ret >= 0: _green.append(f"{_sectors[sym]}({ret:+.1f}%)")
+                else:        _red.append(f"{_sectors[sym]}({ret:+.1f}%)")
+            except: pass
+        n_green = len(_green)
+        if n_green >= 7:    pts_sec, sec_lbl = 25, f"✅ {n_green}/8 sectors green"
+        elif n_green >= 5:  pts_sec, sec_lbl = 17, f"🟡 {n_green}/8 sectors green"
+        elif n_green >= 3:  pts_sec, sec_lbl = 8,  f"⚠️ {n_green}/8 sectors green"
+        else:               pts_sec, sec_lbl = 0,  f"🔴 {n_green}/8 sectors — poor breadth"
+        score_total += pts_sec
+        components["Sector Breadth"] = {"pts": pts_sec, "max": 25, "detail": sec_lbl,
+                                         "green": _green, "red": _red, "n_green": n_green}
+    except Exception as _e:
+        components["Sector Breadth"] = {"pts": 0, "max": 25, "detail": f"⚠️ {_e}"}
+
+    # ── 3. Volatility: VIX level + direction (20 pts) ────────────────────────
+    try:
+        _vdata = yf.download("^VIX", period="5d", progress=False, auto_adjust=True)
+        _vc    = _vdata["Close"].squeeze()
+        vix_now  = float(_vc.iloc[-1])
+        vix_prev = float(_vc.iloc[-2])
+        vix_dir  = vix_now - vix_prev
+        spy_r    = results.get("spy_ret", 0)
+        if vix_now > 35:
+            pts_vix, vix_lbl = 0,  f"🔴 VIX {vix_now:.1f} — crisis. No premium selling."
+        elif vix_now > 28:
+            pts_vix, vix_lbl = 4,  f"🟠 VIX {vix_now:.1f} — elevated. Cut size 50%."
+        elif vix_now > 22:
+            pts_vix, vix_lbl = 10, f"🟡 VIX {vix_now:.1f} — above normal."
+        elif spy_r > 0 and vix_dir < -0.3:
+            pts_vix, vix_lbl = 20, f"✅ VIX {vix_now:.1f} falling on up day"
+        elif spy_r > 0 and vix_dir > 0.5:
+            pts_vix, vix_lbl = 5,  f"🔴 VIX {vix_now:.1f} rising on up day — hedging"
+        else:
+            pts_vix, vix_lbl = 14, f"🟡 VIX {vix_now:.1f} neutral"
+        score_total += pts_vix
+        components["Volatility (VIX)"] = {"pts": pts_vix, "max": 20, "detail": vix_lbl,
+                                           "vix_now": round(vix_now,1), "vix_dir": round(vix_dir,2)}
+        results["vix"] = round(vix_now, 1)
+    except Exception as _e:
+        components["Volatility (VIX)"] = {"pts": 0, "max": 20, "detail": f"⚠️ {_e}"}
+
+    # ── 4. Small Cap Participation: IWM vs SPY (15 pts) ──────────────────────
+    try:
+        iwm_r = results.get("iwm_ret", 0)
+        spy_r = results.get("spy_ret", 0)
+        diff  = iwm_r - spy_r
+        if diff >= 0.1:
+            pts_iwm, iwm_lbl = 15, f"✅ Small caps leading ({diff:+.2f}% IWM vs SPY)"
+        elif diff >= -0.2:
+            pts_iwm, iwm_lbl = 10, f"🟡 Small caps in-line ({diff:+.2f}%)"
+        elif diff >= -0.5:
+            pts_iwm, iwm_lbl = 5,  f"⚠️ Small caps lagging ({diff:+.2f}%)"
+        else:
+            pts_iwm, iwm_lbl = 0,  f"🔴 Small caps badly lagging ({diff:+.2f}%)"
+        score_total += pts_iwm
+        components["Small Caps (IWM)"] = {"pts": pts_iwm, "max": 15, "detail": iwm_lbl,
+                                           "iwm": round(iwm_r,2), "spy": round(spy_r,2)}
+    except Exception as _e:
+        components["Small Caps (IWM)"] = {"pts": 0, "max": 15, "detail": f"⚠️ {_e}"}
+
+    # ── 5. Yield Curve: 10Y-5Y proxy (15 pts) ────────────────────────────────
+    # ^TNX = 10Y yield %, ^FVX = 5Y yield % (closest to 2Y in yfinance)
+    # TOS formula: close("$TNX") / 10 - close("$UST2Y")
+    try:
+        _ydata = yf.download(["^TNX","^FVX"], period="5d", progress=False, auto_adjust=True)
+        _yc    = _ydata["Close"]
+        tnx_now = float(_yc["^TNX"].dropna().iloc[-1])
+        fvx_now = float(_yc["^FVX"].dropna().iloc[-1])
+        spread  = round(tnx_now - fvx_now, 2)
+        if spread >= 0.5:
+            pts_yc, yc_lbl = 15, f"✅ Normal curve (10Y-5Y: +{spread:.2f}%)"
+        elif spread >= 0.1:
+            pts_yc, yc_lbl = 11, f"🟡 Flattening (10Y-5Y: +{spread:.2f}%)"
+        elif spread >= -0.1:
+            pts_yc, yc_lbl = 7,  f"⚠️ Near-flat (10Y-5Y: {spread:+.2f}%)"
+        elif spread >= -0.5:
+            pts_yc, yc_lbl = 3,  f"🟠 Inverted (10Y-5Y: {spread:+.2f}%)"
+        else:
+            pts_yc, yc_lbl = 0,  f"🔴 Deeply inverted ({spread:+.2f}%) — recession signal"
+        score_total += pts_yc
+        components["Yield Curve"] = {"pts": pts_yc, "max": 15, "detail": yc_lbl,
+                                      "tnx": round(tnx_now,2), "fvx": round(fvx_now,2),
+                                      "spread": spread}
+        results.update({"tnx": round(tnx_now,2), "fvx": round(fvx_now,2),
+                         "yield_curve_spread": spread})
+    except Exception as _e:
+        components["Yield Curve"] = {"pts": 0, "max": 15, "detail": f"⚠️ {_e}"}
+
+    # ── Grade ─────────────────────────────────────────────────────────────────
+    if score_total >= 90:   grade, label, color = "A", "🟢 Healthy Bull", "#00e676"
+    elif score_total >= 70: grade, label, color = "B", "🟡 Bull — Narrowing", "#69f0ae"
+    elif score_total >= 50: grade, label, color = "C", "🟡 Fragile Bull", "#ffd740"
+    elif score_total >= 30: grade, label, color = "D", "🟠 Distribution", "#ff9800"
+    elif score_total >= 10: grade, label, color = "E", "🔴 Bear Market", "#ff5252"
+    else:                   grade, label, color = "F", "🔴 Crisis", "#d32f2f"
+
+    if grade in ("A","B"):
+        action = "Market supports trades — check your setup and execute."
+    elif grade == "C":
+        action = "Fragile — reduce size, tighten stops, wait for quality setups."
+    elif grade == "D":
+        action = "Distribution — defined-risk only. No new credit exposure."
+    else:
+        action = "Poor structure — stand aside. Cash is a position."
+
+    # ── Plain-English Market Context ──────────────────────────────────────────
+    _vv  = results.get("vix", 20.0)
+    _tv  = results.get("tnx", 4.45)
+    _ycs = results.get("yield_curve_spread", 0.2)
+    _sv  = results.get("spy_ret", 0.0)
+    _rv  = results.get("rsp_ret", 0.0)
+    _iv  = results.get("iwm_ret", 0.0)
+    _ngv = components.get("Sector Breadth", {}).get("n_green", 4)
+    _ctx = []
+    if _tv >= 4.5:
+        _ctx.append(f"📈 **Rates elevated ({_tv:.2f}% 10Y).** High yields compress stock "
+                    f"valuations — especially tech. Every Fed hike expectation is a headwind.")
+    if (_rv - _sv) < -0.2:
+        _ctx.append(f"📉 **Breadth is narrow.** Index {'rose' if _sv>0 else 'fell'} "
+                    f"{abs(_sv):.1f}% but the average stock moved {_rv:+.1f}%. "
+                    f"Mega-caps are carrying the index.")
+    if _iv < _sv - 0.3:
+        _ctx.append(f"⚠️ **Small caps lagging** (IWM {_iv:+.1f}% vs SPY {_sv:+.1f}%). "
+                    f"Institutions retreating to large-cap safety — risk-off signal.")
+    if _vv > 25:
+        _ctx.append(f"🚨 **Volatility elevated (VIX {_vv:.1f}).** Market pricing larger "
+                    f"swings. Do not sell uncovered premium in this environment.")
+    if _ycs < 0:
+        _ctx.append(f"🔴 **Yield curve inverted** (10Y-5Y: {_ycs:+.2f}%). Bond market pricing "
+                    f"economic slowdown. Can persist months before recession confirmed.")
+    if _ngv <= 3:
+        _ctx.append(f"🔴 **Only {_ngv}/8 sectors rising.** Rally driven by handful of names. "
+                    f"Broader market is not confirming the index move.")
+    if not _ctx:
+        _ctx.append(f"📊 Market functioning normally. SPY {_sv:+.1f}%, VIX {_vv:.1f}, 10Y {_tv:.2f}%.")
+
+    _tos_tip = (
+        "ThinkorSwim watchlist:\n"
+        "  $ADD — NYSE Advance/Decline (most important breadth read)\n"
+        "  $ADSPD — S&P 500 A/D\n"
+        "  $UVOL / $DVOL — Up vs Down volume\n"
+        "  RSP — Equal-weight S&P 500 (compare to SPY daily %)\n"
+        "  IWM — Russell 2000 small caps (leading indicator)\n"
+        "  $TNX — 10Y yield (TOS shows x10: 44.50 = 4.45%)\n"
+        "  $UST2Y — 2Y yield (NOT /TYX — doesnt exist on TOS)\n"
+        "  Recession formula: close($TNX)/10 - close($UST2Y)"
+    )
     return {
         "score": score_total, "grade": grade, "label": label, "color": color,
-        "action": action, "components": components,
-        "thinkorswim": (
-            "Add these symbols to your ThinkorSwim chart/watchlist: "
-            "$ADD (NYSE A/D — most important), $UVOL/$DVOL (up/down volume ratio), "
-            "$ADSPD (S&P 500 A/D), RSP (equal-weight SPY comparison), "
-            "VIX — watch for SPY up + VIX up divergence (red flag). "
-            "In watchlist: add RSP column alongside SPY, compare daily % change."
-        )
+        "action": action, "components": components, "results": results,
+        "market_context": _ctx, "thinkorswim": _tos_tip,
     }
 
 
@@ -4527,8 +4715,28 @@ with _T2:
                 if _rd:
                     st.caption(f"🔴 {', '.join(_rd[:4])}")
 
+        # Why is the market moving — plain-English context
+        _ctx_list = _mh.get("market_context", [])
+        if _ctx_list:
+            _lvl2 = st.session_state.lang_level
+            _ctx_lbl = ("📰 Why is the market moving right now?"
+                        if _lvl2 == "Beginner" else "📰 Market Context — Current Macro Drivers")
+            with st.expander(_ctx_lbl, expanded=True):
+                for _ci in _ctx_list:
+                    st.markdown(_ci)
+                if _lvl2 in ("Advanced", "Professional"):
+                    _res2 = _mh.get("results", {})
+                    st.caption(
+                        f"SPY {_res2.get('spy_ret',0):+.2f}%  |  "
+                        f"RSP {_res2.get('rsp_ret',0):+.2f}%  |  "
+                        f"IWM {_res2.get('iwm_ret',0):+.2f}%  |  "
+                        f"VIX {_res2.get('vix',0):.1f}  |  "
+                        f"10Y {_res2.get('tnx',0):.2f}%  |  "
+                        f"Curve {_res2.get('yield_curve_spread',0):+.2f}%"
+                    )
+
         # ThinkorSwim tip
-        with st.expander("📺 ThinkorSwim Setup — What Bloomberg analysts watch", expanded=False):
+        with st.expander("📺 ThinkorSwim — What to Watch + Yield Curve Formula", expanded=False):
             st.markdown("""
 **Add these to your ThinkorSwim watchlist/chart:**
 
@@ -4539,12 +4747,21 @@ with _T2:
 | `$UVOL` | Up volume | Should expand on up days |
 | `$DVOL` | Down volume | $DVOL >> $UVOL on up day = red flag |
 | `RSP` | Equal-weight S&P 500 | Compare to SPY daily: RSP lagging = concentrated |
+| `IWM` | Russell 2000 small caps | Should keep pace with SPY. Lagging = risk-off. |
+| `$TNX` | 10-Year Treasury yield | ⚠️ TOS shows ×10: 44.50 = **4.45%** |
+| `$UST2Y` | 2-Year Treasury yield | Correct symbol. NOT `/TYX` (that symbol doesn't exist) |
 | `$HGH` | New 52-week highs | Should expand with index highs |
 | `$LOW` | New 52-week lows | Rising while index rises = distribution |
 
-**The single most powerful read:** Compare RSP vs SPY daily % on your watchlist.
-If SPY is up 1% but RSP is flat, the Magnificent 7 are carrying everything else.
-That's the fragile market CNBC keeps talking about.
+**Yield curve (recession ratio) — TOS custom formula:**
+```
+close("$TNX") / 10 - close("$UST2Y")
+```
+Positive = normal yield curve. Negative = inverted = historically recessionary.
+Add as a column in your TOS watchlist. Current signal matters more than the absolute level.
+
+**The single most powerful breadth read:**
+RSP vs SPY daily % on your watchlist. If SPY is +1% but RSP is flat, the Magnificent 7 are doing all the work.
 
 **Add to chart:** Plot `$ADD` as a lower pane on your SPY chart.
 If `$ADD` makes a lower high while SPY makes a higher high = classic divergence top.
