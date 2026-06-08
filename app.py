@@ -4303,7 +4303,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ── 4 TABS ─────────────────────────────────────────────────────────────────────
-_T1, _T2, _T3, _T4 = st.tabs(["🎯 Setup", "🔍 Scan", "📊 Trade", "📓 Review"])
+_T1, _T2, _T3, _T4, _T5 = st.tabs(["🎯 Setup", "🔍 Scan", "📊 Trade", "📓 Review", "🔬 Research"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — SETUP (Account → Ticker → Market Check → IWT Score → Verdict)
@@ -5301,6 +5301,489 @@ with st.expander("⚡ Power Tools — Market Brief · Backtest · Options Calcul
             st.markdown(f'**Short Signal:** <span style="color:{_sc}">{_sns["verdict"]}</span>',
                         unsafe_allow_html=True)
             st.caption(_sns["action"])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — RESEARCH (Wall Street Analyst — inspired by Rundown AI / Anthropic)
+# Skills: daily-brief · equity-research · earnings-reviewer ·
+#         sector-comparison · comps · pre-earnings-prep
+# Design principle (Rundown AI, May 2026):
+#   "Ask for sources, confidence labels, and a final section of questions
+#    to verify. The goal is not to let AI make decisions for you —
+#    the goal is to make the first research pass faster, more structured,
+#    and easier to audit."
+# ══════════════════════════════════════════════════════════════════════════════
+with _T5:
+    import yfinance as yf
+    import datetime
+    import io
+    import csv as _csv
+
+    _lvl5 = st.session_state.lang_level
+
+    st.markdown(
+        "<div style=\"font-size:1.15rem;font-weight:800;color:#90caf9;margin-bottom:4px\">"        "🔬 Research Skills — Your Personal Wall Street Analyst</div>",
+        unsafe_allow_html=True)
+    st.caption(
+        "Six structured skills inspired by the Rundown AI guide (May 2026) on building "
+        "a Claude Code financial-services workflow. Each skill produces a structured report "
+        "with confidence labels and a \'What to Verify\' checklist. "
+        "⚠️ Not financial advice — audit every output before acting."
+    )
+    st.markdown("---")
+
+    # ── Skill selector ────────────────────────────────────────────────────────
+    SKILLS = {
+        "📰 Daily Market Brief": "Market-wide overview: SPY/QQQ/IWM/VIX, market health, breadth",
+        "🔬 Equity Research": "Single stock deep dive: price, volume, MAs, relative strength",
+        "📊 Earnings Review": "Post-earnings: beat/miss analysis, guidance, price reaction",
+        "🏭 Sector Comparison": "Rank all 11 SPDR sectors by momentum and breadth",
+        "📋 Comparable Companies": "Peer analysis: P/E, beta, 52w momentum, volume rank",
+        "📞 Pre-Earnings Prep": "IV Rank, expected move, key dates, event risk checklist",
+    }
+
+    _skill = st.radio(
+        "Select Research Skill",
+        list(SKILLS.keys()),
+        horizontal=False,
+        help="Each skill fetches live data and produces a structured report."
+    )
+    st.caption(SKILLS.get(_skill,""))
+    st.markdown("---")
+
+    # ── Skill-specific inputs ─────────────────────────────────────────────────
+    _ticker_input = ""
+    _peers_input  = ""
+
+    if _skill in ("🔬 Equity Research","📊 Earnings Review","📞 Pre-Earnings Prep"):
+        _ticker_input = st.text_input(
+            "Ticker symbol", value="SPY",
+            placeholder="e.g. AAPL, NVDA, SPY",
+            help="Enter one US ticker symbol"
+        ).upper().strip()
+
+    if _skill == "📋 Comparable Companies":
+        _ticker_input = st.text_input(
+            "Primary ticker", value="NVDA",
+            placeholder="Ticker to analyse"
+        ).upper().strip()
+        _peers_input = st.text_input(
+            "Peer tickers (comma-separated)", value="AMD,INTC,QCOM,TSM",
+            placeholder="e.g. AMD,INTC,QCOM"
+        ).upper().strip()
+
+    _run = st.button("▶ Run Research Skill", type="primary")
+
+    if _run:
+        with st.spinner("Fetching live data and building structured report..."):
+
+            def _confidence(cond_high, cond_med):
+                if cond_high: return "🟢 HIGH"
+                if cond_med:  return "🟡 MEDIUM"
+                return "🔴 LOW"
+
+            def _safe_pct(a, b):
+                try:    return round((a - b) / abs(b) * 100, 2) if b else 0
+                except: return 0
+
+            def _dl(ticker, period="1mo"):
+                try:
+                    return yf.download(ticker, period=period, progress=False, auto_adjust=True)
+                except: return None
+
+            def _info(ticker):
+                try:    return yf.Ticker(ticker).info
+                except: return {}
+
+            report_lines = []
+            verify_lines = []
+            csv_rows     = []  # for download
+
+            # ──────────────────────────────────────────────────────────────────
+            # SKILL 1: Daily Market Brief
+            # ──────────────────────────────────────────────────────────────────
+            if _skill == "📰 Daily Market Brief":
+                tickers = ["SPY","QQQ","IWM","DIA","^VIX","^TNX","RSP"]
+                data = yf.download(tickers, period="5d", progress=False, auto_adjust=True)["Close"]
+                brief_rows = []
+                for sym in ["SPY","QQQ","IWM","DIA","RSP"]:
+                    try:
+                        cur = float(data[sym].dropna().iloc[-1])
+                        prv = float(data[sym].dropna().iloc[-2])
+                        chg = _safe_pct(cur, prv)
+                        brief_rows.append({"Symbol":sym,"Price":f"${cur:.2f}","1D Change":f"{chg:+.2f}%"})
+                        csv_rows.append([sym, f"{cur:.2f}", f"{chg:+.2f}%"])
+                    except: pass
+
+                vix_val = float(data["^VIX"].dropna().iloc[-1]) if "^VIX" in data else 20
+                tnx_val = float(data["^TNX"].dropna().iloc[-1]) if "^TNX" in data else 4.5
+                spy_ret = _safe_pct(
+                    float(data["SPY"].dropna().iloc[-1]),
+                    float(data["SPY"].dropna().iloc[-2])
+                )
+                rsp_ret = _safe_pct(
+                    float(data["RSP"].dropna().iloc[-1]),
+                    float(data["RSP"].dropna().iloc[-2])
+                )
+                breadth_signal = "BROAD" if rsp_ret >= spy_ret - 0.1 else "NARROW"
+                vix_signal = "ELEVATED" if vix_val > 22 else ("NORMAL" if vix_val < 18 else "MODERATE")
+
+                conf = _confidence(
+                    vix_val < 20 and breadth_signal == "BROAD",
+                    vix_val < 25
+                )
+
+                st.markdown("#### 📰 Daily Market Brief")
+                df_brief = __import__("pandas").DataFrame(brief_rows)
+                if not df_brief.empty: st.dataframe(df_brief, use_container_width=True, hide_index=True)
+
+                col1, col2, col3 = st.columns(3)
+                col1.metric("VIX", f"{vix_val:.1f}", delta=vix_signal)
+                col2.metric("10Y Yield", f"{tnx_val:.2f}%")
+                col3.metric("Breadth", breadth_signal, delta=f"RSP {rsp_ret:+.1f}% vs SPY {spy_ret:+.1f}%")
+
+                st.markdown(f"**Confidence:** {conf}")
+                st.info(
+                    f"**Narrative:** VIX at {vix_val:.1f} ({vix_signal}). "
+                    f"Breadth is {breadth_signal} — RSP {'leading' if rsp_ret >= spy_ret else 'lagging'} SPY "
+                    f"by {abs(rsp_ret - spy_ret):.2f}%. "
+                    f"10Y yield: {tnx_val:.2f}% ({'above' if tnx_val > 4.5 else 'near'} valuation threshold). "
+                    f"**Source:** Yahoo Finance public data · {datetime.date.today()}"
+                )
+                verify_lines = [
+                    "Check pre-market futures for overnight developments",
+                    "Verify breadth with $ADD on ThinkorSwim ($ADD > 500 = broad; < -500 = narrow)",
+                    "Cross-reference VIX with VVIX (volatility of volatility) for spikes",
+                    "Check $TICK for intraday program trading direction",
+                ]
+
+            # ──────────────────────────────────────────────────────────────────
+            # SKILL 2: Equity Research
+            # ──────────────────────────────────────────────────────────────────
+            elif _skill == "🔬 Equity Research" and _ticker_input:
+                info  = _info(_ticker_input)
+                data  = _dl(_ticker_input, "6mo")
+                bench = _dl("SPY", "6mo")
+
+                price     = info.get("currentPrice") or info.get("regularMarketPrice", 0)
+                name      = info.get("longName", _ticker_input)
+                sector    = info.get("sector","N/A")
+                mkt_cap   = info.get("marketCap", 0)
+                pe        = info.get("trailingPE",0) or 0
+                fwd_pe    = info.get("forwardPE",0) or 0
+                beta      = info.get("beta",1) or 1
+                wk52h     = info.get("fiftyTwoWeekHigh",0)
+                wk52l     = info.get("fiftyTwoWeekLow",0)
+                avg_vol   = info.get("averageVolume10days",0)
+                cur_vol   = info.get("regularMarketVolume",0)
+
+                if data is not None and not data.empty:
+                    close  = data["Close"].squeeze()
+                    ma20   = float(close.rolling(20).mean().iloc[-1])
+                    ma50   = float(close.rolling(50).mean().iloc[-1])
+                    cur    = float(close.iloc[-1])
+                    prev   = float(close.iloc[-2])
+                    chg1d  = _safe_pct(cur, prev)
+                    chg1mo = _safe_pct(float(close.iloc[-1]), float(close.iloc[-22])) if len(close) > 22 else 0
+
+                    # Relative strength vs SPY
+                    rs = 0
+                    if bench is not None and not bench.empty:
+                        bc = bench["Close"].squeeze()
+                        rs = round(
+                            _safe_pct(float(close.iloc[-1]), float(close.iloc[-22])) -
+                            _safe_pct(float(bc.iloc[-1]),   float(bc.iloc[-22])), 2
+                        ) if len(close) > 22 else 0
+
+                    abv_ma20 = cur > ma20
+                    abv_ma50 = cur > ma50
+                    vol_conf = cur_vol > avg_vol * 0.8 if avg_vol else False
+                    conf = _confidence(abv_ma20 and abv_ma50 and rs > 0, abv_ma20 or abv_ma50)
+
+                    st.markdown(f"#### 🔬 Equity Research — {name} ({_ticker_input})")
+                    r1c1, r1c2, r1c3 = st.columns(3)
+                    r1c1.metric("Price", f"${cur:.2f}", delta=f"{chg1d:+.2f}% today")
+                    r1c2.metric("1-Month Return", f"{chg1mo:+.1f}%")
+                    r1c3.metric("RS vs SPY (1mo)", f"{rs:+.1f}%")
+
+                    r2c1, r2c2, r2c3 = st.columns(3)
+                    r2c1.metric("MA20", f"${ma20:.2f}", delta="✅ Above" if abv_ma20 else "⚠️ Below")
+                    r2c2.metric("MA50", f"${ma50:.2f}", delta="✅ Above" if abv_ma50 else "⚠️ Below")
+                    r2c3.metric("Volume vs Avg", f"{cur_vol/avg_vol:.1f}x" if avg_vol else "N/A")
+
+                    lvl_label = {"Beginner":"Stock Overview","Intermediate":"Technical Summary",
+                                 "Advanced":"Equity Research","Professional":"Equity Research Report"}.get(_lvl5,"Equity Research")
+                    if _lvl5 in ("Advanced","Professional"):
+                        st.markdown(f"""
+| Metric | Value |
+|--------|-------|
+| Sector | {sector} |
+| Market Cap | ${mkt_cap/1e9:.1f}B |
+| Trailing P/E | {pe:.1f}x |
+| Forward P/E | {fwd_pe:.1f}x |
+| Beta | {beta:.2f} |
+| 52W High | ${wk52h:.2f} ({_safe_pct(cur,wk52h):+.1f}%) |
+| 52W Low | ${wk52l:.2f} (+{_safe_pct(cur,wk52l):.1f}%) |
+""")
+                    st.markdown(f"**Confidence:** {conf}")
+                    st.info(
+                        f"**{lvl_label}:** {_ticker_input} is {'above' if abv_ma50 else 'below'} its 50MA "
+                        f"({'bullish structure' if abv_ma50 else 'bearish/consolidating'}). "
+                        f"Relative strength vs SPY (1mo): {rs:+.1f}% "
+                        f"({'outperforming' if rs > 0 else 'underperforming'}). "
+                        f"Volume confirmation: {'Present' if vol_conf else 'Absent — watch for follow-through'}. "
+                        f"**Source:** Yahoo Finance · {datetime.date.today()}"
+                    )
+                    csv_rows = [[_ticker_input, name, f"{cur:.2f}", f"{chg1mo:+.1f}%",
+                                 f"${ma20:.2f}", f"${ma50:.2f}", f"{rs:+.1f}%"]]
+                    verify_lines = [
+                        f"Verify {_ticker_input} sector rotation — is {sector} in or out of favor?",
+                        "Check earnings calendar — is there an upcoming event that could gap price?",
+                        f"Confirm 52W levels: High ${wk52h:.2f} / Low ${wk52l:.2f} — how does price relate?",
+                        "Cross-check relative volume with your broker's scanner for institutional flow",
+                    ]
+                else:
+                    st.warning(f"Could not fetch data for {_ticker_input}. Check ticker symbol.")
+
+            # ──────────────────────────────────────────────────────────────────
+            # SKILL 3: Earnings Review
+            # ──────────────────────────────────────────────────────────────────
+            elif _skill == "📊 Earnings Review" and _ticker_input:
+                info = _info(_ticker_input)
+                data = _dl(_ticker_input, "3mo")
+
+                eps_est  = info.get("epsForwardEPS") or info.get("epsCurrentYear",0)
+                eps_act  = info.get("trailingEPS",0) or 0
+                rev_est  = info.get("revenueQuarterlyGrowth",0) or 0
+                name     = info.get("longName",_ticker_input)
+                fwd_pe   = info.get("forwardPE",0) or 0
+                target   = info.get("targetMeanPrice",0) or 0
+                analysts = info.get("numberOfAnalystOpinions",0) or 0
+                rec      = info.get("recommendationMean",3) or 3  # 1=Strong Buy, 5=Strong Sell
+
+                rec_label = {1:"Strong Buy",2:"Buy",3:"Hold",4:"Underperform",5:"Sell"}.get(round(rec),"Hold")
+
+                st.markdown(f"#### 📊 Earnings Review — {name} ({_ticker_input})")
+                c1,c2,c3 = st.columns(3)
+                c1.metric("Trailing EPS", f"${eps_act:.2f}")
+                c2.metric("Forward P/E", f"{fwd_pe:.1f}x" if fwd_pe else "N/A")
+                c3.metric("Analyst Target", f"${target:.2f}" if target else "N/A")
+
+                if data is not None and not data.empty:
+                    close = data["Close"].squeeze()
+                    cur   = float(close.iloc[-1])
+                    gap   = _safe_pct(cur, float(close.iloc[-42])) if len(close) > 42 else 0
+                    st.metric("3-Month Return", f"{gap:+.1f}%")
+
+                beat = eps_act > (eps_est * 0.97) if eps_est else None
+                conf = _confidence(beat and analysts > 5, beat is not None)
+                st.markdown(f"**Confidence:** {conf}")
+
+                st.info(
+                    f"**Earnings Summary:** Trailing EPS ${eps_act:.2f}. "
+                    + (f"Analyst consensus: {rec_label} ({analysts} analysts, mean target ${target:.2f}). " if analysts else "")
+                    + f"Forward P/E: {fwd_pe:.1f}x. "
+                    + f"**Source:** Yahoo Finance · {datetime.date.today()}"
+                )
+
+                verify_lines = [
+                    f"Pull the actual earnings press release for {_ticker_input} — EPS + revenue vs. consensus",
+                    "Check guidance commentary — did management raise, lower, or maintain?",
+                    f"Review options IV change around earnings — did IV collapse (sell) or spike (buy)?",
+                    "Compare with peer reactions — did the sector react similarly or diverge?",
+                ]
+                csv_rows = [[_ticker_input, name, f"{eps_act:.2f}", f"{fwd_pe:.1f}x",
+                             f"${target:.2f}", rec_label, str(analysts)]]
+
+            # ──────────────────────────────────────────────────────────────────
+            # SKILL 4: Sector Comparison
+            # ──────────────────────────────────────────────────────────────────
+            elif _skill == "🏭 Sector Comparison":
+                SECTOR_ETFS = {
+                    "XLK":"Technology","XLF":"Financials","XLI":"Industrials",
+                    "XLY":"Consumer Disc","XLP":"Consumer Staples","XLV":"Healthcare",
+                    "XLE":"Energy","XLU":"Utilities","XLRE":"Real Estate",
+                    "XLB":"Materials","XLC":"Communication"
+                }
+                tickers = list(SECTOR_ETFS.keys()) + ["SPY"]
+                data    = yf.download(tickers, period="1mo", progress=False, auto_adjust=True)["Close"]
+                rows    = []
+                for sym, name in SECTOR_ETFS.items():
+                    try:
+                        cur  = float(data[sym].dropna().iloc[-1])
+                        prev = float(data[sym].dropna().iloc[-2])
+                        mo   = float(data[sym].dropna().iloc[0])
+                        chg1d = _safe_pct(cur, prev)
+                        chg1m = _safe_pct(cur, mo)
+                        spy_1m = _safe_pct(float(data["SPY"].dropna().iloc[-1]),
+                                           float(data["SPY"].dropna().iloc[0]))
+                        rs = round(chg1m - spy_1m, 2)
+                        rows.append({"ETF":sym,"Sector":name,
+                                     "1D":f"{chg1d:+.2f}%","1M":f"{chg1m:+.2f}%",
+                                     "RS vs SPY":f"{rs:+.2f}%",
+                                     "Signal":"✅ Leading" if rs > 1 else ("⚠️ Lagging" if rs < -1 else "➡ Inline")})
+                        csv_rows.append([sym, name, f"{chg1d:+.2f}%", f"{chg1m:+.2f}%", f"{rs:+.2f}%"])
+                    except: pass
+
+                if rows:
+                    pd = __import__("pandas")
+                    df_sec = pd.DataFrame(rows).sort_values("RS vs SPY", ascending=False)
+                    st.markdown("#### 🏭 Sector Comparison — 11 SPDR ETFs")
+                    st.dataframe(df_sec, use_container_width=True, hide_index=True)
+                    st.markdown("**Confidence:** 🟢 HIGH — Live yfinance data · All 11 sectors")
+                    st.info(
+                        "**Reading the table:** Positive RS vs SPY = sector outperforming index. "
+                        "Rotate toward ✅ Leading sectors for directional trades. "
+                        "Avoid ⚠️ Lagging sectors for longs. "
+                        f"**Source:** Yahoo Finance · {datetime.date.today()}"
+                    )
+
+                verify_lines = [
+                    "Confirm sector rotation with $SPDR sector flows (institutional buying)",
+                    "Check if leading sector has a fundamental catalyst (earnings cycle, Fed, oil price)",
+                    "Compare with prior quarter's leaders — is this a rotation or continuation?",
+                    "Cross-check with XLK vs XLP ratio (risk-on vs risk-off signal)",
+                ]
+
+            # ──────────────────────────────────────────────────────────────────
+            # SKILL 5: Comparable Companies
+            # ──────────────────────────────────────────────────────────────────
+            elif _skill == "📋 Comparable Companies" and _ticker_input:
+                all_tickers = [_ticker_input] + [p.strip() for p in _peers_input.split(",") if p.strip()]
+                data = yf.download(all_tickers, period="3mo", progress=False, auto_adjust=True)["Close"]
+                rows = []
+                for sym in all_tickers:
+                    try:
+                        info = _info(sym)
+                        cur  = float(data[sym].dropna().iloc[-1])
+                        start= float(data[sym].dropna().iloc[0])
+                        q3mo = _safe_pct(cur, start)
+                        pe   = info.get("trailingPE",0) or 0
+                        fpe  = info.get("forwardPE",0) or 0
+                        beta = info.get("beta",1) or 1
+                        mkt  = info.get("marketCap",0) or 0
+                        rows.append({
+                            "Ticker":sym,
+                            "3M Return":f"{q3mo:+.1f}%",
+                            "Trailing P/E":f"{pe:.1f}x" if pe else "N/A",
+                            "Forward P/E":f"{fpe:.1f}x" if fpe else "N/A",
+                            "Beta":f"{beta:.2f}",
+                            "Mkt Cap":f"${mkt/1e9:.0f}B" if mkt else "N/A",
+                        })
+                        csv_rows.append([sym, f"{q3mo:+.1f}%", f"{pe:.1f}x", f"{fpe:.1f}x",
+                                         f"{beta:.2f}", f"${mkt/1e9:.0f}B"])
+                    except: pass
+
+                if rows:
+                    pd = __import__("pandas")
+                    df_comp = pd.DataFrame(rows)
+                    st.markdown(f"#### 📋 Comps — {_ticker_input} vs Peers")
+                    st.dataframe(df_comp, use_container_width=True, hide_index=True)
+                    conf = "🟢 HIGH" if len(rows) >= 3 else "🟡 MEDIUM"
+                    st.markdown(f"**Confidence:** {conf}")
+                    st.info(
+                        f"**Reading the comps:** Lower P/E vs peers = cheaper on earnings. "
+                        f"Higher beta = more volatile (larger moves). "
+                        f"Best momentum (3M return) signals market preference. "
+                        f"**Source:** Yahoo Finance · {datetime.date.today()}"
+                    )
+                verify_lines = [
+                    "Verify P/E values against SEC filings — Yahoo Finance can lag on recent earnings",
+                    "Check if peers are in same sub-sector (e.g. large-cap vs mid-cap tech)",
+                    "Look for recent M&A or spinoffs that may distort multiples",
+                    f"Confirm {_ticker_input} EPS growth rate vs peers — P/E is meaningless without growth context",
+                ]
+
+            # ──────────────────────────────────────────────────────────────────
+            # SKILL 6: Pre-Earnings Prep
+            # ──────────────────────────────────────────────────────────────────
+            elif _skill == "📞 Pre-Earnings Prep" and _ticker_input:
+                info   = _info(_ticker_input)
+                ticker = yf.Ticker(_ticker_input)
+                name   = info.get("longName",_ticker_input)
+                cal    = {}
+                try:    cal = ticker.calendar
+                except: pass
+
+                earnings_date = None
+                if cal:
+                    try:
+                        ed = cal.get("Earnings Date") or cal.get("earnings_date")
+                        if ed and hasattr(ed, "__iter__"):
+                            earnings_date = list(ed)[0]
+                    except: pass
+
+                days_to_earn  = (earnings_date - datetime.datetime.now()).days if earnings_date else None
+                price         = info.get("currentPrice") or info.get("regularMarketPrice", 0)
+                wk52h         = info.get("fiftyTwoWeekHigh",0)
+                wk52l         = info.get("fiftyTwoWeekLow",0)
+                expected_move = (wk52h - wk52l) * 0.08 if wk52h and wk52l else 0
+
+                st.markdown(f"#### 📞 Pre-Earnings Prep — {name} ({_ticker_input})")
+
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Current Price", f"${price:.2f}" if price else "N/A")
+                c2.metric("Earnings Date",
+                          str(earnings_date.date()) if earnings_date else "Check broker",
+                          delta=f"{days_to_earn}d away" if days_to_earn else None)
+                c3.metric("Expected Move (proxy)",
+                          f"±${expected_move:.2f} ({expected_move/price*100:.1f}%)" if price and expected_move else "N/A",
+                          help="Rough proxy using 52W range × 8%. Get actual EM from your broker's options chain.")
+
+                conf = "🟡 MEDIUM" if earnings_date else "🔴 LOW"
+                st.markdown(f"**Confidence:** {conf}")
+                st.warning(
+                    "⚠️ **Expected move is a rough proxy only.** "
+                    "Get the actual expected move from your broker's At-The-Money straddle price before earnings. "
+                    "IV Rank requires a 52-week IV history — check thinkorswim or Market Chameleon."
+                )
+                st.info(
+                    f"**Earnings Prep Summary:** "
+                    + (f"Earnings {'in ' + str(days_to_earn) + ' days' if days_to_earn else 'date unconfirmed — check broker'}. " )
+                    + f"52W range: ${wk52l:.2f}–${wk52h:.2f}. "
+                    + f"Proxy expected move: ±${expected_move:.2f}. "
+                    + f"**Source:** Yahoo Finance · {datetime.date.today()}"
+                )
+                verify_lines = [
+                    f"Confirm earnings date on investor relations page: {name}",
+                    "Pull actual At-The-Money straddle from your broker for the true expected move",
+                    "Check IV Rank on Market Chameleon or thinkorswim — high IV Rank favors selling premium",
+                    "Review last 4 earnings reactions: did stock gap in same direction as guidance?",
+                    "Check short float — high short interest amplifies post-earnings moves",
+                ]
+                csv_rows = [[_ticker_input, name,
+                             str(earnings_date.date()) if earnings_date else "TBC",
+                             f"${price:.2f}",
+                             f"±${expected_move:.2f}"]]
+
+            # ── What to Verify checklist ──────────────────────────────────────
+            if verify_lines:
+                st.markdown("---")
+                st.markdown("#### ✅ What to Verify Before Acting")
+                st.caption("The AI does the first pass. You do the verification.")
+                for item in verify_lines:
+                    st.markdown(f"- [ ] {item}")
+
+            # ── CSV Download ──────────────────────────────────────────────────
+            if csv_rows:
+                st.markdown("---")
+                buf = io.StringIO()
+                writer = _csv.writer(buf)
+                writer.writerows(csv_rows)
+                st.download_button(
+                    "⬇ Download Data (CSV)",
+                    data=buf.getvalue().encode(),
+                    file_name=f"qm_research_{_skill.split()[1].lower()}_{datetime.date.today()}.csv",
+                    mime="text/csv",
+                    help="Import into Excel, Google Sheets, or your trading journal"
+                )
+
+    st.markdown("---")
+    st.caption(
+        "Research Skills powered by Yahoo Finance (yfinance). "
+        "Inspired by Rundown AI guide: \'Turn Claude Code Into Your Personal Wall Street Analyst\' (May 2026). "
+        "⚠️ Not affiliated with IWT. Not financial advice. Always verify before acting."
+    )
 
 # ── DISCLAIMER (compact footer) ───────────────────────────────────────────────
 st.markdown("---")
