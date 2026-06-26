@@ -2155,6 +2155,72 @@ def generate_spx_daily_plan(dte_target: int = 14,
 
 
 # ── IWT UNIVERSE BATCH SCANNER ────────────────────────────────
+
+
+def check_ticker_vs_iwt_watchlist(ticker: str) -> dict:
+    """
+    IWT Lesson 8: Trade a curated watchlist, not the whole market.
+    Deep familiarity with how a stock behaves is worth more than scanning 500 tickers.
+    Returns guidance on whether this ticker fits the IWT discipline.
+    """
+    t = ticker.upper().replace("^GSPC", "SPX")
+    on_list = t in IWT_WATCHLIST
+    # Partial match for indices/ETFs
+    for wl in IWT_WATCHLIST:
+        if t.startswith(wl[:3]):
+            on_list = True
+            break
+    if on_list:
+        return {
+            "on_watchlist": True,
+            "badge": "✅ IWT Watchlist",
+            "color": "#69f0ae",
+            "message": f"{t} is on the IWT core watchlist. Deep familiarity advantage.",
+            "advice": "Trade this ticker within your studied buyer/seller zones.",
+        }
+    else:
+        return {
+            "on_watchlist": False,
+            "badge": "⚠️ Off-Watchlist",
+            "color": "#ffd740",
+            "message": f"{t} is NOT on the IWT core 30-stock watchlist.",
+            "advice": (
+                "IWT Lesson 8: unfamiliar stocks lack the pattern history to identify "
+                "reliable buyer/seller zones. Add to paper watchlist first for 2 weeks "
+                "before trading with real capital. Alternatively, trade SPY or NVDA instead."
+            ),
+        }
+
+
+def paper_trading_gate(experience_level: str) -> dict:
+    """
+    IWT Lesson 9: Use a simulator before going live.
+    Returns gate status based on experience level.
+    """
+    if experience_level in ("Beginner",):
+        return {
+            "gate": "PAPER_ONLY",
+            "badge": "📝 Paper Trading Mode",
+            "message": "Beginner level: Paper trade for minimum 30 sessions before going live.",
+            "advice": "Track your paper trades in the Journal. Build confidence data first.",
+        }
+    elif experience_level == "Intermediate":
+        return {
+            "gate": "REAL_PERMITTED",
+            "badge": "✅ Real Trading Permitted",
+            "message": "Intermediate: Real trading permitted with defined-risk structures only.",
+            "advice": "Max 1% risk per trade. No naked options. Credit spreads only.",
+        }
+    else:
+        return {
+            "gate": "REAL_PERMITTED",
+            "badge": "✅ Advanced/Professional",
+            "message": "Full strategy access permitted.",
+            "advice": "Apply Kelly Criterion sizing. Monitor portfolio heat < 6%.",
+        }
+
+
+
 @st.cache_data(ttl=1800)
 def batch_scan_teri_universe(universe_list: list, top_n: int = 10) -> list:
     """
@@ -4588,6 +4654,10 @@ with _T1:
         help="Beginner: plain-English guides  ·  Advanced: full technical data")
     if _nl != _lvl: st.session_state.lang_level = _nl; st.rerun()
     _lvl = st.session_state.lang_level
+    # Paper trading gate (IWT Lesson 9)
+    _pt_gate = paper_trading_gate(_lvl)
+    if _pt_gate["gate"] == "PAPER_ONLY":
+        st.info(f'📝 {_pt_gate["message"]}  {_pt_gate["advice"]}')
     st.markdown("---")
     _c_left, _c_right = st.columns([1, 1], gap="large")
 
@@ -4631,6 +4701,16 @@ with _T1:
             if _ticker_choice == "Custom…":
                 _ticker_choice = st.text_input("Enter ticker", "AAPL", key="custom_tkr").upper()
             st.session_state.ticker = _ticker_choice.replace(" (0DTE/Credit)", "").replace("SPX", "^GSPC")
+
+            # IWT Watchlist gate (Lesson 8)
+            _wl_check = check_ticker_vs_iwt_watchlist(_ticker_choice.replace(" (0DTE/Credit)",""))
+            st.markdown(
+                f'<span style="font-size:0.75rem;font-weight:600;color:{_wl_check["color"]}">'
+                f'{_wl_check["badge"]}</span>',
+                unsafe_allow_html=True
+            )
+            if not _wl_check["on_watchlist"]:
+                st.caption(_wl_check["advice"])
 
         with _b2:
             _strategy_opts = [
