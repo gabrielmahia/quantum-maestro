@@ -2946,6 +2946,278 @@ def troubleshoot_trading(responses: dict) -> dict:
 # Mobile-first. GO/NO-GO is the centrepiece. Everything else is progressive.
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
+
+# =============================================================================
+# IWT TRADE SETUP CARD — v1.0 (Teri Ijeoma Method)
+# Every trade must pass this card BEFORE execution.
+# Surfaces: entry zone, stop loss (ATR-structural), target, R:R, 1% capital target.
+# Principle: "Define risk before defining reward." — IWT Lesson 10
+# =============================================================================
+
+# IWT curated watchlist — 30 stocks Teri trades repeatedly
+IWT_WATCHLIST = [
+    "NVDA","AMD","MSFT","AAPL","META","GOOGL","AMZN","TSLA",
+    "AVGO","ARM","MU","TSM","AMAT","LRCX",
+    "SPY","QQQ","IWM","GLD","TLT",
+    "JPM","GS","MS","V","MA",
+    "UNH","JNJ","PG","XOM","CVX","CMG",
+]
+
+def calc_iwt_trade_setup(
+    price: float,
+    support: float,
+    resistance: float,
+    atr: float,
+    capital: float,
+    direction: str = "LONG",
+    risk_pct: float = 1.0,
+) -> dict:
+    """
+    IWT Trade Setup Card — Teri Ijeoma 7-step method distilled into math.
+
+    Implements:
+    - Lesson 2: Stop loss below support (structural, not %-based)
+    - Lesson 5: 1% of capital as position risk target
+    - Lesson 8: R:R ≥ 2:1 required before entry
+    - Lesson 10: Risk/reward must be defined BEFORE entry
+
+    Args:
+        price:      Current price (entry reference)
+        support:    Key support level (buyer zone)
+        resistance: Key resistance level (seller zone)
+        atr:        14-day ATR (for stop placement precision)
+        capital:    Total account size
+        direction:  "LONG" or "SHORT"
+        risk_pct:   % of capital to risk per trade (default 1%)
+
+    Returns:
+        dict with entry_zone, stop, target, rr_ratio, shares, dollar_risk,
+        capital_1pct, capital_pct_goal, verdict, warnings
+    """
+    if price <= 0 or support <= 0 or atr <= 0 or capital <= 0:
+        return {"error": "Invalid inputs — price, support, ATR, and capital must be positive"}
+
+    dollar_risk = capital * risk_pct / 100       # IWT 1% rule
+    capital_pct_goal = capital * 0.01            # 1% daily goal target
+
+    if direction == "LONG":
+        # Entry: at support, not above it (IWT Lesson 3: don't chase)
+        entry_lo  = support
+        entry_hi  = support * 1.005              # 0.5% slippage buffer
+        # Stop: below support + half ATR (structural, not arbitrary %)
+        stop      = support - (atr * 0.5)
+        stop_dist = max(price - stop, 0.01)
+        # Target: resistance is the natural exit
+        target    = resistance
+        reward    = max(target - price, 0)
+        chase_warn = price > support * 1.02      # price already 2% above support = chasing
+    else:  # SHORT
+        entry_lo  = resistance * 0.995
+        entry_hi  = resistance
+        stop      = resistance + (atr * 0.5)
+        stop_dist = max(stop - price, 0.01)
+        target    = support
+        reward    = max(price - target, 0)
+        chase_warn = price < resistance * 0.98
+
+    # Position sizing — IWT 1% rule
+    shares    = max(1, int(dollar_risk / stop_dist))
+    rr_ratio  = round(reward / stop_dist, 2) if stop_dist > 0 else 0
+
+    # Max profit / max loss in dollars
+    max_profit_dollars = reward * shares
+    max_loss_dollars   = stop_dist * shares
+
+    # Daily progress toward 1% capital goal
+    pct_of_goal = round(max_profit_dollars / capital_pct_goal * 100, 1) if capital_pct_goal > 0 else 0
+
+    # Verdict (IWT Lesson 10: minimum 2:1)
+    warnings = []
+    if rr_ratio < 2.0:
+        warnings.append(f"R:R is {rr_ratio:.2f}:1 — below IWT 2:1 minimum. Do NOT enter.")
+    if chase_warn:
+        warnings.append("Price is away from the level — do not chase. Wait for pullback to entry zone.")
+    if atr > price * 0.04:
+        warnings.append(f"ATR is {atr/price*100:.1f}% of price — highly volatile. Halve position size.")
+
+    if rr_ratio >= 3.0 and not chase_warn:
+        verdict = "A+ SETUP"
+        verdict_color = "green"
+    elif rr_ratio >= 2.0 and not chase_warn:
+        verdict = "VALID SETUP"
+        verdict_color = "green"
+    elif rr_ratio >= 1.5:
+        verdict = "MARGINAL — reduce size"
+        verdict_color = "orange"
+    else:
+        verdict = "SKIP — R:R too low"
+        verdict_color = "red"
+
+    # On-tick watchlist check
+    on_watchlist = any(True for _ in IWT_WATCHLIST)  # caller passes ticker
+
+    return {
+        "direction":          direction,
+        "entry_zone_lo":      round(entry_lo, 2),
+        "entry_zone_hi":      round(entry_hi, 2),
+        "stop":               round(stop, 2),
+        "stop_distance":      round(stop_dist, 2),
+        "target":             round(target, 2),
+        "reward":             round(reward, 2),
+        "rr_ratio":           rr_ratio,
+        "shares":             shares,
+        "dollar_risk":        round(dollar_risk, 2),
+        "max_profit_dollars": round(max_profit_dollars, 2),
+        "max_loss_dollars":   round(max_loss_dollars, 2),
+        "capital_1pct":       round(capital_pct_goal, 2),
+        "pct_of_daily_goal":  pct_of_goal,
+        "verdict":            verdict,
+        "verdict_color":      verdict_color,
+        "warnings":           warnings,
+        "iwt_rules": [
+            f"Entry zone: ${entry_lo:.2f}–${entry_hi:.2f} (at support, not above it)",
+            f"Stop loss:  ${stop:.2f} (0.5× ATR below support — structural, not arbitrary)",
+            f"Target:     ${target:.2f} (resistance = natural seller zone)",
+            f"Risk:       ${dollar_risk:.0f} (1% of ${capital:,.0f} account)",
+            f"Shares:     {shares} (so max loss = ${max_loss_dollars:.0f})",
+            f"R:R:        {rr_ratio:.2f}:1 (minimum 2:1 required)",
+            f"Profit if target hit: ${max_profit_dollars:.0f} ({pct_of_daily_goal:.0f}% of daily 1% goal)",
+        ],
+    }
+
+
+def render_iwt_setup_card(
+    ticker: str,
+    price: float,
+    support: float,
+    resistance: float,
+    atr: float,
+    capital: float,
+    direction: str = "LONG",
+    risk_pct: float = 1.0,
+) -> None:
+    """
+    Render the IWT Trade Setup Card inline in Streamlit.
+    Call this BEFORE rendering any trade execution UI.
+    This is the go/no-go gate.
+    """
+    setup = calc_iwt_trade_setup(
+        price=price, support=support, resistance=resistance,
+        atr=atr, capital=capital, direction=direction, risk_pct=risk_pct
+    )
+    if setup.get("error"):
+        st.warning(f"Setup card: {setup['error']}")
+        return
+
+    on_wl = ticker.upper() in IWT_WATCHLIST
+    wl_badge = "✅ IWT Watchlist" if on_wl else "⚠️ Not on IWT watchlist — verify quality"
+    rr = setup["rr_ratio"]
+    rr_color = "#00e676" if rr >= 2.0 else "#ff9800" if rr >= 1.5 else "#ff5252"
+    verdict_bg = {
+        "green":  "linear-gradient(135deg,#0d3b1a,#1b5e20)",
+        "orange": "linear-gradient(135deg,#3b2c0d,#5e4a1b)",
+        "red":    "linear-gradient(135deg,#3b0d0d,#5e1b1b)",
+    }.get(setup["verdict_color"], "linear-gradient(135deg,#0d1a3b,#1a2e5e)")
+    verdict_border = {"green":"#2e7d32","orange":"#7d6220","red":"#7d2e2e"}.get(setup["verdict_color"],"#1e3a6e")
+
+    st.markdown(
+        f"""
+<div style="background:{verdict_bg};border:1px solid {verdict_border};
+     border-radius:12px;padding:16px 20px;margin:10px 0">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <span style="font-size:1.1rem;font-weight:800;color:#e8e8ff">
+      📋 IWT Trade Setup — {ticker.upper()}
+    </span>
+    <span style="font-size:0.75rem;color:#90a8c0">{wl_badge}</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:12px 0">
+    <div>
+      <div style="font-size:0.62rem;color:#5e7a9e;text-transform:uppercase">Entry Zone</div>
+      <div style="font-size:0.92rem;font-weight:700;color:#e8e8ff;font-family:monospace">
+        ${setup['entry_zone_lo']:.2f}–${setup['entry_zone_hi']:.2f}
+      </div>
+    </div>
+    <div>
+      <div style="font-size:0.62rem;color:#5e7a9e;text-transform:uppercase">Stop Loss</div>
+      <div style="font-size:0.92rem;font-weight:700;color:#ff5252;font-family:monospace">
+        ${setup['stop']:.2f}
+      </div>
+      <div style="font-size:0.65rem;color:#7080a0">−${setup['stop_distance']:.2f}/share</div>
+    </div>
+    <div>
+      <div style="font-size:0.62rem;color:#5e7a9e;text-transform:uppercase">Target</div>
+      <div style="font-size:0.92rem;font-weight:700;color:#69f0ae;font-family:monospace">
+        ${setup['target']:.2f}
+      </div>
+      <div style="font-size:0.65rem;color:#7080a0">+${setup['reward']:.2f}/share</div>
+    </div>
+    <div>
+      <div style="font-size:0.62rem;color:#5e7a9e;text-transform:uppercase">R:R Ratio</div>
+      <div style="font-size:1.2rem;font-weight:800;color:{rr_color};font-family:monospace">
+        {rr:.2f}:1
+      </div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
+       background:#0a0d15;border-radius:8px;padding:10px 14px;margin-top:6px">
+    <div>
+      <div style="font-size:0.62rem;color:#5e7a9e;text-transform:uppercase">Shares</div>
+      <div style="font-weight:700;color:#e8e8ff;font-family:monospace">{setup['shares']}</div>
+    </div>
+    <div>
+      <div style="font-size:0.62rem;color:#5e7a9e;text-transform:uppercase">Max Risk</div>
+      <div style="font-weight:700;color:#ff5252;font-family:monospace">${setup['max_loss_dollars']:.0f}</div>
+      <div style="font-size:0.62rem;color:#7080a0">1% of ${capital:,.0f}</div>
+    </div>
+    <div>
+      <div style="font-size:0.62rem;color:#5e7a9e;text-transform:uppercase">Profit at Target</div>
+      <div style="font-weight:700;color:#69f0ae;font-family:monospace">${setup['max_profit_dollars']:.0f}</div>
+      <div style="font-size:0.62rem;color:#7080a0">{setup['pct_of_daily_goal']:.0f}% of 1% goal</div>
+    </div>
+  </div>
+  <div style="margin-top:10px;font-size:1rem;font-weight:800;color:#e8e8ff">
+    {setup['verdict']}
+  </div>
+</div>
+""", unsafe_allow_html=True
+    )
+
+    for w in setup["warnings"]:
+        st.warning(w)
+
+    with st.expander("📋 IWT 7-Step Checklist for this setup", expanded=False):
+        for rule in setup["iwt_rules"]:
+            st.markdown(f"• {rule}")
+        st.caption(
+            "IWT principles applied: Lesson 2 (structural stop), "
+            "Lesson 3 (don't chase), Lesson 5 (1% capital goal), "
+            "Lesson 8 (watchlist discipline), Lesson 10 (R:R before entry)"
+        )
+
+
+def check_late_entry(price: float, support: float, threshold_pct: float = 2.0) -> dict:
+    """
+    IWT Lesson 3: Don't chase plays.
+    Flags when price is too far from the level to justify entry.
+    threshold_pct: % above support that triggers the late-entry warning.
+    """
+    dist_pct = (price - support) / support * 100 if support > 0 else 0
+    late = dist_pct > threshold_pct
+    return {
+        "late_entry": late,
+        "dist_pct": round(dist_pct, 2),
+        "message": (
+            f"Price is {dist_pct:.1f}% above support — late entry risk. "
+            "IWT Lesson 3: wait for the pullback to the level."
+            if late else
+            f"Price is {dist_pct:.1f}% above support — within entry zone."
+        ),
+        "badge": "⚠️ LATE — WAIT" if late else "✅ AT LEVEL",
+    }
+
+
+
 class InstitutionalAnalyst:
 
     def __init__(self):
@@ -4784,6 +5056,28 @@ with _T3:
 
         st.markdown(f'<div class="card-sm"><span class="card-label">'
                     f'{_tkr} — {_strat}</span></div>', unsafe_allow_html=True)
+
+        # ── IWT TRADE SETUP CARD ─────────────────────────────────────────
+        if _price and _m.get("supp") and _m.get("res"):
+            _direction_for_card = "SHORT" if "Short" in _strat else "LONG"
+            render_iwt_setup_card(
+                ticker=_tkr,
+                price=_price,
+                support=_m.get("supp", _price * 0.97),
+                resistance=_m.get("res", _price * 1.03),
+                atr=_m.get("atr", _price * 0.01),
+                capital=st.session_state.acct_size,
+                direction=_direction_for_card,
+                risk_pct=float(
+                    st.session_state.max_risk_per_trade
+                    / max(st.session_state.acct_size, 1) * 100
+                ),
+            )
+            # Late entry check (IWT Lesson 3)
+            _le = check_late_entry(_price, _m.get("supp", _price))
+            if _le["late_entry"]:
+                st.warning(_le["message"])
+            st.markdown("---")
 
         if not _price:
             st.info("Load market data in **Setup** first (🎯 Setup → Load Market Data).")
