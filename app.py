@@ -4645,6 +4645,9 @@ _SS_DEFAULTS = {
     "scorecard_speed": 1, "scorecard_time": 2,
     "_spx_plan": None, "_universe_scan": None, "_market_health": None,
     "_last_macro_fetch": None,
+    "_bt_stats": None,
+    "_bt_trades": None,
+    "_bt_eq": None,
 }
 for k, v in _SS_DEFAULTS.items():
     if k not in st.session_state:
