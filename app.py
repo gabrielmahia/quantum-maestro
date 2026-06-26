@@ -4404,6 +4404,58 @@ Please confirm:
 [END — WarrenAI: investing.com/ai | Not financial advice]"""
 
 
+
+
+def calc_capital_progress(
+    daily_pnl: float,
+    capital: float,
+    monthly_goal: float,
+    trading_days_remaining: int = 10,
+) -> dict:
+    """
+    IWT Lesson 5: 1% of capital as the target. Track progress daily.
+    "Stop trading the day you hit your daily goal." — IWT Six-Figure Plan.
+    """
+    daily_goal    = monthly_goal / 21
+    weekly_goal   = monthly_goal / 4.3
+    pct_of_daily  = (daily_pnl / daily_goal * 100) if daily_goal > 0 else 0
+    pct_of_cap    = (daily_pnl / capital * 100) if capital > 0 else 0
+    target_1pct   = capital * 0.01
+    pct_of_1pct   = (daily_pnl / target_1pct * 100) if target_1pct > 0 else 0
+    goal_met      = daily_pnl >= daily_goal
+    above_1pct    = daily_pnl >= target_1pct
+
+    # Stop rules (IWT Six-Figure Plan, Coaching Call 1/9/2023)
+    daily_loss_limit = -daily_goal * 2   # Stop trading if down 2× daily goal
+    hit_loss_limit   = daily_pnl <= daily_loss_limit
+
+    return {
+        "daily_pnl":          round(daily_pnl, 2),
+        "daily_goal":         round(daily_goal, 2),
+        "weekly_goal":        round(weekly_goal, 2),
+        "target_1pct":        round(target_1pct, 2),
+        "pct_of_daily_goal":  round(pct_of_daily, 1),
+        "pct_of_1pct_target": round(pct_of_1pct, 1),
+        "pct_of_capital":     round(pct_of_cap, 2),
+        "goal_met":           goal_met,
+        "above_1pct":         above_1pct,
+        "hit_loss_limit":     hit_loss_limit,
+        "daily_loss_limit":   round(daily_loss_limit, 2),
+        "action": (
+            "🛑 STOP TRADING TODAY — daily loss limit reached. Review and reset tomorrow."
+            if hit_loss_limit else
+            "✅ DAILY GOAL MET — close platform. Protect the win."
+            if goal_met else
+            f"🎯 {pct_of_daily:.0f}% of daily goal (${daily_goal:.0f}) — keep executing the plan."
+        ),
+        "iwt_rule": (
+            "IWT: Stop trading the day you hit your daily goal. "
+            "Small consistent wins beat occasional big wins."
+        ),
+    }
+
+
+
 engine = InstitutionalAnalyst()
 
 def get_macro() -> dict:
@@ -4634,7 +4686,7 @@ st.markdown(f"""
     </div>
     <div class="est-metric">
       <div class="est-metric-val" style="color:{_pnl_col}">{_pnl_str}</div>
-      <div class="est-metric-lbl">Today P&L</div>
+      <div class="est-metric-lbl">Today P&L / 1%=${int(st.session_state.acct_size*0.01)}</div>
     </div>
   </div>
 </div>
@@ -5553,6 +5605,35 @@ with _T4:
             avg_contract_risk=st.session_state.max_risk_per_trade,
         )
         if not _sfp.get("error"):
+            # IWT Capital Tracker (Lesson 5)
+            _cp = calc_capital_progress(
+                daily_pnl=st.session_state.daily_pnl,
+                capital=st.session_state.acct_size,
+                monthly_goal=st.session_state.monthly_goal,
+            )
+            _cp_col = "#69f0ae" if _cp["daily_pnl"] >= 0 else "#ff5252"
+            st.markdown(
+                f'<div class="card-sm" style="border-left:3px solid {_cp_col}">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                f'<span class="card-label">Today: Capital Progress</span>'
+                f'<span style="font-size:0.75rem;color:{_cp_col};font-weight:700">'
+                f'{_cp["action"][:40]}…</span></div>'
+                f'<div style="display:flex;gap:16px;margin-top:6px">'
+                f'<div><span class="dim">P&L</span><br/>'
+                f'<span class="mono" style="color:{_cp_col}">${_cp["daily_pnl"]:+.0f}</span></div>'
+                f'<div><span class="dim">vs Daily Goal</span><br/>'
+                f'<span class="mono" style="color:#e8e8ff">{_cp["pct_of_daily_goal"]:.0f}%</span></div>'
+                f'<div><span class="dim">vs 1% Target (${_cp["target_1pct"]:.0f})</span><br/>'
+                f'<span class="mono" style="color:#6c8cff">{_cp["pct_of_1pct_target"]:.0f}%</span></div>'
+                f'<div><span class="dim">of Capital</span><br/>'
+                f'<span class="mono" style="color:#e8e8ff">{_cp["pct_of_capital"]:+.2f}%</span></div>'
+                f'</div></div>', unsafe_allow_html=True
+            )
+            if _cp["hit_loss_limit"]:
+                st.error(_cp["action"])
+            elif _cp["goal_met"]:
+                st.success(_cp["action"])
+            st.markdown("---")
             _plan_cols = st.columns(3)
             _plan_cols[0].metric("Daily Target",  f"${_sfp['daily_goal']:.0f}")
             _plan_cols[1].metric("Weekly Target", f"${_sfp['weekly_goal']:.0f}")
