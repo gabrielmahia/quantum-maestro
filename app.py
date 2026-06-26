@@ -5705,6 +5705,54 @@ with st.expander("⚡ Power Tools — Market Brief · Backtest · Options Calcul
                 st.caption("Avoid: " + ", ".join(_play["avoid"][:2]))
 
         st.markdown("---")
+        # ── BACKTEST ENGINE UI ──────────────────────────────────────
+        st.markdown("**📈 1-Year Backtest (Real Data)**")
+        _bt_type = st.radio("Strategy", ["Put Credit Spread", "DITM Long Call"],
+                             horizontal=True, key="bt_type_pw")
+        _bt_cap = st.number_input("Starting capital ($)",
+                                   value=int(st.session_state.acct_size),
+                                   step=1000, min_value=5000, key="bt_cap_pw")
+        if st.button("▶ Run 1-Year Backtest", key="bt_run_pw"):
+            with st.spinner("Fetching 2y SPY/VIX data…"):
+                try:
+                    _btdf = load_backtest_data()
+                    if _bt_type == "Put Credit Spread":
+                        _tr, _eq, _fin = backtest_credit_spread(_btdf, initial_capital=_bt_cap)
+                        _bts = compute_backtest_stats(_tr, _bt_cap, "Put Credit Spread")
+                    else:
+                        _tr, _eq, _fin = backtest_long_call(_btdf, initial_capital=_bt_cap)
+                        _bts = compute_backtest_stats(_tr, _bt_cap, "DITM Long Call")
+                    st.session_state["_bt_stats"] = _bts
+                    st.session_state["_bt_trades"] = _tr
+                except Exception as _be:
+                    st.error(f"Backtest error: {_be}")
+        _bts = st.session_state.get("_bt_stats")
+        if _bts and _bts.get("n_trades", 0) > 0:
+            _rc = "#69f0ae" if _bts.get("return_pct", 0) > 0 else "#ff5252"
+            st.markdown(
+                f'<div class="card-sm" style="border-left:3px solid {_rc}">'
+                f'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">'
+                f'<div><span class="dim">Trades</span><br/>'
+                f'<strong style="color:#e8e8ff">{_bts["n_trades"]}</strong></div>'
+                f'<div><span class="dim">Win %</span><br/>'
+                f'<strong style="color:#e8e8ff">{_bts.get("win_rate_pct",0):.1f}%</strong></div>'
+                f'<div><span class="dim">1Y Return</span><br/>'
+                f'<strong style="color:{_rc}">{_bts.get("return_pct",0):+.1f}%</strong></div>'
+                f'<div><span class="dim">P&L</span><br/>'
+                f'<strong style="color:{_rc}">${_bts.get("total_pnl",0):+,.0f}</strong></div>'
+                f'<div><span class="dim">Prof. Factor</span><br/>'
+                f'<strong style="color:#e8e8ff">{_bts.get("profit_factor",0)}</strong></div>'
+                f'<div><span class="dim">Max DD</span><br/>'
+                f'<strong style="color:#ff5252">${abs(_bts.get("max_drawdown",0)):,.0f}</strong></div>'
+                f'</div><div class="dim" style="margin-top:4px">'
+                f'Real SPY/VIX + BSM pricing. Not a performance guarantee.</div></div>',
+                unsafe_allow_html=True)
+            _btt = st.session_state.get("_bt_trades")
+            if _btt is not None and not _btt.empty:
+                with st.expander("Trade log", expanded=False):
+                    st.dataframe(_btt.tail(15), use_container_width=True, hide_index=True)
+
+        st.markdown("---")
         # Covered call calculator
         st.markdown("**Covered Call Yield**")
         _cc_s = st.number_input("Stock price", value=0.0, step=0.5, key="pw_cc_s")
@@ -5759,6 +5807,35 @@ with st.expander("⚡ Power Tools — Market Brief · Backtest · Options Calcul
             st.markdown(f'**Short Signal:** <span style="color:{_sc}">{_sns["verdict"]}</span>',
                         unsafe_allow_html=True)
             st.caption(_sns["action"])
+
+        st.markdown("---")
+        # ── ACCOUNT A / B — IWT Two-Account Philosophy ────────────────
+        st.markdown("**Account A ↔ B**")
+        _acct_ab = st.radio(
+            "Mode", ["📝 A — Scout (Paper)", "💼 B — Production (Live)"],
+            horizontal=True, key="acct_ab_pw",
+            help="A scouts at small size. B deploys only after A confirms the pattern.")
+        _is_paper_pw = "Scout" in _acct_ab
+        if _is_paper_pw:
+            st.info("📝 **Scout mode.** Track in Journal to build 30-session track record before going live.")
+        else:
+            st.warning("💼 **Production.** 1% rule enforced. R:R ≥ 2:1 required. No naked options.")
+        # ── LIVE POSITIONS (Tradier) ──────────────────────────────────
+        if not _is_paper_pw:
+            if _tradier_is_connected():
+                _acct_id_pw = tdr_get_account_id()
+                if _acct_id_pw:
+                    _bals_pw = tdr_get_balances(_acct_id_pw)
+                    _pos_pw  = tdr_get_positions(_acct_id_pw)
+                    if _bals_pw:
+                        _p2 = st.columns(2)
+                        _p2[0].metric("Equity", f"${_bals_pw.get('total_equity',0):,.0f}")
+                        _p2[1].metric("Options BP", f"${_bals_pw.get('option_bp',0):,.0f}")
+                    st.markdown(f"**Open Positions ({len(_pos_pw)})**" if _pos_pw else "No open positions.")
+                    for _pp in (_pos_pw or [])[:6]:
+                        st.markdown(f"`{_pp.get('symbol','—')}` × {_pp.get('quantity',0)}  —  ${float(_pp.get('current_value',0)):,.0f}")
+            else:
+                st.caption("Add TRADIER_TOKEN to Streamlit secrets for live positions.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
