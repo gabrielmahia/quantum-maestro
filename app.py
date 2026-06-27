@@ -3061,8 +3061,11 @@ def calc_iwt_trade_setup(
         dict with entry_zone, stop, target, rr_ratio, shares, dollar_risk,
         capital_1pct, capital_pct_goal, verdict, warnings
     """
-    if price <= 0 or support <= 0 or atr <= 0 or capital <= 0:
-        return {"error": "Invalid inputs — price, support, ATR, and capital must be positive"}
+    # Guard: NaN from yfinance passes (NaN <= 0 is False), so use isfinite
+    import math as _math
+    _inputs = {"price": price, "support": support, "atr": atr, "capital": capital}
+    if any(not _math.isfinite(float(v)) or v <= 0 for v in _inputs.values()):
+        return {"error": "Invalid inputs — price, support, ATR, and capital must be positive finite numbers"}
 
     dollar_risk = capital * risk_pct / 100       # IWT 1% rule
     capital_pct_goal = capital * 0.01            # 1% daily goal target
@@ -3088,7 +3091,9 @@ def calc_iwt_trade_setup(
         chase_warn = price < resistance * 0.98
 
     # Position sizing — IWT 1% rule
-    shares    = max(1, int(dollar_risk / stop_dist))
+    # Guard: max(NaN, 0.01) returns NaN in Python; int(NaN) raises ValueError
+    _raw_shares = dollar_risk / stop_dist if (stop_dist > 0) else 1.0
+    shares = max(1, int(_raw_shares)) if (_math.isfinite(_raw_shares) and _math.isfinite(stop_dist) and stop_dist > 0) else 1
     rr_ratio  = round(reward / stop_dist, 2) if stop_dist > 0 else 0
 
     # Max profit / max loss in dollars
