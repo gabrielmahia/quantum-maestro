@@ -10,3 +10,7 @@ gatherUsageStats = false
 
 [client]
 toolbarMode = "minimal"
+
+# Model routing note (2026-06-30):
+# ANTHROPIC_API_KEY in secrets -> Research tab uses claude-sonnet-5
+# GOOGLE_API_KEY in secrets   -> all other AI uses Gemini (free tier, default)
