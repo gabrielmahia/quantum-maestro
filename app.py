@@ -3289,6 +3289,33 @@ def check_late_entry(price: float, support: float, threshold_pct: float = 2.0) -
 
 
 
+
+
+# ── Sonnet 5 AI helper (2026-06-30) ──────────────────────────────────────────
+def _call_sonnet5(prompt: str, max_tokens: int = 1500) -> str:
+    """Claude Sonnet 5 via Anthropic API for Research tab skills.
+    Falls back silently if ANTHROPIC_API_KEY not in secrets."""
+    try:
+        import urllib.request as _ur, json as _j
+        _ak = st.secrets.get("ANTHROPIC_API_KEY", "")
+        if not _ak:
+            return ""
+        _body = _j.dumps({
+            "model": "claude-sonnet-5",
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode()
+        _req = _ur.Request(
+            "https://api.anthropic.com/v1/messages", data=_body,
+            headers={"x-api-key": _ak, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"}, method="POST")
+        _resp = _j.loads(_ur.urlopen(_req, timeout=30).read())
+        return _resp["content"][0]["text"]
+    except Exception:
+        return ""
+
+
+
 class InstitutionalAnalyst:
 
     def __init__(self):
