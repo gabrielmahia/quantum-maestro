@@ -3023,11 +3023,14 @@ def troubleshoot_trading(responses: dict) -> dict:
 
 # IWT curated watchlist — 30 stocks Teri trades repeatedly
 IWT_WATCHLIST = [
-    "NVDA","AMD","MSFT","AAPL","META","GOOGL","AMZN","TSLA",
-    "AVGO","ARM","MU","TSM","AMAT","LRCX",
-    "SPY","QQQ","IWM","GLD","TLT",
-    "JPM","GS","MS","V","MA",
-    "UNH","JNJ","PG","XOM","CVX","CMG",
+    # Source: Teri Ijeoma's actual watchlist (Oct 2024), corrected for live use:
+    # $VIX.X excluded (regime input, not tradeable); SQ -> XYZ (Jan 2025 rename);
+    # SOXL retained here but excluded from agent allowlists (3x leveraged).
+    # Canonical copy + helpers: quantum_maestro/data/watchlists.py
+    "AAP","AAPL","ADBE","AMD","AMZN","AZO","CMG","CRM","CRWD","DIA",
+    "GOOGL","GS","HD","KBH","META","MSFT","NFLX","NVDA","PYPL","SBUX",
+    "SHOP","SMH","SOXL","SPY","TGT","TOL","TSLA","TTD","V","WMT",
+    "XLK","XLY","XYZ",
 ]
 
 def calc_iwt_trade_setup(
