@@ -1,5 +1,10 @@
 # Robinhood agentic account — machine-readable guardrails (audit reference)
 # The human weekly audit checks the agent's journal against these values.
+governance:
+  executor: claude_via_robinhood_mcp
+  auditor: chatgpt_read_only
+  write_access: exclusive_to_executor
+  role_changes: human_commit_to_GOVERNANCE_md_only
 account:
   max_funding_usd: 2500
   disposable_capital_only: true
