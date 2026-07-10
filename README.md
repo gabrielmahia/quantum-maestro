@@ -9,7 +9,7 @@ Educational simulation — does not execute trades. For trade planning and disci
 [![Status](https://img.shields.io/badge/status-Simulation%20Only-orange)](#disclaimer)
 [![Version](https://img.shields.io/badge/version-v4.0.0--iwt--complete-blue)](#changelog)
 
-> ⚠️ **SIMULATION ONLY** — Analyses signals, scores setups. Does not execute trades or manage real funds. Not financial advice.
+> ⚠️ **PLANNING-FIRST, EXECUTION-OPTIONAL** — Analyzes signals and scores setups. Optional Tradier execution exists (sandbox by default, preview-first, risk-gated via `quantum_maestro/`); live submission requires an explicit per-session confirmation flag. Not financial advice.
 
 ---
 
