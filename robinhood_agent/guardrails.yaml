@@ -9,7 +9,9 @@ account:
   max_funding_usd: 2500
   disposable_capital_only: true
 assets:
-  allowlist: [SPY, QQQ, DIA, AAPL, MSFT, AMZN, GOOGL, META, NVDA, AMD]
+  # Teri Oct-2024 agent-safe set (SOXL/leveraged excluded, SQ->XYZ) + QQQ.
+  # Blast radius is controlled by size/frequency/loss limits below, not list length.
+  allowlist: [AAP, AAPL, ADBE, AMD, AMZN, AZO, CMG, CRM, CRWD, DIA, GOOGL, GS, HD, KBH, META, MSFT, NFLX, NVDA, PYPL, QQQ, SBUX, SHOP, SMH, SPY, TGT, TOL, TSLA, TTD, V, WMT, XLK, XLY, XYZ]
   asset_classes: [equity_long, cash]
   prohibited: [options, crypto, futures, margin, short_selling, market_orders]
 risk:
