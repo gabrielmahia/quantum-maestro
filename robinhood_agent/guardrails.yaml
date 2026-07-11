@@ -1,0 +1,35 @@
+# Robinhood agentic account — machine-readable guardrails (audit reference)
+# The human weekly audit checks the agent's journal against these values.
+governance:
+  executor: claude_via_robinhood_mcp
+  auditor: chatgpt_read_only
+  write_access: exclusive_to_executor
+  role_changes: human_commit_to_GOVERNANCE_md_only
+account:
+  max_funding_usd: 2500
+  disposable_capital_only: true
+assets:
+  # Teri Oct-2024 agent-safe set (SOXL/leveraged excluded, SQ->XYZ) + QQQ.
+  # Blast radius is controlled by size/frequency/loss limits below, not list length.
+  allowlist: [AAP, AAPL, ADBE, AMD, AMZN, AZO, CMG, CRM, CRWD, DIA, GOOGL, GS, HD, KBH, META, MSFT, NFLX, NVDA, PYPL, QQQ, SBUX, SHOP, SMH, SPY, TGT, TOL, TSLA, TTD, V, WMT, XLK, XLY, XYZ]
+  asset_classes: [equity_long, cash]
+  prohibited: [options, crypto, futures, margin, short_selling, market_orders]
+risk:
+  max_position_pct: 20
+  max_open_positions: 3
+  max_new_positions_per_day: 1
+  max_risk_per_trade_pct: 0.5
+  daily_loss_limit_pct: 1.0
+  weekly_loss_limit_pct: 2.0
+  averaging_down: prohibited
+events:
+  blackout_minutes: 30
+  tier1: [FOMC, CPI, PCE, NFP, jobless_claims, symbol_earnings]
+modes:
+  phase1: advisory     # weeks 1-2: agent proposes, human executes
+  phase2: review       # agent builds order, human approves
+  phase3: autonomous   # only after 30+ compliant proposals, human sign-off
+audit:
+  cadence: weekly
+  reconcile: [agent_journal, robinhood_activity_feed]
+  on_mismatch: disconnect_then_investigate
