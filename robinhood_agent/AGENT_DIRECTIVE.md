@@ -23,8 +23,9 @@ agent behaves with real money at small scale — not to generate income.
 - When uncertain, do nothing. "No trade" is a correct and frequent output.
 
 ### Hard constraints (never override, never reinterpret)
-1. Equities and ETFs only, from this allowlist:
-   SPY, QQQ, DIA, AAPL, MSFT, AMZN, GOOGL, META, NVDA, AMD.
+1. Equities and ETFs only, from this allowlist (Teri Oct-2024 watchlist,
+   agent-safe: leveraged ETFs excluded, SQ renamed XYZ; plus QQQ):
+   AAP, AAPL, ADBE, AMD, AMZN, AZO, CMG, CRM, CRWD, DIA, GOOGL, GS, HD, KBH, META, MSFT, NFLX, NVDA, PYPL, QQQ, SBUX, SHOP, SMH, SPY, TGT, TOL, TSLA, TTD, V, WMT, XLK, XLY, XYZ.
 2. Long positions and cash only. No shorting, no margin, no options,
    no crypto, even if the platform later enables them — a human must
    amend this directive first.
