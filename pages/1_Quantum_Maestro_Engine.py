@@ -1,0 +1,318 @@
+"""
+Quantum Maestro — easystocktrader.streamlit.app
+================================================
+An institutional-grade decision engine for a retail account.
+
+Philosophy: determine WHETHER to trade before WHAT to trade.
+Mode: SHADOW by default. Live execution does not exist in this codebase
+until the Promotion Gate passes — by design, not by omission.
+
+This tool is decision-support software, not financial advice. All trading
+involves risk of loss. The author of a losing trade is always the operator.
+"""
+
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import glob
+import streamlit as st
+import pandas as pd
+
+from qm.config import LIMITS, GATE, DEFAULT_MODE, WATCHLIST_CORE, EVENT_TYPES
+from qm import regime as regime_mod
+from qm.regime import RegimeInputs, score_regime, try_autofill_inputs
+from qm.risk import TradeProposal, evaluate
+from qm.sizing import final_size, kelly_fraction
+from qm.agents import AGENTS, SCORES, aggregate, select_strategy
+from qm.wisdom import MASTERS
+from qm import journal
+
+# page config owned by main app.py (this file runs as a Streamlit page)
+
+# ---------------------------------------------------------------- sidebar
+st.sidebar.title("🎼 Quantum Maestro")
+st.sidebar.caption("Decide whether. Then what. Then how much.")
+mode = st.sidebar.radio("Mode", ["SHADOW", "LIVE (locked)"], index=0,
+                        help="LIVE unlocks only when the Promotion Gate passes. See Gate page.")
+MODE = "SHADOW"
+if mode.startswith("LIVE"):
+    g = journal.evaluate_gate()
+    if g["promotable"]:
+        st.sidebar.success("Gate PASSED. Live execution may be wired via a broker adapter — see docs/ARCHITECTURE.md.")
+        MODE = "LIVE"
+    else:
+        st.sidebar.error("Promotion Gate not passed. Mode remains SHADOW.")
+
+equity = st.sidebar.number_input("Account equity ($)", min_value=100.0, value=10000.0, step=500.0)
+st.sidebar.divider()
+st.sidebar.caption(f"Hard limits (code-locked): {LIMITS.MAX_RISK_PCT_PER_TRADE:.0%}/trade · "
+                   f"{LIMITS.MAX_PORTFOLIO_HEAT:.0%} heat · min {LIMITS.MIN_DTE} DTE · "
+                   f"max {LIMITS.MAX_CONCURRENT_POSITIONS} positions · -{LIMITS.DAILY_LOSS_CIRCUIT_BREAKER:.0%} daily stop")
+
+page = st.sidebar.radio("Navigate", [
+    "1 · Regime (Can I trade?)",
+    "2 · Pre-Trade Stack (Should I?)",
+    "3 · Strategy & Sizing (How?)",
+    "4 · Journal & Expectancy",
+    "5 · Promotion Gate",
+    "6 · Playbooks",
+    "7 · Masters Library",
+])
+
+# ---------------------------------------------------------------- regime state
+if "regime_result" not in st.session_state:
+    st.session_state.regime_result = score_regime(RegimeInputs())
+
+# ================================================================ PAGE 1
+if page.startswith("1"):
+    st.header("Portfolio State Engine — Can I trade?")
+    st.caption("Deterministic scoring over observable inputs. Auto-fill pulls live data; every field is overridable so the logic stays inspectable.")
+
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        if st.button("⚡ Auto-fill from market data"):
+            auto = try_autofill_inputs()
+            if auto:
+                st.session_state.auto_inputs = auto
+                st.success("Fetched. Review and adjust the manual flags below.")
+            else:
+                st.warning("Market data unavailable (offline/rate-limited). Enter inputs manually.")
+    base = st.session_state.get("auto_inputs", RegimeInputs())
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        vix = st.number_input("VIX level", 5.0, 90.0, float(base.vix_level))
+        vix5 = st.number_input("VIX 5-day change (%)", -60.0, 200.0, float(base.vix_5d_change_pct))
+        spx = st.number_input("SPX vs 50DMA (%)", -25.0, 25.0, float(base.spx_vs_50dma_pct))
+    with col2:
+        breadth = st.number_input("Breadth: RSP/SPY 20d rel. (%)", -15.0, 15.0, float(base.breadth_rsp_spy_20d_pct))
+        oil5 = st.number_input("Oil 5-day change (%)", -40.0, 60.0, float(base.oil_5d_change_pct))
+        credit = st.selectbox("Credit spreads", [0, 1, 2], format_func=lambda i: ["Calm", "Widening", "Stress"][i])
+    with col3:
+        event = st.checkbox("Major macro event within 5 days (FOMC/CPI/NFP/mega-cap earnings)")
+        geo = st.checkbox("Active geopolitical escalation (oil/shipping-relevant)")
+        dd = st.checkbox("Account in drawdown / recent ≥1R loss")
+
+    res = score_regime(RegimeInputs(vix, vix5, spx, breadth, oil5, credit, event, geo, dd))
+    st.session_state.regime_result = res
+
+    color = {"OFFENSIVE": "green", "NEUTRAL": "blue", "DEFENSIVE": "orange", "LOCKDOWN": "red"}[res["regime"]]
+    st.markdown(f"## Regime: :{color}[{res['regime']}]  (score {res['score']:+d})")
+    st.info(res["guidance"])
+    st.caption(f"Sizing multiplier: **{LIMITS.REGIME_MULTIPLIER[res['regime']]}x** → effective max risk/trade: "
+               f"**${equity * LIMITS.MAX_RISK_PCT_PER_TRADE * LIMITS.REGIME_MULTIPLIER[res['regime']]:,.0f}**")
+    st.dataframe(pd.DataFrame(res["factors"].items(), columns=["Factor", "Score (-2..+2)"]), hide_index=True)
+
+    if st.button("📓 Log today's regime read to journal"):
+        journal.log_decision(mode=MODE, decision_type="NO_TRADE", underlying="(regime read)",
+                             structure="-", direction="-", regime=res["regime"],
+                             regime_score=res["score"], thesis="Daily regime assessment", status="N/A")
+        st.success("Logged. Daily regime reads build the calibration dataset.")
+
+# ================================================================ PAGE 2
+elif page.startswith("2"):
+    st.header("Seven-Agent Pre-Trade Stack — Should I trade?")
+    reg = st.session_state.regime_result
+    st.caption(f"Current regime: **{reg['regime']}** (set on page 1). "
+               "Aggregation rule: any agent can VETO; no agent can initiate; ≥5/7 neutral-or-better required.")
+
+    underlying = st.selectbox("Underlying", WATCHLIST_CORE + ["Other…"])
+    if underlying == "Other…":
+        underlying = st.text_input("Ticker", "SPY").upper()
+    thesis = st.text_area("Thesis (falsifiable — what invalidates it?)",
+                          placeholder="e.g., NVDA held institutional accumulation at 172 on 3x volume; invalidation below 169.5…")
+
+    scores = {}
+    cols = st.columns(2)
+    agent_names = [a for a in AGENTS if a != "Risk"]
+    for i, name in enumerate(agent_names):
+        with cols[i % 2]:
+            with st.expander(f"🤖 {name} Agent — {AGENTS[name]['question']}", expanded=False):
+                for p in AGENTS[name]["prompts"]:
+                    st.caption(f"· {p}")
+                scores[name] = st.select_slider(f"{name} verdict", SCORES, value="NEUTRAL", key=f"ag_{name}")
+
+    agg = aggregate(scores)
+    st.divider()
+    if agg["passed"]:
+        st.success(f"✅ Agent stack PASSED — {len(agg['supportive_or_better'])}/6 human agents neutral-or-better, no vetoes. "
+                   "Proceed to the Risk Engine (Agent 7) on page 3.")
+    else:
+        st.error(f"❌ Agent stack FAILED. Vetoes: {agg['vetoes'] or 'none'} · "
+                 f"Neutral-or-better: {len(agg['supportive_or_better'])}/6 (need ≥5 of 7 incl. Risk). "
+                 "The correct trade is no trade.")
+        if st.button("📓 Log NO-TRADE decision (this is a win)"):
+            journal.log_decision(mode=MODE, decision_type="NO_TRADE", underlying=underlying,
+                                 structure="-", direction="-", regime=reg["regime"], regime_score=reg["score"],
+                                 thesis=thesis, agent_notes=str(scores), status="N/A")
+            st.success("Logged. Prevented bad trades are positive expectancy.")
+
+# ================================================================ PAGE 3
+elif page.startswith("3"):
+    st.header("Strategy Selection, Risk Engine & Sizing — How?")
+    reg = st.session_state.regime_result
+
+    st.subheader("a) Structure selector")
+    c1, c2 = st.columns(2)
+    with c1:
+        view = st.selectbox("Directional view", ["BULLISH", "BEARISH", "NEUTRAL", "BIG-MOVE-UNSURE-DIRECTION"])
+    with c2:
+        iv = st.selectbox("IV state (vs HV / IV rank)", ["RICH", "CHEAP", "NORMAL"])
+    sel = select_strategy(view, iv, reg["regime"])
+    st.info(f"**Suggested structure: {sel['structure']}** — {sel['why']}")
+
+    st.subheader("b) Deterministic Risk Engine (Agent 7 — final authority)")
+    with st.form("risk_form"):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            underlying = st.text_input("Underlying", "SPY").upper()
+            structure = st.text_input("Structure", sel["structure"])
+            is_option = st.checkbox("Options trade", True)
+            short_prem = st.checkbox("Short premium (credit)", "Credit" in sel["structure"] or "Condor" in sel["structure"])
+            defined = st.checkbox("Defined risk", True)
+            dte = st.number_input("DTE", 0, 365, 30)
+        with c2:
+            max_loss = st.number_input("Max loss per contract / stop-risk per share ($)", 0.0, 100000.0, 150.0)
+            max_gain = st.number_input("Max gain per contract / target-gain per share ($)", 0.0, 100000.0, 350.0)
+            risk_dollars = st.number_input("Proposed total risk ($)", 0.0, 1000000.0,
+                                           float(round(equity * 0.01 * LIMITS.REGIME_MULTIPLIER[reg["regime"]], 0)))
+            open_pos = st.number_input("Currently open positions", 0, 20, 0)
+            heat = st.number_input("Current open risk (% of equity)", 0.0, 20.0, 0.0) / 100
+        with c3:
+            losing_same = st.checkbox("Open LOSING position in this underlying?")
+            hours_event = st.number_input("Hours to next major event (this underlying)", 0.0, 999.0, 999.0)
+            today_pnl = st.number_input("Today's P&L (%)", -50.0, 50.0, 0.0)
+            cooldown = st.checkbox("≥1R loss within last session?")
+            thesis = st.text_area("Thesis", height=68)
+        submitted = st.form_submit_button("⚖️ Run Risk Engine")
+
+    if submitted:
+        p = TradeProposal(underlying=underlying, direction=view, structure=structure, is_option=is_option,
+                          is_short_premium=short_prem, is_defined_risk=defined, dte=int(dte),
+                          max_loss_per_unit=max_loss, max_gain_per_unit=max_gain, account_equity=equity,
+                          proposed_risk_dollars=risk_dollars, open_positions=int(open_pos),
+                          open_portfolio_heat_pct=heat, has_open_losing_position_same_underlying=losing_same,
+                          hours_to_next_major_event=hours_event, todays_pnl_pct=today_pnl,
+                          last_full_loss_within_cooldown=cooldown, regime=reg["regime"], thesis=thesis)
+        verdict = evaluate(p)
+        if verdict.approved:
+            st.success(f"✅ APPROVED ({MODE}). Regime-adjusted max risk: ${verdict.adjusted_max_risk_dollars:,.0f}")
+        else:
+            st.error("⛔ VETOED. The engine's verdict is final — there is no override button, on purpose.")
+            for x in verdict.vetoes:
+                st.markdown(f"- 🔴 {x}")
+        for w in verdict.warnings:
+            st.warning(w)
+        with st.expander("Rules passed"):
+            st.write(verdict.passes)
+
+        dtype = "TRADE" if verdict.approved else "VETOED"
+        if st.button(f"📓 Log this {dtype} decision"):
+            journal.log_decision(mode=MODE, decision_type=dtype, underlying=underlying, structure=structure,
+                                 direction=view, regime=reg["regime"], regime_score=reg["score"], thesis=thesis,
+                                 risk_dollars=risk_dollars, veto_reasons="; ".join(verdict.vetoes),
+                                 status="OPEN" if verdict.approved else "N/A")
+            st.success("Logged.")
+
+    st.subheader("c) Position sizing")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**Fixed-risk (Ijeoma)** — options/defined-risk")
+        mlpc = st.number_input("Max loss per contract ($)", 1.0, 50000.0, 150.0, key="sz1")
+        fs = final_size(equity, reg["regime"], max_loss_per_contract=mlpc)
+        st.json(fs)
+    with c2:
+        st.markdown("**Fractional Kelly (Thorp)** — from journal stats only")
+        s = journal.stats()
+        if s.get("closed_trades", 0) >= 20 and "win_rate" in s:
+            k = kelly_fraction(s["win_rate"], s["avg_win_r"], max(s["avg_loss_r"], 0.01))
+            st.json(k)
+        else:
+            st.warning(f"Kelly locked until ≥20 closed trades in the journal "
+                       f"(currently {s.get('closed_trades', 0)}). Thorp counted cards before sizing bets — "
+                       "so does this system. Until then: fixed-risk 1% × regime multiplier only.")
+
+# ================================================================ PAGE 4
+elif page.startswith("4"):
+    st.header("Decision Journal & Expectancy")
+    st.caption("The journal is the MVP. Everything else is decoration until this table proves an edge.")
+
+    s = journal.stats()
+    c = st.columns(6)
+    c[0].metric("Decisions", s.get("decisions_logged", 0))
+    c[1].metric("Trades", s.get("trades_taken", 0))
+    c[2].metric("No-trades", s.get("no_trades", 0))
+    c[3].metric("Vetoes", s.get("vetoes", 0))
+    c[4].metric("Win rate", f"{s.get('win_rate', 0):.0%}" if "win_rate" in s else "—")
+    c[5].metric("Expectancy (R)", s.get("expectancy_r", "—"))
+
+    df = journal.load()
+    if len(df):
+        closed = df[(df.decision_type == "TRADE") & (df.status == "CLOSED") & df.realized_r.notna()].sort_values("id")
+        if len(closed) >= 2:
+            import plotly.express as px
+            eq = closed.realized_r.cumsum().reset_index(drop=True)
+            st.plotly_chart(px.line(eq, labels={"value": "Cumulative R", "index": "Closed trade #"},
+                                    title="Equity curve (R units)"), use_container_width=True)
+        st.dataframe(df, hide_index=True, use_container_width=True)
+        st.download_button("⬇️ Export CSV", df.to_csv(index=False), "quantum_maestro_journal.csv")
+    else:
+        st.info("No decisions logged yet. Start with a daily regime read (page 1).")
+
+    st.subheader("Close a trade")
+    with st.form("close"):
+        did = st.number_input("Decision ID", 1, 10_000_000, 1)
+        exitp = st.number_input("Exit price", 0.0, 1_000_000.0, 0.0)
+        rr = st.number_input("Realized R (net of costs; loss = negative)", -10.0, 20.0, 0.0)
+        lesson = st.text_area("Lesson (mandatory for losses — Dalio: pain + reflection = progress)")
+        if st.form_submit_button("Close trade"):
+            if rr < 0 and len(lesson.strip()) < 15:
+                st.error("Losses require a written lesson. That's the tuition receipt.")
+            else:
+                journal.close_trade(int(did), exitp, rr, lesson)
+                st.success("Closed and recorded.")
+
+# ================================================================ PAGE 5
+elif page.startswith("5"):
+    st.header("Promotion Gate — SHADOW → LIVE")
+    st.caption("All criteria must pass, evaluated from the journal only. One hard-rule violation resets the clock. "
+               "Simons doctrine: never override the model — including this one.")
+    g = journal.evaluate_gate()
+    for check, passed in g["checks"].items():
+        st.markdown(f"{'✅' if passed else '❌'} {check}")
+    st.divider()
+    if g["promotable"]:
+        st.success("Gate PASSED. Next step (deliberate, human, offline): wire a broker adapter per docs/ARCHITECTURE.md, "
+                   "starting with preview-only order staging.")
+    else:
+        st.warning("Gate NOT passed. This is the system working, not the system failing. "
+                   "Live capital deployed before demonstrated expectancy is donation, not trading.")
+    with st.expander("Current journal stats"):
+        st.json(g["stats"])
+
+# ================================================================ PAGE 6
+elif page.startswith("6"):
+    st.header("Playbooks")
+    files = sorted(glob.glob(os.path.join(os.path.dirname(__file__), "..", "playbooks", "*.md")))
+    if not files:
+        st.info("No playbooks found.")
+    for f in files:
+        with open(f) as fh:
+            content = fh.read()
+        title = content.splitlines()[0].lstrip("# ")
+        with st.expander(f"📖 {title}"):
+            st.markdown(content)
+
+# ================================================================ PAGE 7
+elif page.startswith("7"):
+    st.header("Masters Library — a global game")
+    st.caption("Principles mapped to the module they govern. Cautions included: every master is also a cautionary tale about something.")
+    for m in MASTERS:
+        with st.expander(f"🌍 {m['name']} — {m['origin']}"):
+            st.markdown(f"**Principle:** {m['principle']}")
+            st.markdown(f"**Governs in this system:** {m['governs']}")
+            st.markdown(f"**Caution:** _{m['caution']}_")
+
+st.sidebar.divider()
+st.sidebar.caption("Not financial advice. Decision-support software for a system in SHADOW validation. "
+                   "Trading involves substantial risk of loss.")
