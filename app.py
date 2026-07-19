@@ -828,7 +828,7 @@ def live_options_greeks_v2(ticker, dte_target=30, r_annual=0.045):
 # Note: Futures/Forex require a separate broker (see RESOURCES.md).
 # =============================================================================
 
-import urllib.request, urllib.parse, json
+import urllib.parse, json
 
 # ── Account management ──────────────────────────────────────────────────────
 
@@ -1611,7 +1611,7 @@ def instrument_advisor_v4(account_size, goal, experience, macro_data):
 
     elif goal == "Trade commodities / futures":
         recs.append({
-            "rank": 1, "instrument": f"Micro Futures (MES, MCL, MGC)" if account_size < 10_000 else "E-mini or Full Futures (ES, CL, GC)",
+            "rank": 1, "instrument": "Micro Futures (MES, MCL, MGC)" if account_size < 10_000 else "E-mini or Full Futures (ES, CL, GC)",
             "why_plain": f"Futures let you trade oil, gold, wheat, S&P 500 directly — not through options. You win or lose based purely on price movement × contract size. Current oil: ${oil:.1f}/bbl.",
             "why_pro": f"Exchange-traded. No premium decay. Linear P&L. Margin-efficient. Daily mark-to-market. CME SPAN margin. VIX {vix:.1f}: vol-scaled margin regime.",
             "caution": "Leverage is high. A 1% move in ES = ~$2,500 per contract. Size via tick-value risk: risk ÷ (stop_distance ÷ tick_size × tick_value).",
@@ -2500,7 +2500,7 @@ def calc_covered_call_yield(stock_price: float, call_strike: float,
     # OTM check
     otm_pct = (call_strike - stock_price) / stock_price * 100
     if otm_pct < 0:
-        otm_note = f"⚠️ ITM call — you cap your upside NOW. Consider OTM strike."
+        otm_note = "⚠️ ITM call — you cap your upside NOW. Consider OTM strike."
     elif otm_pct < 2:
         otm_note = f"✅ Slightly OTM ({otm_pct:.1f}%) — IWT preferred zone"
     else:
@@ -2763,7 +2763,7 @@ def gap_trade_playbook(gap_pct: float, gap_type: str, rvol: float,
     # For breakaway / runaway gaps with volume confirmation
     if gap_type in ("Breakaway", "Runaway") and rvol >= 1.3:
         ride_entry = "Wait 15-30 min after open. Enter on FIRST PULLBACK to the gap level."
-        ride_stop  = f"Below the gap level (if gap fills, thesis is wrong)"
+        ride_stop  = "Below the gap level (if gap fills, thesis is wrong)"
         trend_word = "prior high" if direction == "UP" else "prior low"
         ride_tgt   = f"Next major support/resistance level ({trend_word})"
         strategies.append({
@@ -3153,7 +3153,7 @@ def calc_iwt_trade_setup(
             f"Risk:       ${dollar_risk:.0f} (1% of ${capital:,.0f} account)",
             f"Shares:     {shares} (so max loss = ${max_loss_dollars:.0f})",
             f"R:R:        {rr_ratio:.2f}:1 (minimum 2:1 required)",
-            f"Profit if target hit: ${max_profit_dollars:.0f} ({pct_of_daily_goal:.0f}% of daily 1% goal)",
+            f"Profit if target hit: ${max_profit_dollars:.0f} ({pct_of_goal:.0f}% of daily 1% goal)",
         ],
     }
 
@@ -3858,7 +3858,7 @@ def compute_market_health_score() -> dict:
       - Sector participation (how many of 8 sectors are green today)
       - VIX direction (falling on up days = healthy)
       - QQQ vs SPY divergence (tech concentration check)
-    
+
     Returns: {score, grade, label, components, summary, thinkorswim_tip}
     """
     import yfinance as yf
@@ -4187,8 +4187,10 @@ def compute_market_health_score() -> dict:
 # Engines: Regime · Trade Grade · PDT Budget · SPX Income · WarrenAI Export
 # ═══════════════════════════════════════════════════════════════════════════════
 
-import math
-import datetime
+import datetime  # noqa: F811 — shadows `from datetime import datetime` (L156).
+# HAZARD (pre-existing, annotated 2026-07-19): functions defined ABOVE this line that call
+# datetime.now()/.strptime() resolve the MODULE (not the class) once a Streamlit rerun passes
+# this point. Do not remove without auditing ~9 call sites. Deliberate refactor recommended.
 
 
 # ── REGIME ENGINE ──────────────────────────────────────────────────────────────
@@ -5727,7 +5729,7 @@ with st.expander("⚡ Power Tools — Market Brief · Backtest · Options Calcul
         # Market weather deep-dive
         if st.session_state.macro:
             _mw2 = compute_market_weather(st.session_state.macro)
-            st.markdown(f"**Options Playbook Today**")
+            st.markdown("**Options Playbook Today**")
             _play = options_playbook_router(
                 _mw2.get("vix",20), _mw2.get("ivr",50),
                 st.session_state.macro.get("sp_trend","NEUTRAL"))
@@ -6156,7 +6158,7 @@ with _T5:
                 verify_lines = [
                     f"Pull the actual earnings press release for {_ticker_input} — EPS + revenue vs. consensus",
                     "Check guidance commentary — did management raise, lower, or maintain?",
-                    f"Review options IV change around earnings — did IV collapse (sell) or spike (buy)?",
+                    "Review options IV change around earnings — did IV collapse (sell) or spike (buy)?",
                     "Compare with peer reactions — did the sector react similarly or diverge?",
                 ]
                 csv_rows = [[_ticker_input, name, f"{eps_act:.2f}", f"{fwd_pe:.1f}x",
@@ -6305,7 +6307,7 @@ with _T5:
                     "IV Rank requires a 52-week IV history — check thinkorswim or Market Chameleon."
                 )
                 st.info(
-                    f"**Earnings Prep Summary:** "
+                    "**Earnings Prep Summary:** "
                     + (f"Earnings {'in ' + str(days_to_earn) + ' days' if days_to_earn else 'date unconfirmed — check broker'}. " )
                     + f"52W range: ${wk52l:.2f}–${wk52h:.2f}. "
                     + f"Proxy expected move: ±${expected_move:.2f}. "

@@ -48,7 +48,7 @@ def _build_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Build ML feature matrix from pre-computed indicators.
     Feature list inspired by ML4T Ch. 24 Alpha Factor Library.
-    
+
     All features are normalised within the rolling window to prevent
     scale sensitivity (a common source of look-ahead bias).
     """
@@ -114,7 +114,7 @@ def _build_features(df: pd.DataFrame) -> pd.DataFrame:
 def _build_target(df: pd.DataFrame, forward_days: int = 5) -> pd.Series:
     """
     Binary target: 1 if next {forward_days}-day return > 0 else 0.
-    
+
     From ML4T Ch. 6: using binary rather than regression targets
     reduces noise and improves out-of-sample generalisation.
     """
@@ -157,36 +157,36 @@ def _rolling_rf_score(
     """
     Train a RandomForest on the most recent {train_window} days of data
     and predict the probability of a bullish setup on the last row.
-    
+
     Rolling window training (ML4T Ch. 12, Section: Walk-Forward Cross-Validation)
     prevents look-ahead bias and adapts to regime changes.
     """
     if not _SKLEARN:
         return _logistic_approx(features, target, train_window)
-    
+
     # Get aligned, clean data
     X = features.copy()
     y = target.copy()
     combined = X.join(y.rename("__target__")).dropna()
     if len(combined) < train_window + 5:
         return np.nan
-    
+
     train = combined.tail(train_window + 1).iloc[:-1]  # exclude last row (no target yet)
     X_train = train.drop("__target__", axis=1)
     y_train = train["__target__"]
-    
+
     # Skip if too few or only one class
     if len(y_train) < 30 or y_train.nunique() < 2:
         return np.nan
-    
+
     # Feature for prediction: last row (no forward-looking target)
     X_pred = combined.iloc[[-1]].drop("__target__", axis=1)
-    
+
     # Impute with column medians
     medians = X_train.median()
     X_train = X_train.fillna(medians)
     X_pred  = X_pred.fillna(medians)
-    
+
     try:
         model = RandomForestClassifier(
             n_estimators=n_estimators,
@@ -212,23 +212,23 @@ def _logistic_approx(
     Used when sklearn is not installed. Lower accuracy but still directional.
     """
     from scipy.special import expit
-    
+
     combined = features.join(target.rename("__target__")).dropna()
     if len(combined) < 30:
         return np.nan
-    
+
     train = combined.tail(train_window + 1).iloc[:-1]
     X_train = train.drop("__target__", axis=1).values
     y_train = train["__target__"].values
     X_pred  = combined.iloc[[-1]].drop("__target__", axis=1).values
-    
+
     # Normalise
     mu = np.nanmean(X_train, axis=0)
     std = np.nanstd(X_train, axis=0)
     std[std == 0] = 1.0
     X_train = np.nan_to_num((X_train - mu) / std)
     X_pred  = np.nan_to_num((X_pred  - mu) / std)
-    
+
     # Gradient descent (50 steps)
     X_b = np.hstack([np.ones((X_train.shape[0], 1)), X_train])
     w   = np.zeros(X_b.shape[1])
@@ -237,7 +237,7 @@ def _logistic_approx(
         p   = expit(X_b @ w)
         grad = X_b.T @ (p - y_train) / len(y_train)
         w -= lr * grad
-    
+
     X_pred_b = np.hstack([[1], X_pred[0]])
     return float(expit(X_pred_b @ w))
 
@@ -253,17 +253,17 @@ def _feature_importance(
     """Return top-N feature importances as (name, importance) pairs."""
     if not _SKLEARN:
         return []
-    
+
     combined = features.join(target.rename("__target__")).dropna()
     if len(combined) < train_window + 5:
         return []
-    
+
     train = combined.tail(train_window + 1).iloc[:-1]
     X_train = train.drop("__target__", axis=1).fillna(train.drop("__target__", axis=1).median())
     y_train = train["__target__"]
     if y_train.nunique() < 2:
         return []
-    
+
     try:
         model = RandomForestClassifier(n_estimators=50, max_depth=4, min_samples_leaf=10,
                                         random_state=42, n_jobs=-1)
@@ -285,13 +285,13 @@ def compute_ml_signal(
 ) -> dict:
     """
     Compute ML-based signal score for a ticker.
-    
+
     Args:
         df:               DataFrame with OHLCV + pre-computed indicators from _calc_indicators()
         experience_level: "Beginner" | "Intermediate" | "Advanced" | "Professional"
         forward_days:     Prediction horizon in trading days (default 5)
         train_window:     Rolling training window in days (default 252 = 1 year)
-    
+
     Returns:
         dict with keys:
             score          — float 0.0–1.0 (bullish probability)
@@ -310,21 +310,21 @@ def compute_ml_signal(
         "signal_emoji": "⚪", "ic_estimate": None, "feature_importances": [],
         "regime": "unknown", "narrative": "", "sklearn_available": _SKLEARN, "error": None
     }
-    
+
     if df is None or len(df) < max(60, train_window // 2):
         result["error"] = "Insufficient data for ML analysis"
         return result
-    
+
     try:
         # Build features and target
         features = _build_features(df)
         target   = _build_target(df, forward_days=forward_days)
-        
+
         # Regime detection (ADX + volatility)
         adx = df.get("ADX_14", pd.Series(dtype=float)).iloc[-1] if "ADX_14" in df.columns else np.nan
         vol_20  = df["Close"].pct_change().rolling(20).std().iloc[-1]
         vol_60  = df["Close"].pct_change().rolling(60).std().iloc[-1]
-        
+
         if not np.isnan(adx):
             if adx > 30:
                 regime = "trending"
@@ -335,22 +335,22 @@ def compute_ml_signal(
         else:
             regime = "unknown"
         result["regime"] = regime
-        
+
         # IC on RSI (fast, always available)
         if "RSI_14" in df.columns:
             fwd_ret = df["Close"].pct_change(forward_days).shift(-forward_days)
             result["ic_estimate"] = _information_coefficient(df["RSI_14"], fwd_ret)
-        
+
         # ML signal score
         score = _rolling_rf_score(features, target, train_window=train_window)
-        
+
         if score is None or np.isnan(score):
             result["error"] = "Model training insufficient data"
             return result
-        
+
         result["score"]     = score
         result["score_pct"] = int(round(score * 100))
-        
+
         # Signal label
         if score >= 0.70:
             result["signal_label"] = "Strong Bullish"
@@ -367,10 +367,10 @@ def compute_ml_signal(
         else:
             result["signal_label"] = "Strong Bearish"
             result["signal_emoji"] = "🔴🔴"
-        
+
         # Narrative — gated by experience level
         level_up = experience_level.lower()
-        
+
         if level_up == "beginner":
             result["narrative"] = (
                 f"The AI has reviewed recent price patterns and technical signals. "
@@ -399,9 +399,9 @@ def compute_ml_signal(
                 result["feature_importances"] = _feature_importance(
                     features, target, train_window=train_window
                 )
-        
+
         return result
-    
+
     except Exception as e:
         result["error"] = str(e)[:120]
         return result
@@ -417,32 +417,32 @@ def kelly_fraction(
 ) -> dict:
     """
     Compute the Kelly fraction for position sizing.
-    
+
     From ML4T Chapter 5 (Kelly Rule notebook): optimal bet size is
     f* = (p * b - q) / b  where p=win prob, q=1-p, b=avg_win/avg_loss ratio.
-    
+
     Half-Kelly (multiply by 0.5) is standard practitioner convention
     to account for model uncertainty. Teri Ijeoma's IWT framework
     also recommends risking no more than 1-2% of account per trade,
     which aligns with fractional Kelly sizing.
-    
+
     Args:
         win_probability:   Model's P(bullish) as a fraction
         avg_win_r:         Average win as R-multiple (e.g. 1.5 means 1.5× the risk)
         avg_loss_r:        Average loss as R-multiple (usually 1.0)
         kelly_fraction_mult: Scaling factor (default 0.5 = half-Kelly)
-    
+
     Returns:
         dict with kelly_pct, half_kelly_pct, interpretation
     """
     p  = max(0.01, min(0.99, win_probability))
     q  = 1 - p
     b  = avg_win_r / max(avg_loss_r, 0.01)
-    
+
     f_star = (p * b - q) / b
     f_kelly = max(0.0, f_star)
     f_practical = f_kelly * kelly_fraction_mult
-    
+
     return {
         "kelly_full_pct":    round(f_kelly * 100, 1),
         "kelly_practical_pct": round(f_practical * 100, 1),
