@@ -133,3 +133,17 @@ No affiliation with Invest With Teri LLC.
 All data from Yahoo Finance (delayed). Options involve risk of loss.
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting.
+
+---
+
+## 🎼 Quantum Maestro Decision Engine (v5.1 — new page)
+
+The app now ships a second page — **Quantum Maestro Engine** — implementing the full decision stack upstream of any trade idea:
+
+**Regime Engine** (Offensive/Neutral/Defensive/Lockdown, auto-filled from live data, manually overridable) → **Seven-Agent Pre-Trade Stack** (any agent vetoes, none initiates) → **Deterministic Risk Engine** (11 hard rules, no override path: 0DTE ban, defined-risk only, 1% × regime multiplier, 3% heat cap, no repair trades, event blackout, cooldown, −2% daily circuit breaker) → **Sizing** (fixed-risk IWT + quarter-Kelly locked until ≥20 journaled trades) → **Decision Journal** (SQLite; logs trades, no-trades AND vetoes; expectancy + equity curve) → **Promotion Gate** (SHADOW→LIVE only after ≥50 decisions, ≥30 closed trades, positive net expectancy, zero rule violations, ≥60 days).
+
+Plus **Playbooks** (FOMC, CPI, geopolitics, earnings clusters, summer liquidity, drawdown recovery) and a **global Masters Library** (Ijeoma, PTJ, Buffett, Dalio, Soros, Simons, Thorp, Kostolany, Darvas, Jhunjhunwala, Li Lu, Kotegawa; Livermore as the cautionary null hypothesis).
+
+Architecture and roadmap: [`docs/QUANTUM_MAESTRO_ARCHITECTURE.md`](docs/QUANTUM_MAESTRO_ARCHITECTURE.md). Package: [`qm/`](qm/) — pure-Python, CI-tested (`tests/test_qm.py`). Journal state is local (`data/*.db`, gitignored); export CSV from the Journal page on Streamlit Cloud (ephemeral storage).
+
+> Still **SIMULATION / SHADOW ONLY**. The engine's core doctrine: *determine whether to trade before determining what to trade.* A prevented bad trade is a positive-expectancy event — and it gets journaled as one.

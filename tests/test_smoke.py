@@ -40,15 +40,19 @@ def test_vip_tickers_defined():
 
 
 def test_iwt_watchlist_defined():
-    src = pathlib.Path("app.py").read_text()
-    for line in src.splitlines():
-        if line.startswith("IWT_WATCHLIST"):
-            tickers = eval(line.split("=", 1)[1].strip())
-            assert len(tickers) >= 25, "IWT watchlist should have ~30 tickers"
-            assert "NVDA" in tickers
-            assert "SPY" in tickers
-            assert "AMZN" in tickers
-            return
+    # AST-based extraction: robust to single-line or multiline list formatting.
+    import ast as _ast
+    tree = _ast.parse(pathlib.Path("app.py").read_text())
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Assign):
+            for tgt in node.targets:
+                if isinstance(tgt, _ast.Name) and tgt.id == "IWT_WATCHLIST":
+                    tickers = _ast.literal_eval(node.value)
+                    assert len(tickers) >= 25, "IWT watchlist should have ~30 tickers"
+                    assert "NVDA" in tickers
+                    assert "SPY" in tickers
+                    assert "AMZN" in tickers
+                    return
     pytest.fail("IWT_WATCHLIST not found")
 
 
@@ -125,6 +129,16 @@ try:
     _capital_progress = _G.get("calc_capital_progress")
     _late_entry = _G.get("check_late_entry")
     _IWT_WATCHLIST = _G.get("IWT_WATCHLIST", [])
+    if not _IWT_WATCHLIST:
+        # Fallback: exec of app.py can halt before the watchlist line as the
+        # app grows; extract the literal via AST instead (formatting-agnostic).
+        import ast as _ast
+        for _node in _ast.walk(_ast.parse(pathlib.Path("app.py").read_text())):
+            if isinstance(_node, _ast.Assign) and any(
+                isinstance(_t, _ast.Name) and _t.id == "IWT_WATCHLIST" for _t in _node.targets
+            ):
+                _IWT_WATCHLIST = _ast.literal_eval(_node.value)
+                break
     _HAS_IWT = _calc is not None
 except Exception:
     _HAS_IWT = False
