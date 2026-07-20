@@ -208,3 +208,7 @@ __marimo__/
 
 # Quantum Maestro decision journal (local state)
 data/*.db
+
+# Never commit secrets
+.streamlit/secrets.toml
+secrets.toml
