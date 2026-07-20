@@ -687,7 +687,7 @@ def _tradier_headers():
         if not token:
             return None, None
         env  = (st.secrets.get("TRADIER_ENV")
-                or st.secrets.get("tradier", {}).get("env","production")).lower()
+                or st.secrets.get("tradier", {}).get("env","sandbox")).lower()  # sandbox-first doctrine
         base = ("https://sandbox.tradier.com" if env == "sandbox"
                 else "https://api.tradier.com")
         return {"Authorization":f"Bearer {token}","Accept":"application/json"}, base

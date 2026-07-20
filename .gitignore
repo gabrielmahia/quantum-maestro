@@ -205,3 +205,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ── Secrets & runtime data (never commit) ──
+.streamlit/secrets.toml
+.env
+journal/
+*.jsonl
