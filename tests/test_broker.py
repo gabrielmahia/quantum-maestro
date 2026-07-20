@@ -85,3 +85,12 @@ def test_missing_token_raises_helpful_error(monkeypatch):
     from qm.broker_tradier import TradierAuthError
     with pytest.raises(TradierAuthError):
         TradierSandbox(token=None, account_id=None)
+
+
+def test_tradier_env_production_is_refused(monkeypatch):
+    from qm.broker_tradier import TradierAuthError
+    monkeypatch.setenv("TRADIER_ENV", "production")
+    with pytest.raises(TradierAuthError):
+        TradierSandbox(token="x", account_id="VA000000")
+    monkeypatch.setenv("TRADIER_ENV", "sandbox")
+    TradierSandbox(token="x", account_id="VA000000")  # sandbox passes
