@@ -44,6 +44,13 @@ def _get_secret(name: str):
 
 class TradierSandbox:
     def __init__(self, token: str = None, account_id: str = None):
+        env = (_get_secret("TRADIER_ENV") or "sandbox").strip().lower()
+        if env != "sandbox":
+            raise TradierAuthError(
+                f"TRADIER_ENV is set to '{env}'. This adapter runs ONLY in sandbox mode — "
+                "live execution is gated behind the Promotion Gate and does not exist in this codebase. "
+                "Set TRADIER_ENV = \"sandbox\" (or remove it)."
+            )
         self.token = token or _get_secret("TRADIER_SANDBOX_TOKEN") or _get_secret("TRADIER_TOKEN")
         if not self.token:
             raise TradierAuthError(
