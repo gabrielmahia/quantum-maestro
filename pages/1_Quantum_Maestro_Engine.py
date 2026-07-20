@@ -57,6 +57,7 @@ page = st.sidebar.radio("Navigate", [
     "5 · Promotion Gate",
     "6 · Playbooks",
     "7 · Masters Library",
+    "8 · Paper Desk (Tradier Sandbox)",
 ])
 
 # ---------------------------------------------------------------- regime state
@@ -312,6 +313,154 @@ elif page.startswith("7"):
             st.markdown(f"**Principle:** {m['principle']}")
             st.markdown(f"**Governs in this system:** {m['governs']}")
             st.markdown(f"**Caution:** _{m['caution']}_")
+
+
+# ================================================================ PAGE 8
+elif page.startswith("8"):
+    st.header("Paper Desk — Tradier Sandbox")
+    st.caption("Endpoint pinned to sandbox.tradier.com (production does not exist in this codebase). "
+               "$100k virtual funds · 15-min delayed data. Every submitted order passes the deterministic "
+               "risk engine — the submit path physically requires an approved verdict.")
+
+    from qm.broker_tradier import TradierSandbox, TradierAuthError, OrderNotApprovedError
+
+    @st.cache_resource(show_spinner=False)
+    def _client():
+        return TradierSandbox()
+
+    try:
+        tc = _client()
+        acct = tc.resolve_account()
+    except TradierAuthError as e:
+        st.error(f"Sandbox connection failed: {e}")
+        st.code('# App -> Settings -> Secrets\nTRADIER_SANDBOX_TOKEN = "<your sandbox key>"\nTRADIER_SANDBOX_ACCOUNT = "<VAxxxxxxxx>"  # optional', language="toml")
+        st.stop()
+    except Exception as e:
+        st.error(f"Sandbox unreachable: {e}")
+        st.stop()
+
+    reg = st.session_state.regime_result
+    try:
+        bal = tc.balances()
+        c = st.columns(4)
+        c[0].metric("Account", acct)
+        c[1].metric("Total equity", f"${float(bal.get('total_equity', 0) or 0):,.0f}")
+        c[2].metric("Option BP", f"${float(bal.get('option_buying_power', 0) or 0):,.0f}")
+        c[3].metric("Regime", reg["regime"])
+    except Exception as e:
+        st.warning(f"Balances unavailable: {e}")
+
+    tab_pos, tab_ticket = st.tabs(["📋 Positions & Orders", "🎫 Vertical Spread Ticket"])
+
+    with tab_pos:
+        try:
+            pos = tc.positions()
+            st.dataframe(pd.DataFrame(pos) if pos else pd.DataFrame(), use_container_width=True, hide_index=True)
+            st.caption("Open orders")
+            odf = tc.orders()
+            st.dataframe(pd.DataFrame(odf) if odf else pd.DataFrame(), use_container_width=True, hide_index=True)
+        except Exception as e:
+            st.warning(f"Positions/orders unavailable: {e}")
+
+    with tab_ticket:
+        st.caption("Defined-risk verticals only — matching the hard rules. Build → risk engine → preview → submit.")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            sym = st.text_input("Underlying", "SPY").upper().strip()
+            kind = st.selectbox("Structure", ["Put Credit Spread", "Call Credit Spread",
+                                              "Bull Call Spread (debit)", "Bear Put Spread (debit)"])
+        try:
+            exps = tc.expirations(sym)
+        except Exception:
+            exps = []
+        with c2:
+            exp = st.selectbox("Expiration", exps or ["(unavailable)"])
+        chain = []
+        if exps and exp and exp != "(unavailable)":
+            try:
+                chain = tc.option_chain(sym, exp)
+            except Exception as e:
+                st.warning(f"Chain unavailable: {e}")
+        opt_type = "put" if "Put" in kind else "call"
+        legs_pool = [o for o in chain if o.get("option_type") == opt_type]
+        strikes = sorted({float(o["strike"]) for o in legs_pool})
+        with c3:
+            qty = st.number_input("Contracts", 1, 100, 1)
+            limit = st.number_input("Limit price (net credit/debit per spread)", 0.01, 500.0, 0.50, step=0.01)
+
+        if strikes:
+            sc1, sc2 = st.columns(2)
+            with sc1:
+                short_k = st.selectbox("Short strike" if "Credit" in kind else "Long strike", strikes,
+                                       index=min(len(strikes)//2, len(strikes)-1))
+            with sc2:
+                long_k = st.selectbox("Long strike" if "Credit" in kind else "Short strike", strikes,
+                                      index=min(len(strikes)//2 + 2, len(strikes)-1))
+            width = abs(float(long_k) - float(short_k))
+            is_credit = "Credit" in kind
+            max_loss = (width - limit) * 100 if is_credit else limit * 100
+            max_gain = limit * 100 if is_credit else (width - limit) * 100
+            from datetime import date
+            dte = ( date.fromisoformat(exp) - date.today() ).days if exp and exp != "(unavailable)" else 0
+
+            def occ(strike, right):
+                d = exp.replace("-", "")[2:]
+                return f"{sym}{d}{right.upper()[0]}{int(round(float(strike)*1000)):08d}"
+
+            if is_credit:
+                legs = [{"option_symbol": occ(short_k, opt_type), "side": "sell_to_open", "quantity": int(qty)},
+                        {"option_symbol": occ(long_k, opt_type), "side": "buy_to_open", "quantity": int(qty)}]
+            else:
+                legs = [{"option_symbol": occ(short_k, opt_type), "side": "buy_to_open", "quantity": int(qty)},
+                        {"option_symbol": occ(long_k, opt_type), "side": "sell_to_open", "quantity": int(qty)}]
+            order = {"class": "multileg", "symbol": sym, "type": "credit" if is_credit else "debit",
+                     "duration": "day", "price": round(float(limit), 2), "legs": legs}
+
+            st.caption(f"Width ${width:.2f} · Max loss/contract ${max_loss:.0f} · Max gain/contract ${max_gain:.0f} · {dte} DTE")
+            colA, colB = st.columns(2)
+            thesis = st.text_area("Thesis (required by the engine)", key="pd_thesis",
+                                  placeholder="Level, invalidation, why now…")
+
+            proposal = TradeProposal(
+                underlying=sym, direction="NEUTRAL" if is_credit else "LONG", structure=kind,
+                is_option=True, is_short_premium=is_credit, is_defined_risk=True, dte=int(dte),
+                max_loss_per_unit=max_loss, max_gain_per_unit=max_gain, account_equity=equity,
+                proposed_risk_dollars=max_loss * int(qty), open_positions=len(tc.positions() or []),
+                regime=reg["regime"], thesis=thesis or "")
+
+            with colA:
+                if st.button("🔍 Preview (ungated)"):
+                    try:
+                        st.json(tc.preview_order(order))
+                    except Exception as e:
+                        st.error(f"Preview failed: {e}")
+            with colB:
+                if st.button("⚖️➡️📤 Run Risk Engine & Submit"):
+                    verdict = evaluate(proposal)
+                    if not verdict.approved:
+                        st.error("⛔ VETOED — order refused before it reached the broker.")
+                        for x in verdict.vetoes:
+                            st.markdown(f"- 🔴 {x}")
+                        journal.log_decision(mode="SHADOW", decision_type="VETOED", underlying=sym,
+                                             structure=kind, direction=proposal.direction, regime=reg["regime"],
+                                             regime_score=reg["score"], thesis=thesis,
+                                             risk_dollars=proposal.proposed_risk_dollars,
+                                             veto_reasons="; ".join(verdict.vetoes), status="N/A")
+                    else:
+                        try:
+                            resp = tc.place_order(order, verdict)
+                            st.success("✅ Sandbox order submitted.")
+                            st.json(resp)
+                            journal.log_decision(mode="SHADOW", decision_type="TRADE", underlying=sym,
+                                                 structure=kind, direction=proposal.direction,
+                                                 regime=reg["regime"], regime_score=reg["score"], thesis=thesis,
+                                                 risk_dollars=proposal.proposed_risk_dollars, status="OPEN")
+                        except OrderNotApprovedError as e:
+                            st.error(str(e))
+                        except Exception as e:
+                            st.error(f"Submit failed: {e}")
+        else:
+            st.info("Enter a symbol with an options chain to build a vertical (sandbox data is 15-min delayed).")
 
 st.sidebar.divider()
 st.sidebar.caption("Not financial advice. Decision-support software for a system in SHADOW validation. "

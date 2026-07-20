@@ -147,3 +147,14 @@ Plus **Playbooks** (FOMC, CPI, geopolitics, earnings clusters, summer liquidity,
 Architecture and roadmap: [`docs/QUANTUM_MAESTRO_ARCHITECTURE.md`](docs/QUANTUM_MAESTRO_ARCHITECTURE.md). Package: [`qm/`](qm/) — pure-Python, CI-tested (`tests/test_qm.py`). Journal state is local (`data/*.db`, gitignored); export CSV from the Journal page on Streamlit Cloud (ephemeral storage).
 
 > Still **SIMULATION / SHADOW ONLY**. The engine's core doctrine: *determine whether to trade before determining what to trade.* A prevented bad trade is a positive-expectancy event — and it gets journaled as one.
+
+### 🎫 Paper Desk — Tradier Sandbox (page 8)
+
+Sandbox-only execution: the adapter (`qm/broker_tradier.py`) pins its endpoint to `sandbox.tradier.com` — the production host does not exist in the codebase (CI-enforced test). Orders are **gated in code**: `place_order()` requires an approved `RiskVerdict`; a vetoed or missing verdict raises before any HTTP call. Vetoed submissions are journaled as `VETOED` decisions.
+
+Setup (Streamlit Cloud → App → Settings → Secrets):
+```toml
+TRADIER_SANDBOX_TOKEN = "your-sandbox-key"
+TRADIER_SANDBOX_ACCOUNT = "VAxxxxxxxx"   # optional; auto-resolved from profile if omitted
+```
+Sandbox constraints (per Tradier): $100k virtual funds, 15-minute delayed data, no streaming. If you regenerate the sandbox key, update the secret — nothing in the repo changes.
