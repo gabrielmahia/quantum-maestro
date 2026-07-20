@@ -26,9 +26,11 @@ _BASE = {
 class TradierAdapter:
     def __init__(self, env: str | None = None, token: str | None = None,
                  account_id: str | None = None, timeout: int = 15):
-        self.env = (env or os.getenv("TRADIER_ENV", "sandbox")).lower()
-        self.token = token or os.getenv("TRADIER_TOKEN", "")
-        self.account_id = account_id or os.getenv("TRADIER_ACCOUNT_ID", "")
+        from quantum_maestro import config as _cfg
+        creds = _cfg.tradier_credentials()
+        self.env = (env or creds["env"] or "sandbox").lower()
+        self.token = token or creds["token"] or ""
+        self.account_id = account_id or creds["account_id"] or ""
         self.timeout = timeout
         self._submitted_intent_ids: set[str] = set()   # duplicate-order lock (per process)
 
