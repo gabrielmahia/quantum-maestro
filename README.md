@@ -158,3 +158,15 @@ TRADIER_SANDBOX_TOKEN = "your-sandbox-key"
 TRADIER_SANDBOX_ACCOUNT = "VAxxxxxxxx"   # optional; auto-resolved from profile if omitted
 ```
 Sandbox constraints (per Tradier): $100k virtual funds, 15-minute delayed data, no streaming. If you regenerate the sandbox key, update the secret — nothing in the repo changes.
+
+### 📈 ThinkScript Suite (page 9 · `thinkscript/`)
+
+Chart-side proxies for ThinkOrSwim, surfaced in-app on page 9 with copy-paste code and install steps:
+
+- **TeriQuantumOsc_v2** (lower) — symmetric regime histogram, IV-rank premium bias, VIX9D/VIX stress, level-headroom-gated play label
+- **TQO_ChartOverlay** (upper) — buyer/seller zones, ATR extension band, on-chart setup card
+- **TQO_GuardRails** — settlement/event/DTE warnings (0DTE ban, event lockout, physical-settlement late-day close, anti-repair)
+- **TQO_WatchlistColumn** — regime score as a scannable colored cell across the whole watchlist
+- **TQO_LevelProximity** — "at a level with room?" scanner column for finding Teri setups
+
+Proxies only: the app's regime engine (breadth/oil/credit) is canonical; on disagreement, the app wins. Constants mirror `qm/config.py`. None place orders or read balances. Engineer handoff answering the design-doc's open questions: [`docs/TQO_Engineer_Handoff_Answers.md`](docs/TQO_Engineer_Handoff_Answers.md).

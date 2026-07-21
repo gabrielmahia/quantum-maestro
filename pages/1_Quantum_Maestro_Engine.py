@@ -58,6 +58,7 @@ page = st.sidebar.radio("Navigate", [
     "6 · Playbooks",
     "7 · Masters Library",
     "8 · Paper Desk (Tradier Sandbox)",
+    "9 · ThinkScript Suite",
 ])
 
 # ---------------------------------------------------------------- regime state
@@ -461,6 +462,44 @@ elif page.startswith("8"):
                             st.error(f"Submit failed: {e}")
         else:
             st.info("Enter a symbol with an options chain to build a vertical (sandbox data is 15-min delayed).")
+
+
+# ================================================================ PAGE 9
+elif page.startswith("9"):
+    st.header("ThinkScript Suite — chart-side proxies")
+    st.caption("Copy-paste studies for ThinkOrSwim. These are PROXIES — the app's regime engine "
+               "(breadth/oil/credit) is canonical; on disagreement, the app wins. None place orders "
+               "or read balances. Constants mirror qm/config.py.")
+
+    import glob as _glob
+    ts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "thinkscript"))
+    meta = {
+        "TeriQuantumOsc_v2.ts": ("Lower study", "Charts → Studies → Edit → Create",
+            "The oscillator: symmetric regime histogram, IV-rank premium bias, VIX9D/VIX stress, level-gated play label."),
+        "TQO_ChartOverlay.ts": ("Upper study", "Charts → Studies → Edit → Create",
+            "Buyer/seller zones (daily+weekly), ATR extension band, on-chart setup card (entry/stop/targets/R:R)."),
+        "TQO_GuardRails.ts": ("Study", "Charts → Studies → Edit → Create",
+            "Settlement/event/DTE warnings: 0DTE-ban notice, event lockout, physical-settlement late-day close, anti-repair."),
+        "TQO_WatchlistColumn.ts": ("Watchlist column", "Watchlist gear → Customize → Scripts → Create",
+            "Regime score compressed to a colored cell — scan the whole Teri list at once."),
+        "TQO_LevelProximity.ts": ("Watchlist column", "Watchlist gear → Customize → Scripts → Create",
+            "Is this name AT a level with room? Green = favorable-R:R candidate, gray = mid-range no-chase."),
+    }
+    readme = os.path.join(ts_dir, "README.md")
+    if os.path.exists(readme):
+        with st.expander("📋 Recommended layout & install notes"):
+            st.markdown(open(readme).read())
+
+    files = sorted(_glob.glob(os.path.join(ts_dir, "*.ts")))
+    if not files:
+        st.info("No ThinkScript files found in /thinkscript.")
+    for f in files:
+        base = os.path.basename(f)
+        kind, where, desc = meta.get(base, ("Study", "Charts → Studies", ""))
+        with st.expander(f"📈 {base}  ·  {kind}"):
+            st.caption(f"**Install:** {where}")
+            st.markdown(desc)
+            st.code(open(f).read(), language="c")
 
 st.sidebar.divider()
 st.sidebar.caption("Not financial advice. Decision-support software for a system in SHADOW validation. "
