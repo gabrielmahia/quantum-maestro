@@ -474,8 +474,11 @@ elif page.startswith("9"):
     import glob as _glob
     ts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "thinkscript"))
     meta = {
-        "TeriQuantumOsc_v2.ts": ("Lower study", "Charts → Studies → Edit → Create",
-            "The oscillator: symmetric regime histogram, IV-rank premium bias, VIX9D/VIX stress, level-gated play label."),
+        "TeriQuantumOsc_v3.ts": ("Lower study (recommended)", "Charts → Studies → Edit → Create",
+            "Regime / Location / Permission as separate outputs. Regime on an explicit daily aggregation (stable across "
+            "chart timeframes); prior-bar levels; de-duplicated momentum; missing-data suppression. Use v2 on weekly/monthly charts."),
+        "TeriQuantumOsc_v2.ts": ("Lower study (weekly/monthly)", "Charts → Studies → Edit → Create",
+            "Simpler single-composite oscillator. Retained for weekly/monthly charts where v3's daily secondary-aggregation is illegal."),
         "TQO_ChartOverlay.ts": ("Upper study", "Charts → Studies → Edit → Create",
             "Buyer/seller zones (daily+weekly), ATR extension band, on-chart setup card (entry/stop/targets/R:R)."),
         "TQO_GuardRails.ts": ("Study", "Charts → Studies → Edit → Create",
