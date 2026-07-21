@@ -12,8 +12,10 @@ config first, then mirror it here.
 
 | File | Type | Install location | What it does |
 |---|---|---|---|
-| `TeriQuantumOsc_v3.ts` | Lower study | Charts → Studies → Edit → new | **Recommended.** Regime / Location / Permission as separate outputs; regime computed on an explicit daily aggregation (stable across chart timeframes); prior-bar levels; de-duplicated momentum; missing-data suppression. See "v3 vs v2" below. |
-| `TeriQuantumOsc_v2.ts` | Lower study | Charts → Studies → Edit → new | Retained for **weekly/monthly charts**, where v3's daily secondary-aggregation is illegal. Simpler, single composite score. |
+| `TeriQuantumOsc_v4.ts` | Lower study | Charts → Studies → Edit → new | **Chart-adaptive.** Change the chart timeframe and everything recomputes on it (like RSI). Runs on any timeframe incl. weekly. Regime/Location/Permission split. Use when you want "regime at the timeframe I'm looking at." |
+| `TeriQuantumOsc_v3.ts` | Lower study | Charts → Studies → Edit → new | **Fixed-daily.** Always reads daily regime regardless of chart — a stable macro backdrop that doesn't wobble as you zoom. Breaks on weekly charts (daily secondary-agg illegal there). |
+| `TeriQuantumOsc_v2.ts` | Lower study | Charts → Studies → Edit → new | Simplest single-composite oscillator. Legacy; kept for reference. |
+| `TQO_RegimeColumn_v4.ts` | Watchlist column | Watchlist gear → Customize → Scripts → new | **Adaptive per-name regime.** Each row's regime score at the column's aggregation. Set column agg to Daily (stable) or Weekly (swing scan). Amber = volatility stress. |
 | `TQO_ChartOverlay.ts` | Upper study | Charts → Studies → Edit → new | Buyer/seller zones (daily + weekly), ATR extension band, on-chart setup card (entry/stop/targets/R:R) |
 | `TQO_GuardRails.ts` | Study | Charts → Studies → Edit → new | Settlement/event/DTE warnings: 0DTE-ban notice, event lockout, physical-settlement late-day close reminder, anti-repair reminder |
 | `TQO_WatchlistColumn.ts` | Watchlist column | Watchlist gear → Customize → Scripts → new | The regime score compressed to a colored cell — scan the whole Teri list at once |
@@ -51,3 +53,19 @@ v3 incorporates an external engineering review. Adopted, because they were right
 **The one place the review was wrong (and v3 corrects):** it proposed detecting a weekly chart and "falling back to the chart timeframe." ThinkScript enforces the secondary-aggregation rule at **compile time** — an illegal `close(period=DAY)` on a weekly chart is rejected whole; a runtime conditional cannot rescue it. So v3 instead pulls regime data at `regimeAggregation` unconditionally, and shows a loud WARNING label when the chart timeframe is >= the regime aggregation. **On weekly/monthly charts, either set `regimeAggregation` to WEEK/MONTH, or use v2.** That's why v2 is retained rather than deleted.
 
 **Kept configurable against the review:** `requiredHeadroomATR` stays at 0.5 (the review silently raised it to 1.0). 0.5 keeps equity-name setups tradable; raise to 1.0 for stricter index-only premium. A deliberate knob, not a hidden default.
+
+## v4 (adaptive) vs v3 (fixed-daily) — which lower study to run
+
+Both are correct; they answer different questions.
+
+**v4 — chart-adaptive (recommended for everyday use).** Every calculation inherits the chart's timeframe, exactly like a native RSI. Switch to weekly and trend/momentum/levels/IV recompute weekly; switch to 15-min and they recompute 15-min. Runs on *any* timeframe including weekly/monthly. Use it when the lower panel should describe "the regime **at the timeframe I'm trading**" — weekly swings off a weekly chart, intraday off a 15-min. Tradeoff: a weekly score and a 5-min score are different instruments; don't compare their absolute values.
+
+**v3 — fixed-daily.** Ignores the chart and always reads *daily* regime. Correct behavior for the question "what is the macro backdrop today," whose answer shouldn't change based on whether you're staring at a 5-min or a daily chart. Cost: it uses daily secondary aggregation, which ThinkScript forbids on weekly/monthly charts (compile error there).
+
+**Rule of thumb:** run **v4** as your lower study since it matches how you navigate timeframes. Keep v3's *concept* for the app's canonical engine, which is genuinely daily-fixed for the right reason. The app engine — not any chart study — remains authoritative for sizing and the promotion gate.
+
+**On very low timeframes (1-5 min):** `imp_volatility()` and VIX9D get sparse, so v4's IV Rank / 9D30D labels may read "unavailable" / "N/A" more often. That's the missing-data suppression working — a blank beats a fabricated number.
+
+### Adaptive watchlist column
+
+`TQO_RegimeColumn_v4` shows each name's regime score in a single colored cell, computed on that row's own symbol at the column's aggregation. Set the column aggregation to **Daily** for a stable per-name regime, or **Weekly** to scan weekly-swing regime across Teri's whole list at once. Amber cell = volatility stress present (act defensively regardless of score). Pair with `TQO_LevelProximity` and sort to surface names that are both in-regime and sitting at a level with room.
