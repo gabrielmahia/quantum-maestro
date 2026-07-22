@@ -55,7 +55,7 @@ def rrShort = distToBuyer / Max(distToSeller, 0.01);
 
 # Setup card
 AddLabel(showSetupCard,
-    "TQO SETUP — " + GetSymbol(), Color.WHITE);
+    "TQO SETUP - " + GetSymbol(), Color.WHITE);
 AddLabel(showSetupCard,
     "Room: up " + Round(distToSeller, 1) + " ATR / down " + Round(distToBuyer, 1) + " ATR",
     Color.LIGHT_GRAY);
@@ -67,14 +67,14 @@ AddLabel(showSetupCard,
         "SHORT candidate: entry ~" + Round(close, 2) + " stop >" + Round(dSeller, 2) +
         " T1 " + Round(dBuyer, 2) + "  R:R " + Round(rrShort, 1)
     else if atSupport or atResistance then
-        "AT LEVEL but R:R < " + minRR + " — no chase (Teri)"
-    else "MID-RANGE — wait for a buyer/seller zone",
+        "AT LEVEL but R:R < " + minRR + " - no chase (Teri)"
+    else "MID-RANGE - wait for a buyer/seller zone",
     if (atSupport and rrLong >= minRR) then Color.GREEN
     else if (atResistance and rrShort >= minRR) then Color.RED
     else if (atSupport or atResistance) then Color.YELLOW
     else Color.GRAY);
 AddLabel(showSetupCard,
-    "Extended? " + (if close > ExtHigh then "YES — overbought, don't chase"
-                    else if close < ExtLow then "YES — oversold extension"
-                    else "no — within bands"),
+    "Extended? " + (if close > ExtHigh then "YES - overbought, don't chase"
+                    else if close < ExtLow then "YES - oversold extension"
+                    else "no - within bands"),
     if close > ExtHigh or close < ExtLow then Color.ORANGE else Color.GRAY);

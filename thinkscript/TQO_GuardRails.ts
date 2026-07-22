@@ -19,15 +19,15 @@ AddLabel(yes,
 
 # --- Event lockout ---
 AddLabel(eventLockout,
-    "EVENT LOCKOUT ACTIVE — no new short premium. Long hedges only.",
+    "EVENT LOCKOUT ACTIVE - no new short premium. Long hedges only.",
     Color.RED);
 Alert(eventLockout and !eventLockout[1], "TQO: event lockout activated", Alert.BAR, Sound.Ring);
 
 # --- Settlement warning ---
 AddLabel(yes,
     if isPhysicallySettled then
-        "PHYSICAL SETTLEMENT — assignment/exercise risk. Close spreads before expiry."
-    else "CASH SETTLED (SPX-style) — no assignment, but a.m. settlement risk on expiry day.",
+        "PHYSICAL SETTLEMENT - assignment/exercise risk. Close spreads before expiry."
+    else "CASH SETTLED (SPX-style) - no assignment, but a.m. settlement risk on expiry day.",
     if isPhysicallySettled then Color.YELLOW else Color.GRAY);
 
 # --- Late-day close reminder for expiring physically-settled spreads ---

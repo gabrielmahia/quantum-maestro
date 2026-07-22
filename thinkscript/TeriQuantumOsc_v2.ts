@@ -120,12 +120,12 @@ BearThreshold.HideBubble();
 
 # ── Labels (aligned with app vocabulary) ───────────────────────────
 AddLabel(yes,
-    if eventBlackout then "QM: LOCKDOWN — event blackout set"
+    if eventBlackout then "QM: LOCKDOWN - event blackout set"
     else if totalScore >= 6 then "QM: OFFENSIVE (1.0x)"
     else if totalScore >= 3 then "QM: NEUTRAL+ (0.6x)"
-    else if totalScore <= -6 then "QM: LOCKDOWN (0x) — cash"
+    else if totalScore <= -6 then "QM: LOCKDOWN (0x) - cash"
     else if totalScore <= -3 then "QM: DEFENSIVE (0.3x)"
-    else "QM: NEUTRAL (0.6x) — A-grade setups only",
+    else "QM: NEUTRAL (0.6x) - A-grade setups only",
     if eventBlackout then Color.DARK_ORANGE
     else if totalScore >= 6 then Color.GREEN
     else if totalScore >= 3 then Color.LIGHT_GREEN
@@ -135,20 +135,20 @@ AddLabel(yes,
 AddLabel(yes, "Score " + totalScore + "  (T " + trendScore + " / M " + momentumScore + " / V " + vixScore + ")", Color.WHITE);
 AddLabel(yes, "VIX " + Round(vix, 2) + "  9D/30D " + Round(stressRatio, 2),
     if stressRatio > 1.02 then Color.RED else if vix < vixCaution then Color.GREEN else Color.YELLOW);
-AddLabel(yes, "IV Rank " + Round(ivRank, 0) + (if premiumRich then " — SELL premium" else if premiumCheap then " — BUY premium" else " — mixed"),
+AddLabel(yes, "IV Rank " + Round(ivRank, 0) + (if premiumRich then " - SELL premium" else if premiumCheap then " - BUY premium" else " - mixed"),
     if premiumRich then Color.ORANGE else if premiumCheap then Color.CYAN else Color.GRAY);
 AddLabel(yes, "Room: up " + Round(roomUp, 1) + " ATR / down " + Round(roomDown, 1) + " ATR", Color.LIGHT_GRAY);
 
 # ── Structure suggestion: regime x IV rank x level headroom ────────
 AddLabel(yes,
-    if eventBlackout then "Play: NONE — no new short premium into events"
-    else if totalScore >= 3 and !bullEntryOK then "Play: WAIT — bullish but <" + levelBufferATR + " ATR under seller level (Teri: bad R:R)"
+    if eventBlackout then "Play: NONE - no new short premium into events"
+    else if totalScore >= 3 and !bullEntryOK then "Play: WAIT - bullish but <" + levelBufferATR + " ATR under seller level (Teri: bad R:R)"
     else if totalScore >= 3 and premiumRich then "Play: Put Credit Spread below buyer level (7-45 DTE)"
     else if totalScore >= 3 and premiumCheap then "Play: Bull Call Spread / 60+DTE Calls (IV cheap)"
     else if totalScore >= 3 then "Play: Bull Call Spread (defined risk)"
-    else if totalScore <= -3 and !bearEntryOK then "Play: WAIT — bearish but <" + levelBufferATR + " ATR above buyer level"
-    else if totalScore <= -6 then "Play: CASH / long hedges only — no short premium in stress"
+    else if totalScore <= -3 and !bearEntryOK then "Play: WAIT - bearish but <" + levelBufferATR + " ATR above buyer level"
+    else if totalScore <= -6 then "Play: CASH / long hedges only - no short premium in stress"
     else if totalScore <= -3 and premiumCheap then "Play: Bear Put Spread (0.3x) / hedges"
     else if totalScore <= -3 then "Play: reduce size, prefer cash; CCS only at 0.3x with headroom"
-    else "Play: WAIT — no edge (cash is a position)",
+    else "Play: WAIT - no edge (cash is a position)",
     Color.CYAN);

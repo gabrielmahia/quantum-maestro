@@ -69,3 +69,17 @@ Both are correct; they answer different questions.
 ### Adaptive watchlist column
 
 `TQO_RegimeColumn_v4` shows each name's regime score in a single colored cell, computed on that row's own symbol at the column's aggregation. Set the column aggregation to **Daily** for a stable per-name regime, or **Weekly** to scan weekly-swing regime across Teri's whole list at once. Amber cell = volatility stress present (act defensively regardless of score). Pair with `TQO_LevelProximity` and sort to surface names that are both in-regime and sitting at a level with room.
+
+## v4.1 fix — the "all N/A" bug (2026-07)
+
+Symptom: on an equity chart (e.g. AAPL/NASDAQ), every label read N/A — Score N/A, VIX unavailable, IV Rank N/A, Headroom N/A — even though the study loaded.
+
+Root cause: the `$SPX.X` / `$VIX.X` / `$VIX9D.X` symbol form did not resolve/align as a secondary symbol on the equity chart, returning `NaN`. Because every label was gated on a `*DataOK` flag, one failed pull cascaded the *entire* study to N/A.
+
+Two fixes:
+1. **Bare symbol strings** (`"SPX"`, `"VIX"`, `"VIX9D"`) — these resolve reliably as secondaries (matching how working ThinkScript community studies reference `close("vix")` etc.). Applied across v3, v4, and the regime column.
+2. **Graceful degradation** — trend and momentum are price-driven and now always compute. If the VIX/VIX9D/IV feeds are missing, only those components drop to 0 and their own labels say "unavailable"; the regime score still works off price. A missing vol feed no longer blanks the whole study. v4 also falls back to the chart symbol (with a visible NOTE label) if `marketSymbol` itself won't resolve.
+
+If VIX/VIX9D still read "unavailable" in your data package, the study remains fully functional on price alone — the volatility contribution simply stays neutral until the feed is available.
+
+All label strings are ASCII-only (em-dashes → hyphens) to avoid ToS string-render quirks.
