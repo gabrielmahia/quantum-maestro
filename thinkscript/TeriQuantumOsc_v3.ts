@@ -13,7 +13,8 @@
 #    the same thing a third time). Bounded to +/-2.
 #  - Missing IV/VIX data suppresses the recommendation instead of faking
 #    a neutral value.
-#  - Explicit index symbols ($SPX.X / $VIX.X / $VIX9D.X).
+#  - Bare index symbols (SPX / VIX / VIX9D) resolve reliably as secondaries;
+#    the $XXX.X form could return NaN on equity charts and blank the study.
 #
 # Added beyond the review (neither v2 nor the review handled this):
 #  - AGGREGATION GUARD: on weekly/monthly charts a DAY secondary
@@ -29,9 +30,9 @@
 declare lower;
 
 # ── Symbols ─────────────────────────────────────────────────────────
-input marketSymbol = "$SPX.X";
-input vixSymbol    = "$VIX.X";
-input vix9dSymbol  = "$VIX9D.X";
+input marketSymbol = "SPX";
+input vixSymbol    = "VIX";
+input vix9dSymbol  = "VIX9D";
 
 # ── Regime timeframe (independent of chart timeframe) ───────────────
 input regimeAggregation = AggregationPeriod.DAY;
