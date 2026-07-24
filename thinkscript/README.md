@@ -97,3 +97,26 @@ Three corrections to the v4.2 rewrite:
 **VIX label now says "VIX spot"** to prevent a real-world confusion: `VX[U26]`-style watchlist symbols are **VIX futures**, which trade at a premium to spot in contango. A study reading spot ~18 while the watchlist shows a Sept future at ~19 is correct behavior, not a data error.
 
 Kept from v4.2 (genuine improvements): breakout-aware location scoring, IV fail-soft fallback with the honest "IV Position" naming (it is chart-window position, not standardized annual IV rank), MODE label, IV SOURCE label, and edge-triggered alerts.
+
+## v4.4 — the instrument was missing
+
+Found by running v4.3 on an AAP chart: the output was **byte-identical to the SPX chart** — same trend, same momentum, same headroom (+2.10 / −2.00 ATR), and `IV SOURCE: SPX`. With `useMarketData = yes`, every layer read the index. Nothing on screen described the name actually being traded.
+
+That conflates two different questions. Teri's method asks them separately, so v4.4 does too:
+
+| Layer | Source | Question |
+|---|---|---|
+| REGIME | index (`marketSymbol`) | Should I be trading at all? |
+| LOCATION | **chart symbol** | Where are *this name's* buyer/seller levels, is there room? |
+| PREMIUM | **chart symbol IV** | Is *this name's* premium rich or cheap? |
+| PERMISSION | events, vol, earnings, ex-div | May I act? |
+
+Index IV is irrelevant when pricing an AAP spread, and index levels tell you nothing about where to enter AAP.
+
+**Three gates added that were entirely missing for equities:**
+
+- **Earnings proximity** (`GetEventOffset(Events.EARNINGS, 0)`) — blocks short premium inside `earningsBlackoutDays` (default 7) and drops permission to DEFENSIVE. Requires a DAILY chart; the label says so when it can't read.
+- **Ex-dividend proximity** (`Events.DIVIDEND`) — early-assignment warning on short calls, the classic way a "defined-risk" equity spread stops being defined.
+- **Relative strength vs the index** — Teri buys leaders in an uptrend. A bullish regime on a name that *lags* the index now returns WAIT, as does a bearish regime on a name that leads.
+
+The header label now names both sources explicitly (`REGIME SRC: SPX  INSTRUMENT: AAP`) so this class of confusion can't recur silently.
