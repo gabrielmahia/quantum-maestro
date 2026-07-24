@@ -83,3 +83,17 @@ Two fixes:
 If VIX/VIX9D still read "unavailable" in your data package, the study remains fully functional on price alone — the volatility contribution simply stays neutral until the feed is available.
 
 All label strings are ASCII-only (em-dashes → hyphens) to avoid ToS string-render quirks.
+
+## v4.3 — symmetry fix + robust warm-up (supersedes v4.2)
+
+Three corrections to the v4.2 rewrite:
+
+1. **Warm-up detection tests the computed series, not bar offsets.** v4.2 used `mClose[momentumLookback - 1]` where the offset was a `def`-derived value. ThinkScript expects constant offsets, so this is fragile across builds. v4.3 instead tests `!IsNaN(smaSlow)`, `!IsNaN(macdSignal)`, `!IsNaN(sellerLevel)` — direct, safer, and it catches the real failure (a moving average that hasn't accumulated enough bars) rather than a proxy for it.
+
+2. **The regime score is symmetric again.** v4.2 folded `calmBonus` into the directional score, giving a range of **+7 / −6** against ±4 thresholds — structurally easier to read "very bullish" than "very bearish." Volatility calm is not directional evidence. v4.3 scores `trend + momentum` only, range **[−6, +6]**, and volatility acts where it belongs: the VIX label and the PERMISSION engine. This is the same "symmetric measurement, asymmetric policy" rule as the engineer handoff doc.
+
+3. **`calmContango` relaxed 0.92 → 0.95.** At a 9D/30D of 0.93 — healthy contango — v4.2 read "not calm" by a hair. 0.95 is a more sensible boundary for a calm term structure.
+
+**VIX label now says "VIX spot"** to prevent a real-world confusion: `VX[U26]`-style watchlist symbols are **VIX futures**, which trade at a premium to spot in contango. A study reading spot ~18 while the watchlist shows a Sept future at ~19 is correct behavior, not a data error.
+
+Kept from v4.2 (genuine improvements): breakout-aware location scoring, IV fail-soft fallback with the honest "IV Position" naming (it is chart-window position, not standardized annual IV rank), MODE label, IV SOURCE label, and edge-triggered alerts.
