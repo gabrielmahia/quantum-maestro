@@ -20,9 +20,9 @@ EasyStockTrader is structured around Teri Ijeoma's 7-step Invest With Teri (IWT)
 | IWT Lesson | Implementation |
 |------------|----------------|
 | **Lesson 1** — Pick good companies, not just good stories | Company quality ≠ trade quality: IWT scorecard separates fundamental score from entry timing |
-| **Lesson 2** — Never trade without a stop loss | Structural stop (0.5× ATR below support) — not arbitrary % |
+| **Lesson 2** — Never trade without a stop loss | Structural stop below the zone — see note on ATR conventions below |
 | **Lesson 3** — Don't chase plays | Late-entry gate: flags when price is >2% above the level |
-| **Lesson 5** — 1% of capital as the daily target | Session P&L tracker shows progress vs 1% goal in real time |
+| **Lesson 5** — Risk a fixed fraction; cap the downside | Session P&L tracker vs the -2% daily circuit-breaker (risk cap), NOT a profit quota |
 | **Lesson 6** — Chart reading: candlesticks, formations, buyer/seller zones | Buyers zone / sellers zone displayed with every ticker scan |
 | **Lesson 7** — Emotional discipline through systems | Hard NO-TRADE gate blocks entries when conditions fail — system decides, not emotion |
 | **Lesson 8** — Trade a curated watchlist | IWT 30-stock watchlist enforcement: off-watchlist tickers trigger a warning and 2-week paper period |
@@ -38,21 +38,24 @@ Every trade now generates a structured card BEFORE execution:
 
 ```
 ENTRY ZONE:  $95.00–$95.48  (at support, not above it)
-STOP LOSS:   $94.25         (0.5× ATR below support — structural)
+STOP LOSS:   $94.25         (structural: below support, ATR-buffered)
 TARGET:      $115.00        (resistance = natural seller zone)
-R:R RATIO:   4.00:1         ✅ (minimum 2:1 required)
-SHARES:      10             (so max loss = $100 = 1% of $10,000)
-PROFIT:      $1,980         (198% of daily 1% goal)
+R:R RATIO:   4.00:1         (minimum 2:1 required)
+SHARES:      10             (so max loss = 1R = 1% of $10,000)
+IF TARGET:   +4.0R           (illustrative; NOT a forecast or income target)
 ```
 
 ### Watchlist Discipline Gate
 Warns when trading off the IWT 30-stock watchlist. Deep familiarity
 with how a stock behaves is worth more than scanning 500 tickers.
 
-### Session P&L as % of Capital
-Real-time tracker showing daily P&L vs the 1% capital target ($100 on $10k).
+### Session P&L vs the risk circuit-breaker
+Real-time tracker showing daily P&L against the **-2% daily loss circuit-breaker** (the
+hard stop), not a profit quota. Doctrine is risk-first: you control the downside; the
+upside is whatever the market gives. A "1% day" is one possible outcome, never a target
+to chase — chasing a daily profit number is how disciplined traders start forcing trades.
 Stop-trading signals fire automatically at:
-- ✅ Daily goal met → close platform, protect the win
+- Daily loss limit hit (-2%) → close platform, preserve capital
 - 🛑 2× daily goal in losses → stand aside, review tomorrow
 
 ### No-Trade Hard Gate
@@ -170,3 +173,13 @@ Chart-side proxies for ThinkOrSwim, surfaced in-app on page 9 with copy-paste co
 - **TQO_LevelProximity** — "at a level with room?" scanner column for finding Teri setups
 
 Proxies only: the app's regime engine (breadth/oil/credit) is canonical; on disagreement, the app wins. Constants mirror `qm/config.py`. None place orders or read balances. Engineer handoff answering the design-doc's open questions: [`docs/TQO_Engineer_Handoff_Answers.md`](docs/TQO_Engineer_Handoff_Answers.md).
+
+---
+
+## Notes on conventions (reconciliation)
+
+**Two different ATR quantities — don't conflate them.** The app's IWT Setup Card uses ATR to *place a stop a sensible distance below support* (a stop-distance heuristic). The research module `qm/iwt_zones.py` uses a smaller **0.20 ATR buffer** meaning "how far *beyond* the zone's distal edge to place the stop." Different jobs: one sets the stop's overall distance, the other adds a cushion past the zone boundary. Both are configurable; neither is "the" ATR rule.
+
+**`backtest_results.json` is illustrative, not validated.** It contains a single generated comparison over one 252-day window. It is NOT walk-forward, NOT out-of-sample tested, and its zone logic is the unvalidated mechanical proxy described in `research/IWT_BACKTEST_ASSESSMENT.md`. Treat it as a demo of the reporting format, not as evidence of edge. The promotion gate deliberately ignores it and requires live shadow-mode expectancy instead.
+
+**"1%" appears in two unrelated roles.** (1) *Risk per trade* = 1% of equity × regime × cohort multipliers — a **cap on downside**. (2) Any "1% day" in older copy is an *illustrative outcome*, never a profit target. Doctrine is risk-first: control the loss, let the market decide the gain.

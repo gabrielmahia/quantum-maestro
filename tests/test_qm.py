@@ -70,7 +70,7 @@ def test_iron_condor_banned_in_defensive():
 
 def test_kelly_negative_means_no_edge():
     k = kelly_fraction(0.40, 1.0)
-    assert k["edge_exists"] is False and k["quarter_kelly"] == 0.0
+    assert k["edge_exists"] is False and k["fractional_kelly"] == 0.0
 
 
 def test_defensive_sizer_refuses_unaffordable_contract():
@@ -86,3 +86,32 @@ def test_journal_roundtrip_and_gate_locked():
     s = journal.stats()
     assert s["closed_trades"] >= 1 and s["expectancy_r"] > 0
     assert journal.evaluate_gate()["promotable"] is False  # small sample must never promote
+
+
+def test_cohort_sizing_combines_multiplicatively():
+    from qm.sizing import final_size
+    # 1% x regime 0.60 (NEUTRAL) x cohort 0.50 (SECONDARY) = 0.30%
+    r = final_size(10000, "NEUTRAL", max_loss_per_contract=150, cohort="SECONDARY")
+    assert abs(r["effective_risk_pct"] - 0.003) < 1e-9
+    assert r["combined_multiplier"] == 0.3
+
+
+def test_rejected_cohort_is_zero_size():
+    from qm.sizing import final_size
+    r = final_size(10000, "OFFENSIVE", max_loss_per_contract=150, cohort="REJECTED")
+    assert r["effective_risk_pct"] == 0.0
+
+
+def test_correlation_multiplier_clamped():
+    from qm.sizing import final_size
+    r = final_size(10000, "OFFENSIVE", max_loss_per_contract=150,
+                   cohort="PRIMARY", correlation_multiplier=1.5)  # >1 clamps to 1
+    assert r["correlation_multiplier"] == 1.0
+
+
+def test_kelly_single_cap_no_dead_var():
+    from qm.sizing import kelly_fraction
+    k = kelly_fraction(0.55, 2.0)
+    assert "fractional_kelly" in k and "quarter_kelly" not in k
+    assert k["cap_used"] == 0.25
+    assert abs(k["fractional_kelly"] - k["full_kelly"] * 0.25) < 0.001

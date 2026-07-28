@@ -47,12 +47,14 @@ def kelly_fraction(win_rate: float, avg_win_r: float, avg_loss_r: float = 1.0) -
         return {"error": "Need 0<W<1 and positive avg loss."}
     b = avg_win_r / avg_loss_r
     f_star = win_rate - (1 - win_rate) / b
-    capped = max(0.0, min(f_star * LIMITS.KELLY_FRACTION_CAP / 0.25 * 0.25, f_star)) if f_star > 0 else 0.0
-    # quarter-Kelly:
-    quarter = max(0.0, f_star * 0.25)
+    # Single authoritative cap: fractional Kelly = f* * KELLY_FRACTION_CAP,
+    # floored at zero. With CAP=0.25 this IS quarter-Kelly; changing the cap
+    # in config is the ONLY way to change sizing aggression. No hidden second cap.
+    fractional = max(0.0, f_star * LIMITS.KELLY_FRACTION_CAP)
     return {
         "full_kelly": round(f_star, 4),
-        "quarter_kelly": round(quarter, 4),
+        "fractional_kelly": round(fractional, 4),
+        "cap_used": LIMITS.KELLY_FRACTION_CAP,
         "edge_exists": f_star > 0,
         "note": ("Negative Kelly => you have NO edge at these stats; correct size is zero. "
                  if f_star <= 0 else
@@ -61,12 +63,28 @@ def kelly_fraction(win_rate: float, avg_win_r: float, avg_loss_r: float = 1.0) -
     }
 
 
+# Zone-cohort multipliers (mirror qm/iwt_zones.odds_enhancer)
+COHORT_MULTIPLIER = {"PRIMARY": 1.0, "SECONDARY": 0.5, "REJECTED": 0.0}
+
+
 def final_size(account_equity: float, regime: str, entry: float = 0.0, stop: float = 0.0,
                max_loss_per_contract: float = 0.0, win_rate: float = None,
-               avg_win_r: float = None) -> dict:
-    mult = LIMITS.REGIME_MULTIPLIER.get(regime, 0.0)
+               avg_win_r: float = None, cohort: str = "PRIMARY",
+               correlation_multiplier: float = 1.0) -> dict:
+    """Effective risk = base_risk x regime_mult x cohort_mult x correlation_mult.
+    A SECONDARY zone in a NEUTRAL regime => 1% x 0.60 x 0.50 = 0.30%.
+    Deterministic; every multiplier is explicit and logged."""
+    regime_mult = LIMITS.REGIME_MULTIPLIER.get(regime, 0.0)
+    cohort_mult = COHORT_MULTIPLIER.get(cohort, 0.0)
+    corr_mult = max(0.0, min(1.0, correlation_multiplier))
+    mult = regime_mult * cohort_mult * corr_mult
     risk_pct = LIMITS.MAX_RISK_PCT_PER_TRADE * mult
-    out = {"regime": regime, "regime_multiplier": mult, "effective_risk_pct": risk_pct}
+    out = {"regime": regime, "regime_multiplier": regime_mult,
+           "cohort": cohort, "cohort_multiplier": cohort_mult,
+           "correlation_multiplier": corr_mult,
+           "combined_multiplier": round(mult, 4), "effective_risk_pct": round(risk_pct, 5)}
+    if cohort_mult == 0.0:
+        out["note"] = "REJECTED cohort => zero size. A weak zone is a no-trade regardless of regime."
 
     if max_loss_per_contract > 0:
         out["fixed_risk"] = fixed_risk_contracts(account_equity, risk_pct, max_loss_per_contract)
