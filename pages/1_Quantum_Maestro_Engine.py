@@ -59,6 +59,7 @@ page = st.sidebar.radio("Navigate", [
     "7 · Masters Library",
     "8 · Paper Desk (Tradier Sandbox)",
     "9 · ThinkScript Suite",
+    "10 · IWT Zone Scorer",
 ])
 
 # ---------------------------------------------------------------- regime state
@@ -509,6 +510,58 @@ elif page.startswith("9"):
             st.caption(f"**Install:** {where}")
             st.markdown(desc)
             st.code(open(f).read(), language="c")
+
+
+# ================================================================ PAGE 10
+elif page.startswith("10"):
+    st.header("IWT Zone Scorer - eight-point odds enhancer")
+    st.caption("Teri's zone-quality decomposition as a checklist. Score 7-8 = primary cohort (full size); "
+               "5-6 = secondary (half size, needs confirmation); 0-4 = skip. Research proxy - see "
+               "research/IWT_BACKTEST_ASSESSMENT.md for what this does and doesn't prove.")
+    from qm.iwt_zones import odds_enhancer, frame_trade
+
+    st.subheader("a) Score the zone")
+    c1, c2 = st.columns(2)
+    with c1:
+        base_candles = st.number_input("Base candles (tighter = stronger)", 1, 12, 2)
+        departure = st.slider("Departure strength (x ATR)", 0.0, 3.0, 1.6, 0.1,
+                              help="Body of the departure candle as a multiple of ATR. >=1.5 fast, >=0.75 average.")
+    with c2:
+        prior_visits = st.number_input("Prior visits (BEFORE this entry touch)", 0, 10, 0,
+                                       help="Look-ahead control: do not count the current entry touch.")
+        st.caption("Reward:risk is computed from the trade frame below.")
+
+    st.subheader("b) Frame the trade (for reward:risk)")
+    direction = st.radio("Direction", ["long", "short"], horizontal=True)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: proximal = st.number_input("Proximal (entry edge)", value=100.0)
+    with c2: distal = st.number_input("Distal (far edge)", value=98.0 if direction=="long" else 102.0)
+    with c3: target = st.number_input("Target (opposing zone)", value=110.0 if direction=="long" else 90.0)
+    with c4: atr = st.number_input("ATR", value=1.0, min_value=0.01)
+    atr_buffer = st.slider("ATR stop buffer", 0.0, 1.0, 0.20, 0.05)
+
+    trade = frame_trade(direction, proximal, distal, target, atr, atr_buffer)
+    if not trade.is_valid():
+        st.error("Trade geometry is invalid (for a long need stop < entry < target). Check your levels.")
+    else:
+        result = odds_enhancer(base_candles, departure, prior_visits, trade.reward_risk)
+        color = {"PRIMARY": "green", "SECONDARY": "orange", "REJECTED": "red"}[result["cohort"]]
+        st.markdown(f"### Score: :{color}[{result['score']}/8]  -  {result['cohort']} cohort")
+        st.info(f"{result['action']}   (size multiplier {result['size_multiplier']}x)")
+        pc = result["parts"]
+        st.dataframe(pd.DataFrame([
+            {"Factor": "Base candles", "Value": base_candles, "Points": pc["base"]},
+            {"Factor": "Departure (xATR)", "Value": round(departure, 2), "Points": pc["departure"]},
+            {"Factor": "Freshness (prior visits)", "Value": prior_visits, "Points": pc["freshness"]},
+            {"Factor": "Reward:risk", "Value": round(trade.reward_risk, 2), "Points": pc["reward_risk"]},
+        ]), hide_index=True, use_container_width=True)
+        st.caption(f"Entry {trade.entry:.2f} - Stop {trade.stop:.2f} - Target {trade.target:.2f} - "
+                   f"R:R {trade.reward_risk:.2f} - risk/share {trade.risk:.2f}")
+
+        if result["cohort"] != "REJECTED":
+            st.warning("Cohort discipline: log 7-8 and 5-6 trades as SEPARATE cohorts in the journal - never "
+                       "combine them, or a strong cohort's edge gets diluted by a weak one. This scorer is a "
+                       "PROXY for Teri's manual zones; that proxy is not yet validated against hand-marked examples.")
 
 st.sidebar.divider()
 st.sidebar.caption("Not financial advice. Decision-support software for a system in SHADOW validation. "
