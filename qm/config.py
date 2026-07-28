@@ -48,7 +48,9 @@ class HardLimits:
     })
 
     # --- Kelly ---
-    KELLY_FRACTION_CAP: float = 0.25          # never exceed quarter-Kelly
+    KELLY_FRACTION_CAP: float = 0.25          # fractional-Kelly = f* x this. 0.25 = quarter-Kelly.
+                                              # This is the SINGLE authoritative Kelly cap — sizing.py
+                                              # multiplies f* by it directly, no hidden second cap.
 
 
 @dataclass(frozen=True)

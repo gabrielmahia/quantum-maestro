@@ -561,6 +561,17 @@ elif page.startswith("10"):
                    f"R:R {trade.reward_risk:.2f} - risk/share {trade.risk:.2f}")
 
         if result["cohort"] != "REJECTED":
+            st.subheader("c) Cohort-aware position size")
+            from qm.sizing import final_size
+            reg = st.session_state.regime_result
+            fs = final_size(equity, reg["regime"], entry=trade.entry, stop=trade.stop,
+                            cohort=result["cohort"])
+            st.caption(f"Effective risk = 1% x regime {fs['regime_multiplier']} ({reg['regime']}) "
+                       f"x cohort {fs['cohort_multiplier']} ({result['cohort']}) "
+                       f"= **{fs['effective_risk_pct']*100:.2f}%** of ${equity:,.0f} "
+                       f"= ${equity*fs['effective_risk_pct']:,.0f} at risk")
+            if "fixed_risk" in fs and "shares" in fs.get("fixed_risk", {}):
+                st.caption(f"Shares: {fs['fixed_risk']['shares']} (fixed-risk, regime+cohort scaled)")
             st.warning("Cohort discipline: log 7-8 and 5-6 trades as SEPARATE cohorts in the journal - never "
                        "combine them, or a strong cohort's edge gets diluted by a weak one. This scorer is a "
                        "PROXY for Teri's manual zones; that proxy is not yet validated against hand-marked examples.")
