@@ -475,6 +475,8 @@ elif page.startswith("9"):
     import glob as _glob
     ts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "thinkscript"))
     meta = {
+        "TeriQuantumOsc_v5.ts": ("Lower study (latest)", "Charts → Studies → Edit → Create",
+            "v4.4 + on-chart eight-point ZONE ODDS enhancer: scores the most recent zone base/departure/freshness/reward-risk into PRIMARY(7-8)/SECONDARY(5-6)/SKIP. Mirrors qm/iwt_zones.py and page 10."),
         "TeriQuantumOsc_v4.ts": ("Lower study (adaptive)", "Charts → Studies → Edit → Create",
             "Chart-adaptive: change the chart timeframe and everything recomputes on it (like RSI). Runs on any timeframe "
             "including weekly. Regime/Location/Permission split. Use when you want 'regime at the timeframe I'm looking at.'"),
