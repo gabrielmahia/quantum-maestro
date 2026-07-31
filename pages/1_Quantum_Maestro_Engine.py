@@ -478,6 +478,8 @@ elif page.startswith("9"):
     meta = {
         "TeriQuantumZones_v5_1.ts": ("Upper study (zones)", "Charts → Studies → Edit → Create",
             "Draws buyer/seller ZONES on price with rec-state persistence, U/Chair approach detection, distinct-revisit counting, and canonical 7-8/5-6/0-4 cohorts. Bug-fixed from a v5.0 draft (base>=5, thresholds, secondary cohort, repainting). Complements the lower TeriQuantumOsc; mechanical PROXY, not validated."),
+        "TeriQuantumOsc_v4_6.ts": ("Lower study (definitive)", "Charts → Studies → Edit → Create",
+            "v4.4 + v5 odds enhancer + canonical alignment: freshness matches the course table (1+ visits=0), on-chart order-type intent (entry/exit LIMIT, stop STOP-MKT), and the >3 TAKE THE TRADE reward:risk gate. The definitive lower-panel study."),
         "TeriQuantumOsc_v5.ts": ("Lower study (latest)", "Charts → Studies → Edit → Create",
             "v4.4 + on-chart eight-point ZONE ODDS enhancer: scores the most recent zone base/departure/freshness/reward-risk into PRIMARY(7-8)/SECONDARY(5-6)/SKIP. Mirrors qm/iwt_zones.py and page 10."),
         "TeriQuantumOsc_v4.ts": ("Lower study (adaptive)", "Charts → Studies → Edit → Create",
