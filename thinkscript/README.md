@@ -141,3 +141,14 @@ It began as a v5.0 draft with six real bugs, all fixed in v5.1:
 6. **TR-departure caution** — default stays body (a long-wick rejection bar shouldn't count as a strong departure); a label warns when TR mode is enabled.
 
 Zone detection remains a mechanical PROXY for Teri's discretionary reading — a decision aid, not a signal, and still unvalidated against hand-marked zones.
+
+## Recommended layout: draw-only upper + oscillator lower (Bollinger-style)
+
+The cleanest way to run the suite, mirroring how Bollinger Bands (on price) pair with an oscillator (below):
+
+- **Upper / on price:** `TeriQuantumMaestro_v6_ChartDraw` — draws buyer/seller zones, clouds, and entry/stop/target levels, and stays quiet. Read the zones like band edges: is price at the edge, is there room to the opposing zone. One optional info line names the regime source; nothing else competes with the candles.
+- **Lower / own panel:** `TeriQuantumOsc_v4_6` — the regime histogram plus every readout: permission state, eight-point odds score, relative strength, earnings/ex-div, canonical order-type intent, and the setup verdict.
+
+The lower study owns alerting, so the draw-only upper has its alerts removed — no double alerts. The two share identical canonical logic, so they always agree: glance down for *whether* (regime/permission), up for *where* (zones/levels).
+
+`TeriQuantumMaestro_v6` (the full self-contained upper study, with all labels) remains available for anyone who wants one study rather than the pair.

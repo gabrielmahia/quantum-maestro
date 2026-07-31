@@ -476,6 +476,8 @@ elif page.startswith("9"):
     import glob as _glob
     ts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "thinkscript"))
     meta = {
+        "TeriQuantumMaestro_v6_ChartDraw.ts": ("Chart draw-only (Bollinger-style)", "Charts → Studies → Edit → Create",
+            "The RECOMMENDED pairing: draws zones + entry/stop/target on price and stays quiet, like Bollinger Bands. Run TeriQuantumOsc_v4_6 in the lower panel for regime/permission/odds/setup readouts. One info line only; no double alerts."),
         "TeriQuantumMaestro_v6.ts": ("ALL-IN-ONE (upper)", "Charts → Studies → Edit → Create",
             "THE culmination: one upper study - draws zones on price + regime + permission + eight-point odds + relative strength + earnings/ex-div gates + canonical order-type intent. Run TeriQuantumOsc_v4_6 alongside for the histogram panel. Mechanical proxy, not validated vs hand-marked zones."),
         "TeriQuantumZones_v5_1.ts": ("Upper study (zones)", "Charts → Studies → Edit → Create",
