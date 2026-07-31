@@ -126,3 +126,18 @@ The header label now names both sources explicitly (`REGIME SRC: SPX  INSTRUMENT
 v5 adds the **eight-point odds enhancer** directly to the chart (a "ZONE ODDS n/8" label), mirroring `qm/iwt_zones.py` and the app's page-10 scorer. It detects the most recent departure zone on the chart symbol and scores base tightness + departure speed + freshness + reward:risk, classifying PRIMARY (7-8, full size) / SECONDARY (5-6, half) / SKIP (0-4). Everything in v4.4 (regime/instrument split, earnings/ex-div gates, relative strength) is retained.
 
 The zone detection is a mechanical PROXY, not validated against Teri's hand-marked zones — the label is a decision aid, not a signal. See `docs/TERI_IWT_CURRICULUM.md` for how the scoring fits the full method.
+
+## TeriQuantumZones v5.1 — the zone-drawing upper study (bug-fixed)
+
+A separate **upper** study (`declare upper`) that draws actual buyer/seller zones on the price chart with persistent `rec` state, U/Chair approach detection, and distinct-revisit counting. This is the closest ThinkScript approximation to Teri's visual method — it complements the lower-panel TeriQuantumOsc (regime/permission), it doesn't replace it.
+
+It began as a v5.0 draft with six real bugs, all fixed in v5.1:
+
+1. **Base count ≥5 collapsed to zero.** A long tight base — Teri's *strongest* setup — scored `baseCount=0` and got discarded. Now compact candles are counted and clamped to [1,4]; a 5+ base is treated as a full 4-candle base, never thrown away.
+2. **Score thresholds were shifted down one cohort.** v5.0 used 6/4 for direct/confirmation; the canonical cohorts are 7-8 primary / 5-6 secondary / 0-4 skip. Fixed.
+3. **The secondary cohort was dead code.** `longZoneQualified` hard-required RR≥3, which blocked every 2-3R secondary trade the score system was designed to allow. Now PRIMARY needs RR≥3, SECONDARY needs RR≥2 + confirmation — the score gate and RR gate agree instead of contradicting.
+4. **Repainting zone lines.** v5.0 used `PaintingStrategy.HORIZONTAL`, which paints today's zone backward across all history. Lines now plot only where the zone was active, so a scan-back shows where zones actually were.
+5. **Bearish permission clarified** — long puts (debit) allowed defensively; bearish credit (short premium) still gated on `shortPremiumAllowed`.
+6. **TR-departure caution** — default stays body (a long-wick rejection bar shouldn't count as a strong departure); a label warns when TR mode is enabled.
+
+Zone detection remains a mechanical PROXY for Teri's discretionary reading — a decision aid, not a signal, and still unvalidated against hand-marked zones.
