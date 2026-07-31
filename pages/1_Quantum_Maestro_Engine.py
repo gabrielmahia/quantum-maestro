@@ -60,6 +60,7 @@ page = st.sidebar.radio("Navigate", [
     "8 · Paper Desk (Tradier Sandbox)",
     "9 · ThinkScript Suite",
     "10 · IWT Zone Scorer",
+    "11 · Risk Plan + Pre-Trade",
 ])
 
 # ---------------------------------------------------------------- regime state
@@ -577,6 +578,107 @@ elif page.startswith("10"):
             st.warning("Cohort discipline: log 7-8 and 5-6 trades as SEPARATE cohorts in the journal - never "
                        "combine them, or a strong cohort's edge gets diluted by a weak one. This scorer is a "
                        "PROXY for Teri's manual zones; that proxy is not yet validated against hand-marked examples.")
+
+
+# ================================================================ PAGE 11
+elif page.startswith("11"):
+    st.header("Risk Plan + Pre-Trade Worksheet")
+    st.caption("Canonical from Teri's Personal Trading Plan and IWT Stock-Pick worksheet. "
+               "The daily ceiling uses the STRICTER of Teri's 3% and Quantum Maestro's 2% doctrine.")
+    from qm.iwt_canonical import IWTRiskPlan, check_risk_plan, PreTradeWorksheet, iwt_long_trade
+
+    tab1, tab2, tab3 = st.tabs(["Risk-plan cascade", "Pre-trade worksheet", "Canonical RR"])
+
+    with tab1:
+        st.subheader("Where am I against my loss ceilings?")
+        eq = st.number_input("Account equity ($)", value=100000.0, min_value=1000.0, key="rp_eq")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            pnl_d = st.number_input("Realized P&L today ($)", value=0.0, key="rp_d")
+            n_d = st.number_input("Trades today", 0, 50, 0, key="rp_nd")
+        with c2:
+            pnl_w = st.number_input("Realized P&L this week ($)", value=0.0, key="rp_w")
+            n_w = st.number_input("Trades this week", 0, 200, 0, key="rp_nw")
+        with c3:
+            pnl_m = st.number_input("Realized P&L this month ($)", value=0.0, key="rp_m")
+            n_m = st.number_input("Trades this month", 0, 500, 0, key="rp_nm")
+        risk = st.number_input("Proposed trade's max loss ($)", value=1000.0, min_value=0.0, key="rp_risk")
+
+        r = check_risk_plan(eq, pnl_d, pnl_w, pnl_m, n_d, n_w, n_m, risk)
+        cc = r["ceilings"]
+        st.dataframe(pd.DataFrame([
+            {"Ceiling": "Per trade", "Limit": f"${cc['per_trade']:,.0f}"},
+            {"Ceiling": f"Daily ({r['daily_ceiling_source']})", "Limit": f"${cc['daily']:,.0f}"},
+            {"Ceiling": "Weekly", "Limit": f"${cc['weekly']:,.0f}"},
+            {"Ceiling": "Monthly", "Limit": f"${cc['monthly']:,.0f}"},
+        ]), hide_index=True, use_container_width=True)
+        if r["allowed"]:
+            st.success("WITHIN PLAN — trade permitted by the risk cascade.")
+        else:
+            st.error("BLOCKED by the risk plan:")
+            for b in r["breaches"]:
+                st.write(f"- {b}")
+
+    with tab2:
+        st.subheader("Score a pick before you chart it")
+        sym = st.text_input("Symbol", "AAPL", key="ws_sym")
+        c1, c2 = st.columns(2)
+        with c1:
+            vol = st.number_input("Avg volume (shares/day)", value=2_000_000, key="ws_vol")
+            up = st.radio("In an uptrend?", ["Yes", "No", "Unknown"], horizontal=True, key="ws_up")
+            dte = st.number_input("Days to earnings (-1 = unknown)", -1, 400, -1, key="ws_dte")
+            price = st.number_input("Current price", value=100.0, key="ws_px")
+        with c2:
+            hi = st.number_input("52-week high", value=120.0, key="ws_hi")
+            lo = st.number_input("52-week low", value=60.0, key="ws_lo")
+            bib = st.radio("Best in breed (leader)?", ["Yes", "No", "Unknown"], horizontal=True, key="ws_bib")
+            dad = st.radio("~$1/day mover?", ["Yes", "No", "Unknown"], horizontal=True, key="ws_dad")
+
+        tri = lambda v: True if v == "Yes" else (False if v == "No" else None)
+        w = PreTradeWorksheet(sym, volume=vol, up_trend=tri(up),
+                              days_to_earnings=(None if dte < 0 else dte),
+                              price=price, high_52w=hi, low_52w=lo,
+                              best_in_breed=tri(bib), dollar_a_day=tri(dad))
+        out = w.evaluate()
+        if out["ready_to_chart"]:
+            st.success(f"{sym}: READY TO CHART — no hard blocks.")
+        else:
+            st.error(f"{sym}: NOT READY — hard blocks:")
+            for b in out["hard_blocks"]:
+                st.write(f"- {b}")
+        if out["range_pos_52w"] is not None:
+            st.caption(f"52-week range position: {out['range_pos_52w']}%")
+        for wn in out["warnings"]:
+            st.warning(wn)
+        for nt in out["notes"]:
+            st.info(nt)
+
+    with tab3:
+        st.subheader("Canonical RR (matches the course spreadsheet)")
+        st.caption("Long: stop = distal_BZ - 20% ATR, target = proximal_SZ, entry = proximal_BZ.")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            d_bz = st.number_input("Distal (buyer zone)", value=179.23, key="rr_dbz")
+            p_bz = st.number_input("Proximal (buyer zone)", value=184.87, key="rr_pbz")
+        with c2:
+            p_sz = st.number_input("Proximal (seller zone/target)", value=202.82, key="rr_psz")
+            atr_v = st.number_input("ATR", value=9.07, key="rr_atr")
+        with c3:
+            risk_tol = st.number_input("Risk tolerance ($)", value=1000.0, key="rr_tol")
+        t = iwt_long_trade(d_bz, p_bz, p_sz, atr_v, risk_tolerance_dollars=risk_tol)
+        st.dataframe(pd.DataFrame([
+            {"Field": "Entry", "Value": t["entry"]},
+            {"Field": "Stop", "Value": t["stop"]},
+            {"Field": "Target", "Value": t["target"]},
+            {"Field": "Reward:Risk", "Value": t["reward_risk"]},
+            {"Field": "Shares", "Value": t["shares"]},
+            {"Field": "Max profit", "Value": t["max_profit"]},
+            {"Field": "Max loss", "Value": t["max_loss"]},
+        ]), hide_index=True, use_container_width=True)
+        if t["reward_risk"] < 3.0:
+            st.warning(f"R:R {t['reward_risk']} is below the worksheet's >3:1 gate.")
+        else:
+            st.success(f"R:R {t['reward_risk']} clears the >3:1 gate.")
 
 st.sidebar.divider()
 st.sidebar.caption("Not financial advice. Decision-support software for a system in SHADOW validation. "

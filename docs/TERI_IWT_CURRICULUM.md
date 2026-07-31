@@ -115,3 +115,33 @@ stack that decides *whether* a Teri setup should be taken at all.
 What's deliberately missing: chasing ever more exotic strategies. The edge is
 in doing the boring parts consistently, which is exactly what the journal and
 the hard rules exist to enforce.
+
+---
+
+## Canonical source integration (from Teri's course documents)
+
+The following are drawn *directly* from the Trade & Travel course files
+(Personal Trading Plan, RR spreadsheet, IWT Stock-Pick worksheet, Key Terms),
+and are now enforced in code (`qm/iwt_canonical.py`, app page 11):
+
+**The risk-plan cascade.** Teri's plan specifies more than per-trade risk — it
+is a full cascade. Stocks/Options defaults on a $100k account: per-trade $1,000
+(1%), daily $3,000 (3%), weekly $5,000 (5%), monthly $10,000 (10%), and trade
+counts of 2/day, 8/week, 20/month. Stored as percentages so they scale to any
+account. **Where Teri's 3% daily and Quantum Maestro's 2% doctrine disagree, the
+stricter 2% wins** — the newborn-period impaired-window rule and "protect
+downside first" both argue for the smaller daily bleed.
+
+**The RR formula chain** (validated to the cent against the course spreadsheet):
+long stop = distal_BZ − 20%·ATR, entry = proximal_BZ, target = proximal_SZ,
+shares = risk_$ ÷ risk. The eight-point odds enhancer was also confirmed exactly
+against the "Odd Enhancers: Testing Your Level Strength" worksheet.
+
+**The pre-trade worksheet** as a scored gate: volume > 1M, uptrend, 52-week and
+3-month range position, earnings distance, best-in-breed (relative strength),
+"$1/day" mover, and news. Hard blocks (liquidity, earnings blackout) stop a pick
+before charting; soft warnings (range extremes, not-a-leader) inform it.
+
+What stays deliberately un-encoded: the order-placement mechanics (limit/market/
+stop/GTC, etc.) are educational — Quantum Maestro's broker adapter is limit-only
+by doctrine, which is the correct subset for defined-risk entries.
