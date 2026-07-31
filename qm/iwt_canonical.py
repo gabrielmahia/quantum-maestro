@@ -135,6 +135,11 @@ def iwt_long_trade(distal_bz: float, proximal_bz: float, proximal_sz: float,
         "risk": round(risk, 4), "reward_risk": round(rr, 4),
         "shares": round(shares, 2), "cost": round(shares * entry, 2),
         "max_profit": round(shares * reward, 2), "max_loss": round(shares * risk, 2),
+        # Canonical order types (IWT worksheet): entry & profit-exit are LIMIT
+        # (price control); the protective stop is STOP-MARKET (fill certainty
+        # when the level breaks). Shares round DOWN, never up into more risk.
+        "order_types": {"entry": "limit", "exit": "limit", "stop": "stop_market"},
+        "shares_rounded_down": int(shares),
     }
 
 
@@ -155,6 +160,8 @@ def iwt_short_trade(distal_sz: float, proximal_sz: float, proximal_bz: float,
         "risk": round(risk, 4), "reward_risk": round(rr, 4),
         "shares": round(shares, 2), "cost": round(shares * entry, 2),
         "max_profit": round(shares * reward, 2), "max_loss": round(shares * risk, 2),
+        "order_types": {"entry": "limit", "exit": "limit", "stop": "stop_market"},
+        "shares_rounded_down": int(shares),
     }
 
 
