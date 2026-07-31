@@ -476,6 +476,8 @@ elif page.startswith("9"):
     import glob as _glob
     ts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "thinkscript"))
     meta = {
+        "TeriQuantumMaestro_v6.ts": ("ALL-IN-ONE (upper)", "Charts → Studies → Edit → Create",
+            "THE culmination: one upper study - draws zones on price + regime + permission + eight-point odds + relative strength + earnings/ex-div gates + canonical order-type intent. Run TeriQuantumOsc_v4_6 alongside for the histogram panel. Mechanical proxy, not validated vs hand-marked zones."),
         "TeriQuantumZones_v5_1.ts": ("Upper study (zones)", "Charts → Studies → Edit → Create",
             "Draws buyer/seller ZONES on price with rec-state persistence, U/Chair approach detection, distinct-revisit counting, and canonical 7-8/5-6/0-4 cohorts. Bug-fixed from a v5.0 draft (base>=5, thresholds, secondary cohort, repainting). Complements the lower TeriQuantumOsc; mechanical PROXY, not validated."),
         "TeriQuantumOsc_v4_6.ts": ("Lower study (definitive)", "Charts → Studies → Edit → Create",
