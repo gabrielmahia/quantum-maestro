@@ -93,3 +93,13 @@ def test_worksheet_ready_with_warnings():
     assert out["ready_to_chart"]  # no hard blocks
     assert any("best-in-breed" in x for x in out["warnings"])
     assert out["range_pos_52w"] is not None
+
+
+def test_canonical_order_types_and_round_down():
+    r = iwt_long_trade(distal_bz=179.23, proximal_bz=184.87, proximal_sz=202.82, atr=9.07)
+    # Worksheet: entry & exit are LIMIT, stop is STOP-MARKET
+    assert r["order_types"] == {"entry": "limit", "exit": "limit", "stop": "stop_market"}
+    # shares round DOWN (134.16 -> 134)
+    assert r["shares_rounded_down"] == 134
+    s = iwt_short_trade(distal_sz=152.62, proximal_sz=149.74, proximal_bz=140.0, atr=4.58)
+    assert s["order_types"]["stop"] == "stop_market"
