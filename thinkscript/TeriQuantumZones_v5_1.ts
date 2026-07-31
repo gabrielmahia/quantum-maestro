@@ -81,9 +81,8 @@ input secondaryMinScore = 5;
 input primaryMinRR = 3.0;
 input secondaryMinRR = 2.0;
 
-input showZones = yes;
+input showZones = yes;         # zone lines AND their shaded clouds
 input showTradeLevels = yes;
-input showZoneClouds = yes;
 input showLabels = yes;
 input enableAlerts = yes;
 
@@ -361,10 +360,12 @@ SellerProx.SetDefaultColor(Color.RED); SellerProx.SetLineWeight(2); SellerProx.S
 plot SellerDist = if showZones and sellerActive then sellerDistal else Double.NaN;
 SellerDist.SetDefaultColor(Color.DARK_RED); SellerDist.SetLineWeight(2);
 
-AddCloud(if showZoneClouds and buyerActive then BuyerProx else Double.NaN,
-         if showZoneClouds and buyerActive then BuyerDist else Double.NaN, Color.LIGHT_GREEN, Color.LIGHT_GREEN);
-AddCloud(if showZoneClouds and sellerActive then SellerDist else Double.NaN,
-         if showZoneClouds and sellerActive then SellerProx else Double.NaN, Color.LIGHT_RED, Color.LIGHT_RED);
+# AddCloud cannot take rec-derived expressions. The plots below already carry
+# the showZones+buyerActive gating (they are NaN when the zone is inactive), so
+# pass the PLOTS directly - do NOT re-wrap them in an if over buyerActive (a rec),
+# which is what caused "recs are not used inside addcloud".
+AddCloud(BuyerProx, BuyerDist, Color.LIGHT_GREEN, Color.LIGHT_GREEN);
+AddCloud(SellerDist, SellerProx, Color.LIGHT_RED, Color.LIGHT_RED);
 
 plot LongStopLine = if showTradeLevels and buyerActive and bullishRegime then longStop else Double.NaN;
 LongStopLine.SetDefaultColor(Color.DARK_ORANGE); LongStopLine.SetStyle(Curve.LONG_DASH);
