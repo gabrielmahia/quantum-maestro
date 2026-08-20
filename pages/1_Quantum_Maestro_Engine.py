@@ -593,7 +593,7 @@ elif page.startswith("11"):
                "The daily ceiling uses the STRICTER of Teri's 3% and Quantum Maestro's 2% doctrine.")
     from qm.iwt_canonical import IWTRiskPlan, check_risk_plan, PreTradeWorksheet, iwt_long_trade
 
-    tab1, tab2, tab3 = st.tabs(["Risk-plan cascade", "Pre-trade worksheet", "Canonical RR"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Risk-plan cascade", "Pre-trade worksheet", "Canonical RR", "Options expression"])
 
     with tab1:
         st.subheader("Where am I against my loss ceilings?")
@@ -685,6 +685,59 @@ elif page.startswith("11"):
             st.warning(f"R:R {t['reward_risk']} is below the worksheet's >3:1 gate.")
         else:
             st.success(f"R:R {t['reward_risk']} clears the >3:1 gate.")
+
+
+    with tab4:
+        st.subheader("Which options expression fits this zone?")
+        st.caption("From the IWT options course. Strike sits at the stop-market line; "
+                   "credits must be DEFINED-RISK vertical spreads (no naked shorts).")
+        from qm.iwt_options import choose_expression, break_even, validate_options_trade, VerticalSpread
+
+        zone = st.radio("Zone", ["buyer", "seller"], horizontal=True, key="opt_zone")
+        ivp = st.slider("IV position (0-100)", 0, 100, 40, key="opt_iv")
+        rec = choose_expression(zone, ivp)
+        st.info(f"Debit choice: **{rec['debit_expression']}** | Credit choice: "
+                f"**{rec['credit_expression']}** — {rec['rationale']}")
+
+        st.divider()
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            expr = st.selectbox("Expression", ["buy_call", "sell_put", "buy_put", "sell_call"], key="opt_expr")
+            strike = st.number_input("Strike (= stop-market line)", value=100.0, key="opt_strike")
+        with c2:
+            prem = st.number_input("Premium", value=2.50, key="opt_prem")
+            dte = st.number_input("DTE", 0, 400, 45, key="opt_dte")
+        with c3:
+            defined = st.checkbox("Defined-risk (spread)?", value=False, key="opt_def")
+            evt = st.checkbox("Into an event window?", value=False, key="opt_evt")
+
+        be = break_even(expr, strike, prem)
+        st.write(f"**Break-even: {be}**")
+        v = validate_options_trade(expr, defined, dte, evt)
+        if v["allowed"]:
+            st.success(f"ALLOWED — {expr} ({v['flow']}, {v['bias']})")
+        else:
+            st.error("BLOCKED by options doctrine:")
+            for b in v["blocks"]:
+                st.write(f"- {b}")
+        for n in v["notes"]:
+            st.caption(n)
+
+        st.divider()
+        st.markdown("**Defined-risk vertical (the sanctioned credit form)**")
+        cc1, cc2, cc3, cc4 = st.columns(4)
+        with cc1: vk = st.selectbox("Kind", ["put_credit", "call_credit", "call_debit", "put_debit"], key="v_k")
+        with cc2: ss = st.number_input("Short strike", value=100.0, key="v_ss")
+        with cc3: ls = st.number_input("Long strike", value=95.0, key="v_ls")
+        with cc4: npr = st.number_input("Net premium", value=1.50, key="v_np")
+        econ = VerticalSpread(vk, ss, ls, npr).economics()
+        st.dataframe(pd.DataFrame([
+            {"Metric": "Width", "Value": econ["width"]},
+            {"Metric": "Max profit", "Value": econ["max_profit"]},
+            {"Metric": "Max loss", "Value": econ["max_loss"]},
+            {"Metric": "Reward:risk", "Value": econ["reward_risk"]},
+            {"Metric": "Credit % of width", "Value": econ["credit_pct_of_width"]},
+        ]), hide_index=True, use_container_width=True)
 
 st.sidebar.divider()
 st.sidebar.caption("Not financial advice. Decision-support software for a system in SHADOW validation. "
