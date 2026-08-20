@@ -145,3 +145,32 @@ before charting; soft warnings (range extremes, not-a-leader) inform it.
 What stays deliberately un-encoded: the order-placement mechanics (limit/market/
 stop/GTC, etc.) are educational — Quantum Maestro's broker adapter is limit-only
 by doctrine, which is the correct subset for defined-risk entries.
+
+---
+
+## Options methodology (canonical from the IWT options course)
+
+The course maps four single-leg expressions onto the buyer/seller zones, with
+the strike placed at the **stop-market line**. Now in `qm/iwt_options.py` and
+app page 11 (Options expression tab):
+
+| Zone | Bias | Debit (buy) | Credit (sell) | Strike |
+|---|---|---|---|---|
+| Buyer | bullish | BUY A CALL | SELL A PUT | at/inside BZ, = stop-market line |
+| Seller | bearish | BUY A PUT | SELL A CALL | as price exits SZ, = stop-market line |
+
+**Break-evens** (canonical): buy call = strike + premium; sell put = strike −
+premium; buy put = strike − premium; sell call = strike + premium.
+
+**IV doctrine (buy low / sell high):** buy options when IV is *low* (2+ months
+out, exit ~2 weeks to expiry, theta works against you; don't buy into earnings);
+sell premium when IV is *high* (theta works for you, buy-to-close when premium
+decays or let it expire).
+
+**Quantum Maestro guardrail — the one place doctrine overrides the course:** the
+course teaches naked "sell a put" / "sell a call." Quantum Maestro does **not**
+permit naked shorts — those credits are only expressible as **defined-risk
+vertical spreads** (the course's own vertical-spread worksheet is the sanctioned
+form). `validate_options_trade` hard-blocks a naked short, blocks 0DTE, and
+blocks short premium into an event window. The module computes break-evens and
+maps expressions to zones; it never selects a live strike or sends an order.
