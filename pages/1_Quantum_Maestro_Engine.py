@@ -61,6 +61,7 @@ page = st.sidebar.radio("Navigate", [
     "9 · ThinkScript Suite",
     "10 · IWT Zone Scorer",
     "11 · Risk Plan + Pre-Trade",
+    "12 · Execution Governance",
 ])
 
 # ---------------------------------------------------------------- regime state
@@ -738,6 +739,117 @@ elif page.startswith("11"):
             {"Metric": "Reward:risk", "Value": econ["reward_risk"]},
             {"Metric": "Credit % of width", "Value": econ["credit_pct_of_width"]},
         ]), hide_index=True, use_container_width=True)
+
+
+# ================================================================ PAGE 12
+elif page.startswith("12"):
+    st.header("Execution Governance")
+    st.caption("The layers between a decision and an order: account routing, intent-vs-order "
+               "validation, tranche discipline, and managed-vertical accounting. All deterministic "
+               "- code, not judgement, controls these.")
+    from qm.execution_governance import (route_strategy, TradeIntent, validate_intent,
+                                         TranchePlan, may_add_tranche,
+                                         ShortLegCycle, ManagedVerticalLedger)
+
+    g1, g2, g3, g4 = st.tabs(["Account routing", "Intent vs order", "Tranches", "Vertical recycling"])
+
+    with g1:
+        st.subheader("Same thesis, different expression per account")
+        c1, c2 = st.columns(2)
+        with c1:
+            th = st.radio("Thesis", ["BULLISH", "BEARISH", "NEUTRAL"], horizontal=True, key="rt_th")
+            acct = st.selectbox("Account", ["FIDELITY", "TOS", "TRADIER"], key="rt_ac")
+        with c2:
+            ivr = st.checkbox("IV rich?", key="rt_iv")
+            conf = st.checkbox("Level confirmed?", key="rt_cf")
+            evh = st.checkbox("Event-heavy session?", key="rt_ev")
+        r = route_strategy(th, acct, ivr, conf, evh)
+        if "error" in r:
+            st.error(r["error"])
+        else:
+            st.success(f"Route: **{r['strategy']}**")
+            st.caption(r["note"])
+            if r["rejected"]:
+                st.markdown("**Rejected along the way:**")
+                for stru, why in r["rejected"]:
+                    st.write(f"- `{stru}` - {why}")
+
+    with g2:
+        st.subheader("Does the order match the immutable intent?")
+        st.caption("The failure this catches: thesis BEARISH but order is a bull put credit.")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**INTENT**")
+            i_th = st.selectbox("Thesis", ["BEARISH", "BULLISH"], key="iv_th")
+            i_st = st.selectbox("Strategy", list(["bear_put_debit","bull_call_debit","bull_put_credit",
+                                                  "bear_call_credit","long_call","long_put"]), key="iv_st")
+            i_net = st.selectbox("Net", ["DEBIT", "CREDIT"], key="iv_net")
+            i_exp = st.text_input("Expiration", "2026-09-04", key="iv_exp")
+            i_ml = st.number_input("Max loss", value=2100.0, key="iv_ml")
+        with c2:
+            st.markdown("**ORDER (as constructed)**")
+            o_st = st.selectbox("Strategy ", list(["bear_put_debit","bull_call_debit","bull_put_credit",
+                                                   "bear_call_credit","long_call","long_put"]), key="ov_st")
+            o_net = st.selectbox("Net ", ["DEBIT", "CREDIT"], key="ov_net")
+            o_exp = st.text_input("Expiration ", "2026-09-04", key="ov_exp")
+            o_ml = st.number_input("Max loss ", value=2100.0, key="ov_ml")
+        intent = TradeIntent(thesis=i_th, instrument="SPX", strategy=i_st,
+                             expiration=i_exp, net_type=i_net, max_loss=i_ml)
+        order = {"strategy": o_st, "net_type": o_net, "expiration": o_exp, "max_loss": o_ml}
+        v = validate_intent(intent, order)
+        if v["valid"]:
+            st.success("ORDER MATCHES INTENT - safe to preview")
+        else:
+            st.error("REJECTED - order does not match intent:")
+            for m in v["unwaived"]:
+                st.write(f"- {m}")
+
+    with g3:
+        st.subheader("Tranche the position (never all at once)")
+        n = st.number_input("Contracts the risk engine permits", 0, 500, 40, key="tr_n")
+        plan = TranchePlan(permitted_total=int(n)).build()
+        if "error" in plan:
+            st.error(plan["error"])
+        else:
+            st.success(f"Open **{plan['initial']}** now (~25%), hold the rest")
+            for a in plan["add_ons"]:
+                st.write(f"- +{a['size']} {a['unlock']}")
+            st.warning(plan["rule"])
+        st.divider()
+        st.markdown("**May I add to this position?**")
+        c1, c2, c3 = st.columns(3)
+        with c1: ti = st.checkbox("Thesis intact?", value=True, key="ta_ti")
+        with c2: ni = st.checkbox("New information?", key="ta_ni")
+        with c3: uw = st.checkbox("Position underwater?", key="ta_uw")
+        a = may_add_tranche(ti, ni, uw)
+        (st.success if a["allowed"] else st.error)(a["reason"])
+
+    with g4:
+        st.subheader("Managed vertical - is recycling actually adding value?")
+        st.caption("Separates true management alpha from decay you'd have captured anyway.")
+        hedge = st.number_input("Long hedge cost (per contract)", value=3.00, key="mv_h")
+        ncy = st.number_input("Number of short-leg cycles", 1, 10, 2, key="mv_n")
+        led = ManagedVerticalLedger(long_hedge_cost=hedge)
+        for k in range(int(ncy)):
+            cc1, cc2, cc3 = st.columns(3)
+            with cc1: sto = st.number_input(f"Cycle {k+1} STO", value=2.50 if k == 0 else 1.80, key=f"mv_s{k}")
+            with cc2: btc = st.number_input(f"Cycle {k+1} BTC", value=0.50 if k == 0 else 0.20, key=f"mv_b{k}")
+            with cc3: fee = st.number_input(f"Cycle {k+1} fees", value=1.0, key=f"mv_f{k}")
+            led.add_cycle(ShortLegCycle(sto, btc, fees=fee))
+        summ = led.summary()
+        st.dataframe(pd.DataFrame([
+            {"Metric": "Gross short-leg P/L", "Value": summ["gross_short_pl"]},
+            {"Metric": "Net short-leg P/L", "Value": summ["net_short_pl"]},
+            {"Metric": "Re-entry improvement", "Value": summ["re_entry_improvement"]},
+            {"Metric": "MANAGEMENT ALPHA", "Value": summ["management_alpha"]},
+            {"Metric": "Hedge original cost", "Value": summ["long_hedge_original_cost"]},
+            {"Metric": "Remaining hedge basis", "Value": summ["remaining_hedge_basis"]},
+        ]), hide_index=True, use_container_width=True)
+        if summ["management_alpha"] > 0:
+            st.success("Positive management alpha - recycling beat passive holding, net of friction.")
+        else:
+            st.warning("Non-positive alpha - recycling has not beaten passive holding here.")
+        st.info(summ["discipline_rule"])
 
 st.sidebar.divider()
 st.sidebar.caption("Not financial advice. Decision-support software for a system in SHADOW validation. "
