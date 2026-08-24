@@ -533,6 +533,13 @@ elif page.startswith("10"):
     from qm.iwt_zones import odds_enhancer, frame_trade
 
     st.subheader("a) Score the zone")
+    from qm.iwt_zones import BAND_SCHEMES
+    scheme = st.radio(
+        "Cohort band scheme", ["STRICT", "COURSE"], horizontal=True,
+        help="Teri's materials state TWO schemes. COURSE = the published entry-strategy PDF "
+             "(6-8 direct / 4-6 confirmation / <4 skip). STRICT = one notch tighter (7/5), "
+             "Quantum Maestro's default. Log which you used so cohorts stay comparable.")
+    st.caption(f"Source: {BAND_SCHEMES[scheme]['source']}")
     c1, c2 = st.columns(2)
     with c1:
         base_candles = st.number_input("Base candles (tighter = stronger)", 1, 12, 2)
@@ -556,7 +563,7 @@ elif page.startswith("10"):
     if not trade.is_valid():
         st.error("Trade geometry is invalid (for a long need stop < entry < target). Check your levels.")
     else:
-        result = odds_enhancer(base_candles, departure, prior_visits, trade.reward_risk)
+        result = odds_enhancer(base_candles, departure, prior_visits, trade.reward_risk, band_scheme=scheme)
         color = {"PRIMARY": "green", "SECONDARY": "orange", "REJECTED": "red"}[result["cohort"]]
         st.markdown(f"### Score: :{color}[{result['score']}/8]  -  {result['cohort']} cohort")
         st.info(f"{result['action']}   (size multiplier {result['size_multiplier']}x)")

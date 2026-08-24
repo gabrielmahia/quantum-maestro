@@ -73,3 +73,57 @@ BUYERS LEVELS                     SELLERS LEVELS
 
 This is exactly the U/Chair + odds-enhancer + distal/proximal pipeline the
 TeriQuantumZones ThinkScript study approximates mechanically.
+
+---
+
+## Source conflict: the cohort bands (documented, not silently resolved)
+
+Teri's materials state **two different band schemes** for turning the 0–8 odds
+score into an entry decision:
+
+| Source | Direct entry | Confirmation entry | Skip |
+|---|---|---|---|
+| "Deciding Your Entry Strategy" (Odd Enhancers PDF) | **6–8** | **4–6** | below 4 |
+| Key Documents odds table (DOCX) | "7–8 TAKE THE TRADE" | — | — |
+
+The PDF's own bands **overlap at 6**, so a score of exactly 6 is ambiguous in
+the source itself.
+
+`qm/iwt_zones.odds_enhancer` now takes a `band_scheme` argument:
+
+- **`COURSE`** — 6/4, faithful to the published entry-strategy PDF.
+- **`STRICT`** — 7/5, one notch tighter. **This is the default**, because a 6
+  sitting in the PDF's own overlap should earn confirmation rather than a direct
+  fill, and because tightening a quality gate errs in the conservative direction.
+
+Both are selectable, and the scheme is returned with every result so decisions
+stay comparable across the journal and any backtest. **Log which scheme produced
+a cohort** — mixing them silently would corrupt cohort expectancy.
+
+### Correction of an earlier call
+
+An external v5.0 ThinkScript draft used `directEntryMinimumScore=6` /
+`confirmationMinimumScore=4`. In review, this was labelled a bug — "shifted down
+by one cohort" — on the strength of the DOCX table alone. That was **overstated**:
+those thresholds match the published entry-strategy PDF exactly. The engineer was
+reading a legitimate source. The tightening to 7/5 remains defensible as a
+deliberate policy choice, but it is a *choice*, not a correction of an error, and
+it is now implemented as such.
+
+## "Bank-like numbers" — the round-number stop rule
+
+The Stock Pick worksheet specifies the stop as "a little below the Buyers Level —
+20% of the average daily move / **below bank-like numbers**."
+
+Round numbers ($50, $100, $250) are where stop clusters sit. An ATR-derived stop
+that lands just *above* a round number (on a long) gets swept before the thesis
+has actually failed. `bank_number_adjusted_stop()` detects a stop sitting on a
+round level and moves it clear, reporting which level triggered the adjustment so
+it is never silent.
+
+## Target haircut
+
+The worksheet says exit "a little **before** the first line of Sellers Level" —
+don't demand the last cent. `haircut_target()` applies a small, explicit haircut
+(scaled to risk when supplied) to raise fill probability, and reports the amount
+given up.
