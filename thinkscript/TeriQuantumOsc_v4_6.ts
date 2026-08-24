@@ -10,8 +10,9 @@
 #     EXIT=limit, STOP=stop-market (per the IWT BUY worksheet).
 #   - Reward:risk gate labelled against the worksheet's ">3 TAKE THE
 #     TRADE" rule; 2-3R shown as secondary, <2R as reject.
-#   - Score-to-cohort mapping stated in-panel (7-8 primary / 5-6
-#     secondary / 0-4 skip) so the chart and the app agree.
+#   - Score-to-cohort bands SELECTABLE: STRICT 7/5 (default) or COURSE
+#     6/4 per the published entry-strategy PDF. Teri's materials state
+#     both; the active scheme is shown in the ZONE ODDS label.
 #
 # The four questions Teri's method asks, kept separate:
 #   REGIME     <- INDEX (marketSymbol). Should I be trading at all?
@@ -322,6 +323,12 @@ AddLabel(yes,
 # detection is NOT validated against Teri's hand-marked zones.
 # ═══════════════════════════════════════════════════════════════════
 input enableOddsEnhancer = yes;
+# Cohort thresholds. SOURCE CONFLICT in Teri's materials, both encoded:
+#   COURSE ("Deciding Your Entry Strategy" PDF): 6-8 direct / 4-6 confirm / <4 skip
+#   STRICT (Key Documents odds table, tightened): 7-8 primary / 5-6 secondary
+# STRICT default - the PDF's own bands OVERLAP at 6, so a 6 should earn
+# confirmation, not a direct fill. Keep in sync with qm/iwt_zones.py.
+input useCourseBands = no;
 input baseMaxCandles = 8;
 input smallBodyATR = 0.45;       # a "base" candle: |body| < 0.45 ATR
 input avgDepartureATR = 0.75;    # departure body >= 0.75 ATR = average
@@ -361,10 +368,12 @@ def rrProxy = if depIsUp then (if !IsNaN(roomUpATR) then roomUpATR / Max(require
 def sRR = if rrProxy >= 3.0 then 2 else if rrProxy >= 2.0 then 1 else 0;
 
 def oddsScore = sBase + sDep + sFresh + sRR;
-def oddsCohort = if oddsScore >= 7 then 2 else if oddsScore >= 5 then 1 else 0;  # 2=primary 1=secondary 0=skip
+def primaryMin   = if useCourseBands then 6 else 7;
+def secondaryMin = if useCourseBands then 4 else 5;
+def oddsCohort = if oddsScore >= primaryMin then 2 else if oddsScore >= secondaryMin then 1 else 0;
 
 AddLabel(enableOddsEnhancer and !IsNaN(depStrength),
-    "ZONE ODDS " + oddsScore + "/8 " +
+    "ZONE ODDS " + oddsScore + "/8 " + (if useCourseBands then "[COURSE 6/4] " else "[STRICT 7/5] ") +
     (if oddsCohort == 2 then "PRIMARY (full)" else if oddsCohort == 1 then "SECONDARY (half)" else "SKIP") +
     "  [base " + baseCount + " dep " + Round(depStrength, 1) + "ATR fresh " + revisitCount + " rr " + Round(rrProxy, 1) + "]",
     if oddsCohort == 2 then Color.GREEN else if oddsCohort == 1 then Color.ORANGE else Color.GRAY);
