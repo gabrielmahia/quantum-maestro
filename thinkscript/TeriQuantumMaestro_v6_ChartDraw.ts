@@ -65,12 +65,22 @@ input minimumDepartureATR = 0.75;
 input strongDepartureATR = 1.50;
 input useTrueRangeForDeparture = no;
 
+input useBankNumbers = yes;        # stop clear of round "bank-like" levels
+input bankNumberIncrement = 5.0;   # round-level grid (5 = $5/$10/$25/$50/$100)
+input useTargetHaircut = yes;      # exit a little BEFORE the opposing level
+input targetHaircutATR = 0.10;     # haircut size in ATR
 input requireTwoClosesToBreakZone = yes;
 input maximumZoneWidthATR = 2.00;
 
-# Canonical cohort thresholds (7-8 primary / 5-6 secondary / 0-4 skip)
-input primaryMinScore = 7;
-input secondaryMinScore = 5;
+# Cohort thresholds. SOURCE CONFLICT in Teri's materials, both encoded:
+#   COURSE ("Deciding Your Entry Strategy" PDF): 6-8 direct / 4-6 confirm / <4 skip
+#   STRICT (Key Documents odds table, tightened): 7-8 primary / 5-6 secondary
+# STRICT is the default - the PDF's own bands OVERLAP at 6, so a 6 should earn
+# confirmation rather than a direct fill. Set useCourseBands=yes to match the
+# published PDF. Keep this in sync with qm/iwt_zones.py band_scheme.
+input useCourseBands = no;
+def primaryMinScore   = if useCourseBands then 6 else 7;
+def secondaryMinScore = if useCourseBands then 4 else 5;
 input primaryMinRR = 3.0;
 input secondaryMinRR = 2.0;
 
@@ -270,16 +280,38 @@ rec buyerVisits = CompoundValue(1, if newBuyerZone then 0 else if buyerEntered t
 rec sellerVisits = CompoundValue(1, if newSellerZone then 0 else if sellerEntered then sellerVisits[1] + 1 else sellerVisits[1], 0);
 
 # ------------------------------------------- ENTRY / STOP / TARGET / RR
+# "Bank-like numbers" (Stock Pick worksheet): the stop goes BELOW round
+# levels, where stop clusters sit - otherwise a sweep of $100/$50/$25 takes
+# you out before the thesis has actually failed.
+def bankInc = if bankNumberIncrement > 0 then bankNumberIncrement else 5.0;
+def longStopRaw = if buyerActive then buyerDistal - atrBuffer else Double.NaN;
+def longBankBelow = if !IsNaN(longStopRaw) then Floor(longStopRaw / bankInc) * bankInc else Double.NaN;
+def longOnBank = !IsNaN(longBankBelow) and longBankBelow > 0 and
+                 (longStopRaw - longBankBelow) <= 0.15 * bankInc;
 def longEntry = if buyerActive then buyerProximal else Double.NaN;
-def longStop = if buyerActive then buyerDistal - atrBuffer else Double.NaN;
-def longTarget = if sellerActive and sellerProximal > longEntry then sellerProximal else Double.NaN;
+def longStop = if !useBankNumbers or !longOnBank then longStopRaw
+               else longBankBelow - 0.02 * bankInc;
+
+# Target haircut: worksheet says exit "a little BEFORE the first line of
+# Sellers Level" - don't demand the last cent; raises fill probability.
+def longTargetRaw = if sellerActive and sellerProximal > longEntry then sellerProximal else Double.NaN;
+def longTarget = if IsNaN(longTargetRaw) or !useTargetHaircut then longTargetRaw
+                 else longTargetRaw - targetHaircutATR * atr;
 def longRisk = if !IsNaN(longEntry) and !IsNaN(longStop) then longEntry - longStop else Double.NaN;
 def longReward = if !IsNaN(longTarget) and !IsNaN(longEntry) then longTarget - longEntry else Double.NaN;
 def longRR = if longRisk > 0 and longReward > 0 then longReward / longRisk else Double.NaN;
 
+def shortStopRaw = if sellerActive then sellerDistal + atrBuffer else Double.NaN;
+def shortBankAbove = if !IsNaN(shortStopRaw) then (Floor(shortStopRaw / bankInc) + 1) * bankInc else Double.NaN;
+def shortOnBank = !IsNaN(shortBankAbove) and
+                  (shortBankAbove - shortStopRaw) <= 0.15 * bankInc;
 def shortEntry = if sellerActive then sellerProximal else Double.NaN;
-def shortStop = if sellerActive then sellerDistal + atrBuffer else Double.NaN;
-def shortTarget = if buyerActive and buyerProximal < shortEntry then buyerProximal else Double.NaN;
+def shortStop = if !useBankNumbers or !shortOnBank then shortStopRaw
+                else shortBankAbove + 0.02 * bankInc;
+
+def shortTargetRaw = if buyerActive and buyerProximal < shortEntry then buyerProximal else Double.NaN;
+def shortTarget = if IsNaN(shortTargetRaw) or !useTargetHaircut then shortTargetRaw
+                  else shortTargetRaw + targetHaircutATR * atr;
 def shortRisk = if !IsNaN(shortEntry) and !IsNaN(shortStop) then shortStop - shortEntry else Double.NaN;
 def shortReward = if !IsNaN(shortTarget) and !IsNaN(shortEntry) then shortEntry - shortTarget else Double.NaN;
 def shortRR = if shortRisk > 0 and shortReward > 0 then shortReward / shortRisk else Double.NaN;
@@ -371,23 +403,6 @@ plot ShortTargetLine = if showTradeLevels and sellerActive and bearishRegime and
 ShortTargetLine.SetDefaultColor(Color.CYAN); ShortTargetLine.SetStyle(Curve.LONG_DASH);
 
 # ------------------------------------------------------------- LABELS
-
-
-
-
-
-
-
-
-
-
-# Odds-component breakdown (which of the four factors are carrying the score)
-
-# Canonical order-type intent (IWT BUY worksheet): entry & profit-exit are
-# LIMIT (price control); the protective stop is STOP-MARKET (fill certainty
-# when the level breaks). Shares round DOWN. RR ">3 TAKE THE TRADE".
-
-
 # ---- Single info line (draw-only): which symbol drove the regime read ----
 AddLabel(showLabels and showInfoLine,
     "TeriMaestro DRAW | regime src " + marketSymbol + " | instrument " + GetSymbol() +
@@ -402,4 +417,5 @@ AddChartBubble(newSellerZone, candidateSellerDistal,
     "NEW SELLER " + (if sellerInvertedU then "INV U" else "INV CHAIR") + " b" + baseCount + " d" + AsText(Round(departureATR, 1)),
     Color.RED, yes);
 
-# ------------------------------------------------------------ ALERTS
+# (Alerts intentionally omitted - the lower TeriQuantumOsc_v4_6 owns
+#  alerting so the paired layout does not double-alert.)

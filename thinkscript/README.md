@@ -152,3 +152,28 @@ The cleanest way to run the suite, mirroring how Bollinger Bands (on price) pair
 The lower study owns alerting, so the draw-only upper has its alerts removed — no double alerts. The two share identical canonical logic, so they always agree: glance down for *whether* (regime/permission), up for *where* (zones/levels).
 
 `TeriQuantumMaestro_v6` (the full self-contained upper study, with all labels) remains available for anyone who wants one study rather than the pair.
+
+## Canonical updates applied to all studies (2026-08)
+
+Three changes propagated from the reconciled Python canon:
+
+1. **Band scheme is now an input, not hard-coded.** Teri's materials state two
+   cohort schemes — the entry-strategy PDF says 6-8 direct / 4-6 confirmation /
+   <4 skip, while the Key Documents odds table says "7-8 TAKE THE TRADE".
+   `useCourseBands` selects between them (default `no` = STRICT 7/5, because the
+   PDF's own bands overlap at 6). The oscillator's ZONE ODDS label shows which
+   scheme is active. **Keep this in sync with `qm/iwt_zones.py` `band_scheme`** —
+   a chart and an app disagreeing about a cohort is worse than either default.
+
+2. **"Bank-like numbers" stop rule** (`useBankNumbers`, `bankNumberIncrement`).
+   The Stock Pick worksheet says the stop goes *below bank-like numbers*. Round
+   levels are where stop clusters sit; a stop landing just above $100 on a long
+   gets swept before the thesis fails. The draw study now moves a stop that is
+   sitting on a round level clear of it.
+
+3. **Target haircut** (`useTargetHaircut`, `targetHaircutATR`). The worksheet
+   says exit *a little before* the first line of the Sellers Level. Targets are
+   now pulled in by a small ATR fraction to improve fill probability.
+
+Also fixed: the draw-only study had orphaned comment blocks and a dangling
+ALERTS header left over from stripping its labels. Cosmetic, but cleaned.

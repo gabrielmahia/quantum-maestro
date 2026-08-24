@@ -82,8 +82,10 @@ input requireTwoClosesToBreakZone = yes;
 input maximumZoneWidthATR = 2.00;
 
 # Canonical cohort thresholds (7-8 primary / 5-6 secondary / 0-4 skip)
-input primaryMinScore = 7;
-input secondaryMinScore = 5;
+# SOURCE CONFLICT in Teri's materials, both encoded. STRICT default.
+input useCourseBands = no;   # yes = 6/4 per the entry-strategy PDF
+def primaryMinScore   = if useCourseBands then 6 else 7;
+def secondaryMinScore = if useCourseBands then 4 else 5;
 input primaryMinRR = 3.0;
 input secondaryMinRR = 2.0;
 
