@@ -84,3 +84,75 @@ def test_daily_ambiguity_is_stop_first():
     assert resolve_daily_outcome("long", stop=98, target=110, bar_low=99, bar_high=111) == "target"
     assert resolve_daily_outcome("long", stop=98, target=110, bar_low=97, bar_high=105) == "stop"
     assert resolve_daily_outcome("long", stop=98, target=110, bar_low=99, bar_high=105) is None
+
+
+# ---- Band-scheme reconciliation (Teri's materials state two schemes) ----
+
+def test_strict_is_default_and_tighter():
+    from qm.iwt_zones import odds_enhancer
+    # score 6: STRICT says secondary, COURSE says primary
+    r_strict = odds_enhancer(base_candles=2, departure_strength_atr=0.8,
+                             prior_visits=0, reward_risk=2.2)  # 2+1+2+1 = 6
+    assert r_strict["score"] == 6
+    assert r_strict["cohort"] == "SECONDARY"
+    assert r_strict["band_scheme"] == "STRICT"
+
+
+def test_course_scheme_treats_six_as_primary():
+    from qm.iwt_zones import odds_enhancer
+    r = odds_enhancer(base_candles=2, departure_strength_atr=0.8,
+                      prior_visits=0, reward_risk=2.2, band_scheme="COURSE")
+    assert r["score"] == 6 and r["cohort"] == "PRIMARY"
+
+
+def test_course_scheme_four_is_secondary_not_skip():
+    from qm.iwt_zones import odds_enhancer
+    # 1+1+1+1 = 4 : COURSE says confirmation entry; STRICT says skip
+    kw = dict(base_candles=3, departure_strength_atr=0.8, prior_visits=1, reward_risk=2.2)
+    assert odds_enhancer(**kw, band_scheme="COURSE")["cohort"] == "SECONDARY"
+    assert odds_enhancer(**kw, band_scheme="STRICT")["cohort"] == "REJECTED"
+
+
+def test_unknown_band_scheme_raises():
+    from qm.iwt_zones import odds_enhancer
+    try:
+        odds_enhancer(2, 1.6, 0, 3.2, band_scheme="NOPE")
+        assert False, "should have raised"
+    except ValueError:
+        pass
+
+
+# ---- Bank-like numbers (round-number stop rule) ----
+
+def test_bank_number_stop_moves_below_round_long():
+    from qm.iwt_zones import bank_number_adjusted_stop
+    # 100.30 sits just above the 100 round level on a long
+    r = bank_number_adjusted_stop(100.30, "long")
+    assert r["adjusted"] and r["stop"] < 100.0
+
+
+def test_bank_number_stop_left_alone_when_clear():
+    from qm.iwt_zones import bank_number_adjusted_stop
+    # 97.40 is not sitting on a round level
+    r = bank_number_adjusted_stop(97.40, "long")
+    assert not r["adjusted"] and r["stop"] == 97.40
+
+
+def test_bank_number_short_pushes_above():
+    from qm.iwt_zones import bank_number_adjusted_stop
+    r = bank_number_adjusted_stop(100.20, "short")
+    assert r["adjusted"] and r["stop"] > 100.0
+
+
+# ---- Target haircut ----
+
+def test_haircut_pulls_long_target_lower():
+    from qm.iwt_zones import haircut_target
+    r = haircut_target(110.0, "long", risk=2.0)
+    assert r["target"] < 110.0 and r["haircut"] > 0
+
+
+def test_haircut_pushes_short_target_higher():
+    from qm.iwt_zones import haircut_target
+    r = haircut_target(90.0, "short", risk=2.0)
+    assert r["target"] > 90.0
