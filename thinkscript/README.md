@@ -125,7 +125,7 @@ The header label now names both sources explicitly (`REGIME SRC: SPX  INSTRUMENT
 
 v5 adds the **eight-point odds enhancer** directly to the chart (a "ZONE ODDS n/8" label), mirroring `qm/iwt_zones.py` and the app's page-10 scorer. It detects the most recent departure zone on the chart symbol and scores base tightness + departure speed + freshness + reward:risk, classifying PRIMARY (7-8, full size) / SECONDARY (5-6, half) / SKIP (0-4). Everything in v4.4 (regime/instrument split, earnings/ex-div gates, relative strength) is retained.
 
-The zone detection is a mechanical PROXY, not validated against Teri's hand-marked zones — the label is a decision aid, not a signal. See `docs/TERI_IWT_CURRICULUM.md` for how the scoring fits the full method.
+The zone detection is a mechanical PROXY, not validated against Teri's hand-marked zones — the label is a decision aid, not a signal.
 
 ## TeriQuantumZones v5.1 — the zone-drawing upper study (bug-fixed)
 
